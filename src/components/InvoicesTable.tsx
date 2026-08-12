@@ -19,12 +19,14 @@ import {
   Sparkles,
   CheckCircle2
 } from 'lucide-react';
-import { Invoice, Sequence, CustomEmailTemplate } from '../types';
+import { Invoice, Sequence, CustomEmailTemplate, UserProfile } from '../types';
+import { renderPlaceholders } from '../lib/storage';
 
 interface InvoicesTableProps {
   invoices: Invoice[];
   sequences: Sequence[];
   customTemplates?: CustomEmailTemplate[];
+  user?: UserProfile;
   onSaveInvoice: (inv: Partial<Invoice>) => Promise<any>;
   onTogglePause: (id: string) => Promise<any>;
   onTriggerManualReminder: (id: string) => Promise<any>;
@@ -37,6 +39,7 @@ export function InvoicesTable({
   invoices,
   sequences,
   customTemplates = [],
+  user,
   onSaveInvoice,
   onTogglePause,
   onTriggerManualReminder,
@@ -142,11 +145,11 @@ export function InvoicesTable({
   return (
     <div className="space-y-6">
       {/* Table Header Controls */}
-      <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="p-6 rounded-3xl bg-white dark:bg-surface border border-line dark:border-line shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-bold text-slate-900 dark:text-white">Active Agency Invoices</h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            Synced with Stripe Connect & QuickBooks API. Sequence automation runs every 24 hours.
+          <h2 className="text-xl font-bold text-ink dark:text-white">Your Invoices</h2>
+          <p className="text-xs text-ink2 dark:text-ink2">
+            Synced from your connected accounting apps. Automatic reminders run on your schedule.
           </p>
         </div>
 
@@ -154,15 +157,15 @@ export function InvoicesTable({
           <button
             onClick={handleSyncStripeClick}
             disabled={syncing}
-            className="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-semibold transition-all flex items-center gap-2 border border-slate-200 dark:border-slate-700"
+            className="px-3.5 py-2 rounded-xl bg-surface2 dark:bg-surface2 hover:bg-line dark:hover:bg-surface2 text-ink dark:text-ink text-xs font-semibold transition-all flex items-center gap-2 border border-line dark:border-line"
           >
-            <RotateCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin text-indigo-600' : ''}`} />
-            <span>{syncing ? 'Syncing...' : 'Sync Stripe'}</span>
+            <RotateCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin text-primary' : ''}`} />
+            <span>{syncing ? 'Syncing...' : 'Sync Invoices'}</span>
           </button>
 
           <button
             onClick={() => setIsCreateModalOpen(true)}
-            className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-all flex items-center gap-2 shadow-md shadow-indigo-600/20"
+            className="px-4 py-2 rounded-xl bg-accent hover:bg-accent-hover text-white text-xs font-bold transition-all flex items-center gap-2 shadow-md shadow-accent/25"
           >
             <Plus className="w-4 h-4" />
             <span>New Invoice</span>
@@ -171,15 +174,15 @@ export function InvoicesTable({
       </div>
 
       {/* Filter & Search Bar */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white dark:bg-slate-900 p-3 rounded-2xl border border-slate-200 dark:border-slate-800">
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white dark:bg-surface p-3 rounded-2xl border border-line dark:border-line">
         <div className="relative w-full sm:w-80">
-          <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+          <Search className="w-4 h-4 absolute left-3 top-2.5 text-ink3" />
           <input
             type="text"
             placeholder="Search client, email or invoice #..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
+            className="w-full pl-9 pr-3 py-1.5 rounded-xl border border-line dark:border-line bg-main dark:bg-surface2 text-xs text-ink dark:text-white outline-none focus:ring-2 focus:ring-accent"
           />
         </div>
 
@@ -190,8 +193,8 @@ export function InvoicesTable({
               onClick={() => setStatusFilter(st)}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold capitalize transition-all whitespace-nowrap ${
                 statusFilter === st
-                  ? 'bg-indigo-600 text-white shadow-sm'
-                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                  ? 'bg-accent text-white shadow-sm'
+                  : 'bg-surface2 dark:bg-surface2 text-ink2 dark:text-ink2 hover:bg-line dark:hover:bg-surface2'
               }`}
             >
               {st}
@@ -201,11 +204,11 @@ export function InvoicesTable({
       </div>
 
       {/* Invoices Data Table */}
-      <div className="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+      <div className="rounded-3xl bg-white dark:bg-surface border border-line dark:border-line shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+              <tr className="border-b border-line dark:border-line bg-main/50 dark:bg-surface2/40 text-[11px] font-bold text-ink2 dark:text-ink2 uppercase tracking-wider">
                 <th className="p-4 pl-6">Client & Invoice ID</th>
                 <th className="p-4">Amount Due</th>
                 <th className="p-4">Due Date</th>
@@ -214,10 +217,10 @@ export function InvoicesTable({
                 <th className="p-4 pr-6 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs text-slate-700 dark:text-slate-300 font-medium">
+            <tbody className="divide-y divide-line dark:divide-line text-xs text-ink dark:text-ink2 font-medium">
               {filteredInvoices.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-12 text-center text-slate-400">
+                  <td colSpan={6} className="py-12 text-center text-ink3">
                     No invoices matching search or filter criteria.
                   </td>
                 </tr>
@@ -225,14 +228,14 @@ export function InvoicesTable({
                 filteredInvoices.map((inv) => (
                   <tr
                     key={inv.id}
-                    className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors"
+                    className="hover:bg-main/80 dark:hover:bg-surface2/40 transition-colors"
                   >
                     <td className="p-4 pl-6">
                       <div>
-                        <span className="font-bold text-slate-900 dark:text-white text-sm block">
+                        <span className="font-bold text-ink dark:text-white text-sm block">
                           {inv.client_name}
                         </span>
-                        <div className="flex items-center gap-2 text-slate-400 text-[11px] font-mono">
+                        <div className="flex items-center gap-2 text-ink3 text-[11px] font-mono">
                           <span>{inv.external_invoice_id}</span>
                           <span>•</span>
                           <span>{inv.client_email}</span>
@@ -240,13 +243,13 @@ export function InvoicesTable({
                       </div>
                     </td>
 
-                    <td className="p-4 font-black text-slate-900 dark:text-white text-sm">
+                    <td className="p-4 font-black text-ink dark:text-white text-sm">
                       ${inv.amount_due.toLocaleString('en-US', { minimumFractionDigits: 2 })} {inv.currency}
                     </td>
 
                     <td className="p-4">
                       <div className="flex items-center gap-1.5">
-                        <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                        <Calendar className="w-3.5 h-3.5 text-ink3" />
                         <span>{inv.due_date}</span>
                       </div>
                     </td>
@@ -286,7 +289,7 @@ export function InvoicesTable({
                       <div className="flex items-center justify-end gap-1.5">
                         <button
                           onClick={() => onOpenPublicPortal(inv.id)}
-                          className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-indigo-600 dark:text-indigo-400 transition-colors"
+                          className="p-1.5 rounded-lg hover:bg-surface2 dark:hover:bg-surface2 text-primary dark:text-secondary transition-colors"
                           title="Open Public Client Payment Portal"
                         >
                           <CreditCard className="w-4 h-4" />
@@ -294,7 +297,7 @@ export function InvoicesTable({
 
                         <button
                           onClick={() => handleCopyLink(inv)}
-                          className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors"
+                          className="p-1.5 rounded-lg hover:bg-surface2 dark:hover:bg-surface2 text-ink2 dark:text-ink2 transition-colors"
                           title="Copy Payment Link"
                         >
                           {copiedId === inv.id ? (
@@ -306,7 +309,7 @@ export function InvoicesTable({
 
                         <button
                           onClick={() => handleOpenSendModal(inv)}
-                          className="p-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 transition-colors"
+                          className="p-1.5 rounded-lg hover:bg-primary-soft dark:hover:bg-surface2 text-primary dark:text-secondary transition-colors"
                           title="Send Custom Email or Sequence Step to Client"
                         >
                           <Send className="w-4 h-4" />
@@ -314,7 +317,7 @@ export function InvoicesTable({
 
                         <button
                           onClick={() => setSelectedInvoice(inv)}
-                          className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500"
+                          className="p-1.5 rounded-lg hover:bg-surface2 dark:hover:bg-surface2 text-ink2"
                           title="View Details"
                         >
                           <Eye className="w-4 h-4" />
@@ -331,47 +334,47 @@ export function InvoicesTable({
 
       {/* Invoice Detail Modal */}
       {selectedInvoice && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="relative w-full max-w-lg max-h-[80vh] overflow-y-auto rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 sm:p-8 shadow-2xl">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-primary-strong/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="relative w-full max-w-lg max-h-[80vh] overflow-y-auto rounded-3xl bg-white dark:bg-surface border border-line dark:border-line p-6 sm:p-8 shadow-2xl">
             <button
               onClick={() => setSelectedInvoice(null)}
-              className="absolute top-5 right-5 p-2 rounded-full text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+              className="absolute top-5 right-5 p-2 rounded-full text-ink3 hover:bg-surface2 dark:hover:bg-surface2"
             >
               <X className="w-5 h-5" />
             </button>
 
             <div className="mb-6">
-              <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">
+              <span className="text-xs font-bold text-primary dark:text-secondary uppercase tracking-wider">
                 Invoice Details
               </span>
-              <h3 className="text-2xl font-black text-slate-900 dark:text-white mt-1">
+              <h3 className="text-2xl font-black text-ink dark:text-white mt-1">
                 {selectedInvoice.external_invoice_id}
               </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">{selectedInvoice.description}</p>
+              <p className="text-xs text-ink2 dark:text-ink2">{selectedInvoice.description}</p>
             </div>
 
-            <div className="space-y-4 text-xs font-medium text-slate-700 dark:text-slate-300">
-              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 space-y-2">
+            <div className="space-y-4 text-xs font-medium text-ink dark:text-ink2">
+              <div className="p-4 rounded-2xl bg-main dark:bg-surface2/60 space-y-2">
                 <div className="flex justify-between">
-                  <span className="text-slate-400">Client Name:</span>
-                  <span className="font-bold text-slate-900 dark:text-white">{selectedInvoice.client_name}</span>
+                  <span className="text-ink3">Client Name:</span>
+                  <span className="font-bold text-ink dark:text-white">{selectedInvoice.client_name}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-400">Client Email:</span>
+                  <span className="text-ink3">Client Email:</span>
                   <span className="font-mono">{selectedInvoice.client_email}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-400">Phone:</span>
+                  <span className="text-ink3">Phone:</span>
                   <span>{selectedInvoice.client_phone}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-400">Amount Due:</span>
-                  <span className="font-bold text-indigo-600 dark:text-indigo-400 text-sm">
+                  <span className="text-ink3">Amount Due:</span>
+                  <span className="font-bold text-primary dark:text-secondary text-sm">
                     ${selectedInvoice.amount_due.toFixed(2)} {selectedInvoice.currency}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-400">Due Date:</span>
+                  <span className="text-ink3">Due Date:</span>
                   <span>{selectedInvoice.due_date}</span>
                 </div>
               </div>
@@ -382,7 +385,7 @@ export function InvoicesTable({
                     setSelectedInvoice(null);
                     onOpenPublicPortal(selectedInvoice.id);
                   }}
-                  className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition-all flex items-center justify-center gap-2 shadow-md"
+                  className="w-full py-2.5 px-4 rounded-xl bg-accent hover:bg-accent-hover text-white font-bold text-xs transition-all flex items-center justify-center gap-2 shadow-md"
                 >
                   <CreditCard className="w-4 h-4" />
                   <span>Open Public Payment Portal Page</span>
@@ -395,25 +398,25 @@ export function InvoicesTable({
 
       {/* Select Email / Mail Template to Send Modal */}
       {sendModalInvoice && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="relative w-full max-w-lg max-h-[80vh] overflow-y-auto rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 sm:p-8 shadow-2xl space-y-5">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-primary-strong/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="relative w-full max-w-lg max-h-[80vh] overflow-y-auto rounded-3xl bg-white dark:bg-surface border border-line dark:border-line p-6 sm:p-8 shadow-2xl space-y-5">
             <button
               onClick={() => setSendModalInvoice(null)}
-              className="absolute top-5 right-5 p-2 rounded-full text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+              className="absolute top-5 right-5 p-2 rounded-full text-ink3 hover:bg-surface2 dark:hover:bg-surface2"
             >
               <X className="w-5 h-5" />
             </button>
 
-            <div className="flex items-center gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
-              <div className="w-10 h-10 rounded-2xl bg-indigo-100 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-300 flex items-center justify-center shrink-0">
+            <div className="flex items-center gap-3 border-b border-line dark:border-line pb-4">
+              <div className="w-10 h-10 rounded-2xl bg-primary-soft dark:bg-surface2 text-primary dark:text-secondary flex items-center justify-center shrink-0">
                 <Mail className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
-                  Select Mail / Email Template to Transmit
+                <h3 className="text-base font-extrabold text-ink dark:text-white">
+                  Send a Reminder Message
                 </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Target Client: <span className="font-bold text-slate-800 dark:text-slate-200">{sendModalInvoice.client_name}</span> ({sendModalInvoice.external_invoice_id})
+                <p className="text-xs text-ink2 dark:text-ink2">
+                  Client: <span className="font-bold text-ink dark:text-ink">{sendModalInvoice.client_name}</span> ({sendModalInvoice.external_invoice_id})
                 </p>
               </div>
             </div>
@@ -421,34 +424,34 @@ export function InvoicesTable({
             <div className="space-y-4">
               {/* Select Email Template */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">
+                <label className="block text-xs font-bold text-ink dark:text-ink2 mb-2">
                   Choose Custom Email or Sequence Step *
                 </label>
                 <div className="space-y-2">
-                  <label
-                    onClick={() => setSelectedTemplateId('default_sequence')}
-                    className={`p-3 rounded-2xl border text-xs flex items-start gap-3 cursor-pointer transition-all ${
-                      selectedTemplateId === 'default_sequence'
-                        ? 'bg-indigo-50/80 dark:bg-indigo-950/60 border-indigo-600 dark:border-indigo-500'
-                        : 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 hover:border-slate-300'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="email_tmpl"
-                      checked={selectedTemplateId === 'default_sequence'}
-                      onChange={() => setSelectedTemplateId('default_sequence')}
-                      className="mt-0.5 text-indigo-600 focus:ring-indigo-500"
-                    />
-                    <div>
-                      <span className="font-extrabold text-slate-900 dark:text-white block">
-                        ⚡ Standard Sequence Reminder Step
-                      </span>
-                      <span className="text-[11px] text-slate-500 dark:text-slate-400 block mt-0.5">
-                        Trigger default sequence step via automated Resend & WhatsApp API
-                      </span>
-                    </div>
-                  </label>
+                    <label
+                      onClick={() => setSelectedTemplateId('default_sequence')}
+                      className={`p-3 rounded-2xl border text-xs flex items-start gap-3 cursor-pointer transition-all ${
+                        selectedTemplateId === 'default_sequence'
+                          ? 'bg-primary-soft dark:bg-surface2 border-accent dark:border-accent'
+                          : 'bg-main dark:bg-surface2/40 border-line dark:border-line hover:border-line'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="email_tmpl"
+                        checked={selectedTemplateId === 'default_sequence'}
+                        onChange={() => setSelectedTemplateId('default_sequence')}
+                        className="mt-0.5 text-primary focus:ring-accent"
+                      />
+                      <div>
+                        <span className="font-extrabold text-ink dark:text-white block">
+                          Standard Sequence Reminder Step
+                        </span>
+                        <span className="text-[11px] text-ink2 dark:text-ink2 block mt-0.5">
+                          Trigger the next reminder step in this invoice's recovery flow
+                        </span>
+                      </div>
+                    </label>
 
                   {customTemplates.map((tmpl) => (
                     <label
@@ -456,8 +459,8 @@ export function InvoicesTable({
                       onClick={() => setSelectedTemplateId(tmpl.id)}
                       className={`p-3 rounded-2xl border text-xs flex items-start gap-3 cursor-pointer transition-all ${
                         selectedTemplateId === tmpl.id
-                          ? 'bg-indigo-50/80 dark:bg-indigo-950/60 border-indigo-600 dark:border-indigo-500'
-                          : 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 hover:border-slate-300'
+                          ? 'bg-primary-soft dark:bg-surface2 border-accent dark:border-accent'
+                          : 'bg-main dark:bg-surface2/40 border-line dark:border-line hover:border-line'
                       }`}
                     >
                       <input
@@ -465,18 +468,18 @@ export function InvoicesTable({
                         name="email_tmpl"
                         checked={selectedTemplateId === tmpl.id}
                         onChange={() => setSelectedTemplateId(tmpl.id)}
-                        className="mt-0.5 text-indigo-600 focus:ring-indigo-500"
+                        className="mt-0.5 text-primary focus:ring-accent"
                       />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between gap-2">
-                          <span className="font-extrabold text-slate-900 dark:text-white truncate">
+                          <span className="font-extrabold text-ink dark:text-white truncate">
                             {tmpl.title}
                           </span>
-                          <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 shrink-0">
+                          <span className="text-[10px] font-bold text-primary dark:text-secondary shrink-0">
                             From: {tmpl.sender_name}
                           </span>
                         </div>
-                        <span className="text-[11px] text-slate-500 dark:text-slate-400 block mt-0.5 truncate">
+                        <span className="text-[11px] text-ink2 dark:text-ink2 block mt-0.5 truncate">
                           &lt;{tmpl.sender_email}&gt; • Subject: {tmpl.subject}
                         </span>
                       </div>
@@ -487,8 +490,8 @@ export function InvoicesTable({
 
               {/* Rendered Live Email Preview */}
               {selectedTemplateId !== 'default_sequence' && (
-                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs space-y-2">
-                  <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">
+                <div className="p-4 rounded-2xl bg-main dark:bg-surface2/80 border border-line dark:border-line text-xs space-y-2">
+                  <span className="text-[10px] font-extrabold text-ink3 uppercase tracking-wider block">
                     Rendered Email Message Preview
                   </span>
                   {(() => {
@@ -496,18 +499,27 @@ export function InvoicesTable({
                     if (!tmpl) return null;
                     return (
                       <>
-                        <div className="font-bold text-slate-900 dark:text-white">
-                          Subject: {tmpl.subject.replace(/\{\{external_invoice_id\}\}/g, sendModalInvoice.external_invoice_id)}
+                        <div className="font-bold text-ink dark:text-white">
+                          Subject: {renderPlaceholders(tmpl.subject, {
+                            external_invoice_id: sendModalInvoice.external_invoice_id,
+                            client_name: sendModalInvoice.client_name,
+                            amount_due: sendModalInvoice.amount_due,
+                            currency: sendModalInvoice.currency,
+                            due_date: sendModalInvoice.due_date,
+                            payment_link: sendModalInvoice.payment_link,
+                            company_name: user?.company_name || 'Your Studio',
+                          })}
                         </div>
-                        <div className="text-slate-600 dark:text-slate-300 whitespace-pre-line leading-relaxed font-sans text-[11px] pt-2 border-t border-slate-200 dark:border-slate-700">
-                          {tmpl.body
-                            .replace(/\{\{client_name\}\}/g, sendModalInvoice.client_name)
-                            .replace(/\{\{external_invoice_id\}\}/g, sendModalInvoice.external_invoice_id)
-                            .replace(/\{\{amount_due\}\}/g, `$${sendModalInvoice.amount_due}`)
-                            .replace(/\{\{currency\}\}/g, sendModalInvoice.currency)
-                            .replace(/\{\{due_date\}\}/g, sendModalInvoice.due_date)
-                            .replace(/\{\{payment_link\}\}/g, sendModalInvoice.payment_link)
-                            .replace(/\{\{company_name\}\}/g, 'Apex Digital Agency')}
+                        <div className="text-ink2 dark:text-ink2 whitespace-pre-line leading-relaxed font-sans text-[11px] pt-2 border-t border-line dark:border-line">
+                          {renderPlaceholders(tmpl.body, {
+                            client_name: sendModalInvoice.client_name,
+                            external_invoice_id: sendModalInvoice.external_invoice_id,
+                            amount_due: sendModalInvoice.amount_due,
+                            currency: sendModalInvoice.currency,
+                            due_date: sendModalInvoice.due_date,
+                            payment_link: sendModalInvoice.payment_link,
+                            company_name: user?.company_name || 'Your Studio',
+                          })}
                         </div>
                       </>
                     );
@@ -516,11 +528,11 @@ export function InvoicesTable({
               )}
 
               {/* Action Buttons */}
-              <div className="pt-2 flex items-center justify-end gap-3 border-t border-slate-100 dark:border-slate-800">
+              <div className="pt-2 flex items-center justify-end gap-3 border-t border-line dark:border-line">
                 <button
                   type="button"
                   onClick={() => setSendModalInvoice(null)}
-                  className="px-4 py-2 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 text-xs font-bold transition-all"
+                  className="px-4 py-2 rounded-xl text-ink2 dark:text-ink2 hover:bg-surface2 text-xs font-bold transition-all"
                 >
                   Cancel
                 </button>
@@ -528,14 +540,14 @@ export function InvoicesTable({
                   type="button"
                   onClick={handleExecuteSend}
                   disabled={isTransmitting}
-                  className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-all shadow-md flex items-center gap-2 disabled:opacity-50"
+                  className="px-5 py-2.5 rounded-xl bg-accent hover:bg-accent-hover text-white text-xs font-bold transition-all shadow-md flex items-center gap-2 disabled:opacity-50"
                 >
                   {isTransmitting ? (
-                    <span>Transmitting Email...</span>
+                    <span>Sending...</span>
                   ) : (
                     <>
                       <Send className="w-4 h-4" />
-                      <span>Transmit Email to Client</span>
+                      <span>Send Message</span>
                     </>
                   )}
                 </button>
@@ -547,23 +559,23 @@ export function InvoicesTable({
 
       {/* Create New Invoice Modal */}
       {isCreateModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="relative w-full max-w-md max-h-[80vh] overflow-y-auto rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 sm:p-8 shadow-2xl">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-primary-strong/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="relative w-full max-w-md max-h-[80vh] overflow-y-auto rounded-3xl bg-white dark:bg-surface border border-line dark:border-line p-6 sm:p-8 shadow-2xl">
             <button
               onClick={() => setIsCreateModalOpen(false)}
-              className="absolute top-5 right-5 p-2 rounded-full text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+              className="absolute top-5 right-5 p-2 rounded-full text-ink3 hover:bg-surface2 dark:hover:bg-surface2"
             >
               <X className="w-5 h-5" />
             </button>
 
-            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-1">Create B2B Invoice</h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mb-6">
+            <h3 className="text-xl font-bold text-ink dark:text-white mb-1">Create Invoice</h3>
+            <p className="text-xs text-ink2 dark:text-ink2 mb-6">
               Add an invoice to track and attach to automated recovery sequences.
             </p>
 
             <form onSubmit={handleCreateSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                <label className="block text-xs font-semibold text-ink dark:text-ink2 mb-1">
                   Client Company Name
                 </label>
                 <input
@@ -572,12 +584,12 @@ export function InvoicesTable({
                   value={newClientName}
                   onChange={(e) => setNewClientName(e.target.value)}
                   placeholder="e.g. Horizon Labs"
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-3 py-2 rounded-xl border border-line dark:border-line bg-main dark:bg-surface2 text-xs text-ink dark:text-white outline-none focus:ring-2 focus:ring-accent"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                <label className="block text-xs font-semibold text-ink dark:text-ink2 mb-1">
                   Client Billing Email
                 </label>
                 <input
@@ -586,13 +598,13 @@ export function InvoicesTable({
                   value={newClientEmail}
                   onChange={(e) => setNewClientEmail(e.target.value)}
                   placeholder="billing@horizonlabs.com"
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-3 py-2 rounded-xl border border-line dark:border-line bg-main dark:bg-surface2 text-xs text-ink dark:text-white outline-none focus:ring-2 focus:ring-accent"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  <label className="block text-xs font-semibold text-ink dark:text-ink2 mb-1">
                     Amount ($ USD)
                   </label>
                   <input
@@ -601,12 +613,12 @@ export function InvoicesTable({
                     value={newAmount}
                     onChange={(e) => setNewAmount(e.target.value)}
                     placeholder="3500"
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-3 py-2 rounded-xl border border-line dark:border-line bg-main dark:bg-surface2 text-xs text-ink dark:text-white outline-none focus:ring-2 focus:ring-accent"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  <label className="block text-xs font-semibold text-ink dark:text-ink2 mb-1">
                     Due Date
                   </label>
                   <input
@@ -614,26 +626,26 @@ export function InvoicesTable({
                     required
                     value={newDueDate}
                     onChange={(e) => setNewDueDate(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-3 py-2 rounded-xl border border-line dark:border-line bg-main dark:bg-surface2 text-xs text-ink dark:text-white outline-none focus:ring-2 focus:ring-accent"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                <label className="block text-xs font-semibold text-ink dark:text-ink2 mb-1">
                   Project Description
                 </label>
                 <textarea
                   value={newDesc}
                   onChange={(e) => setNewDesc(e.target.value)}
                   placeholder="e.g. Q3 Mobile App Development Retainer"
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 h-20"
+                  className="w-full px-3 py-2 rounded-xl border border-line dark:border-line bg-main dark:bg-surface2 text-xs text-ink dark:text-white outline-none focus:ring-2 focus:ring-accent h-20"
                 />
               </div>
 
               <button
                 type="submit"
-                className="w-full py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition-all shadow-md"
+                className="w-full py-3 px-4 rounded-xl bg-accent hover:bg-accent-hover text-white font-bold text-xs transition-all shadow-md"
               >
                 Save Invoice & Attach Sequence
               </button>

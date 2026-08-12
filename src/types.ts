@@ -1,5 +1,5 @@
-export type SubscriptionTier = 'free' | 'starter' | 'pro' | 'agency';
-export type SubscriptionStatus = 'active' | 'past_due' | 'cancelled' | 'trialing';
+export type SubscriptionTier = 'starter' | 'pro' | 'agency';
+export type SubscriptionStatus = 'active' | 'past_due' | 'cancelled' | 'trialing' | 'pending';
 
 export interface UserProfile {
   id: string;
@@ -7,8 +7,11 @@ export interface UserProfile {
   company_name: string;
   lemon_squeezy_customer_id?: string;
   lemon_squeezy_subscription_id?: string;
-  subscription_tier: SubscriptionTier;
+  stripe_customer_id?: string;
+  subscription_tier: SubscriptionTier | null;
   subscription_status: SubscriptionStatus;
+  plan_started_at?: string;
+  plan_period?: 'monthly';
   custom_domain?: string;
   brand_color?: string;
   logo_url?: string;
@@ -16,7 +19,28 @@ export interface UserProfile {
   created_at: string;
 }
 
-export type IntegrationProvider = 'stripe' | 'quickbooks' | 'whapi' | 'resend';
+export interface BillingEvent {
+  id: string;
+  user_id: string;
+  type: 'plan_upgrade' | 'plan_downgrade' | 'subscription_renewed' | 'subscription_cancelled' | 'refund' | 'charge';
+  tier: SubscriptionTier | null;
+  amount: number; // USD
+  currency: string;
+  prorated_amount: number;
+  refund_amount: number;
+  breakdown?: Record<string, number | string>;
+  created_at: string;
+}
+
+export type IntegrationProvider =
+  | 'stripe'
+  | 'quickbooks'
+  | 'xero'
+  | 'gmail'
+  | 'whatsapp'
+  | 'slack'
+  | 'google'
+  | 'facebook';
 
 export interface Integration {
   id: string;
@@ -35,7 +59,7 @@ export type InvoiceStatus = 'unpaid' | 'paid' | 'overdue' | 'cancelled';
 export interface Invoice {
   id: string;
   user_id: string;
-  external_invoice_id: string; // e.g. "INV-2026-089" from Stripe or QuickBooks
+  external_invoice_id: string; // e.g. "INV-2026-089" from your accounting app
   client_name: string;
   client_email: string;
   client_phone: string;
@@ -96,12 +120,11 @@ export type NavigationTab =
   | 'dashboard'
   | 'invoices'
   | 'sequence'
-  | 'custom_emails'
-  | 'logs'
-  | 'portals'
-  | 'opex'
-  | 'sql'
-  | 'settings';
+  | 'templates'
+  | 'activity'
+  | 'connectors'
+  | 'settings'
+  | 'help';
 
 export interface CustomEmailTemplate {
   id: string;
@@ -115,16 +138,55 @@ export interface CustomEmailTemplate {
   created_at: string;
 }
 
+export interface UsageStats {
+  month: string; // e.g. "2026-08"
+  emails_sent: number;
+  whatsapp_sent: number;
+  sms_sent: number;
+  ai_generations: number;
+  reminders_delivered: number;
+  amount_recovered: number; // USD recovered this month
+}
+
+export interface PlanLimits {
+  tracked_invoices: number; // monthly cap, -1 = unlimited
+  team_seats: number;
+  emails_per_month: number;
+  whatsapp_per_month: number;
+  ai_generations: number;
+  custom_domain: boolean;
+  white_label: boolean;
+  advanced_reports: boolean;
+  priority_automation: boolean;
+}
+
+export interface SchedulingPrefs {
+  frequency: 'daily' | 'weekly' | 'monthly' | 'yearly';
+  time_of_day: string; // "09:00"
+  timezone: string;
+  auto_pause_paid: boolean;
+}
+
+export interface AppConnectorInfo {
+  id: string;
+  provider: IntegrationProvider;
+  name: string;
+  category: 'accounting' | 'communication' | 'email' | 'signin';
+  description: string;
+  connected: boolean;
+  account_name?: string;
+}
+
 export interface OpExTierData {
   user_count: number;
   invoices_tracked: number;
   emails_sent: number;
   whatsapp_messages_sent: number;
-  resend_cost: number;
-  whapi_cost: number;
-  qstash_cost: number;
-  supabase_cost: number;
-  lemon_squeezy_fees: number;
+  resend_cost: number; // transactional email delivery (Resend)
+  whapi_cost: number; // WhatsApp delivery (Whapi.cloud)
+  qstash_cost: number; // scheduled jobs / cron (Upstash QStash)
+  supabase_cost: number; // Postgres + auth (Supabase)
+  lemon_squeezy_fees: number; // payment-processing on subscriptions (Lemon Squeezy)
   total_opex: number;
   gross_mrr: number;
   net_profit: number;

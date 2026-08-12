@@ -65,19 +65,19 @@ export function AuthModal({ isOpen, mode, onClose, onSuccess, onSwitchMode }: Au
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="relative w-full max-w-md max-h-[80vh] overflow-y-auto rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl p-6 sm:p-8 text-slate-900 dark:text-white">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-primary-strong/60 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="relative w-full max-w-md max-h-[80vh] overflow-y-auto rounded-3xl bg-white dark:bg-surface border border-line dark:border-line shadow-2xl p-6 sm:p-8 text-ink dark:text-white">
         {/* Close Button */}
         <button
           onClick={onClose}
-          className="absolute top-5 right-5 p-2 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+          className="absolute top-5 right-5 p-2 rounded-full text-ink3 hover:text-ink2 dark:hover:text-ink hover:bg-surface2 dark:hover:bg-surface2 transition-colors"
         >
           <X className="w-5 h-5" />
         </button>
 
         {/* Header Logo */}
         <div className="flex items-center gap-3 mb-6">
-          <div className="w-11 h-11 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-600/30">
+          <div className="w-11 h-11 rounded-2xl bg-accent flex items-center justify-center text-white shadow-lg shadow-accent/30">
             <ShieldCheck className="w-6 h-6" />
           </div>
           <div>
@@ -87,7 +87,7 @@ export function AuthModal({ isOpen, mode, onClose, onSuccess, onSwitchMode }: Au
               {mode === 'forgot' && 'Reset Password'}
               {mode === 'change_pass' && 'Change Account Password'}
             </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
+            <p className="text-xs text-ink2 dark:text-ink2">
               {mode === 'signin' && 'Access your payment recovery dashboard'}
               {mode === 'signup' && 'Automate invoice recovery in 2 minutes'}
               {mode === 'forgot' && 'We will send you a secure magic link'}
@@ -117,18 +117,18 @@ export function AuthModal({ isOpen, mode, onClose, onSuccess, onSwitchMode }: Au
         <form onSubmit={handleSubmit} className="space-y-4">
           {mode === 'signup' && (
             <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              <label className="block text-xs font-semibold text-ink dark:text-ink2 mb-1">
                 Company / Agency Name
               </label>
               <div className="relative">
-                <Building2 className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+                <Building2 className="w-4 h-4 absolute left-3 top-3 text-ink3" />
                 <input
                   type="text"
                   required
                   value={companyName}
                   onChange={(e) => setCompanyName(e.target.value)}
                   placeholder="e.g. Horizon Digital Studio"
-                  className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
+                  className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-line dark:border-line bg-main dark:bg-surface2 text-ink dark:text-white text-xs focus:ring-2 focus:ring-accent outline-none"
                 />
               </div>
             </div>
@@ -136,18 +136,18 @@ export function AuthModal({ isOpen, mode, onClose, onSuccess, onSwitchMode }: Au
 
           {mode !== 'change_pass' && (
             <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              <label className="block text-xs font-semibold text-ink dark:text-ink2 mb-1">
                 Agency Email Address
               </label>
               <div className="relative">
-                <Mail className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+                <Mail className="w-4 h-4 absolute left-3 top-3 text-ink3" />
                 <input
                   type="email"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="alex@agency.com"
-                  className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
+                  className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-line dark:border-line bg-main dark:bg-surface2 text-ink dark:text-white text-xs focus:ring-2 focus:ring-accent outline-none"
                 />
               </div>
             </div>
@@ -156,28 +156,28 @@ export function AuthModal({ isOpen, mode, onClose, onSuccess, onSwitchMode }: Au
           {(mode === 'signin' || mode === 'signup') && (
             <div>
               <div className="flex items-center justify-between mb-1">
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                <label className="block text-xs font-semibold text-ink dark:text-ink2">
                   Password
                 </label>
                 {mode === 'signin' && (
                   <button
                     type="button"
                     onClick={() => onSwitchMode('forgot')}
-                    className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:underline"
+                    className="text-[11px] font-semibold text-primary dark:text-secondary hover:underline"
                   >
                     Forgot password?
                   </button>
                 )}
               </div>
               <div className="relative">
-                <Lock className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+                <Lock className="w-4 h-4 absolute left-3 top-3 text-ink3" />
                 <input
                   type="password"
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••••••"
-                  className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
+                  className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-line dark:border-line bg-main dark:bg-surface2 text-ink dark:text-white text-xs focus:ring-2 focus:ring-accent outline-none"
                 />
               </div>
             </div>
@@ -185,18 +185,18 @@ export function AuthModal({ isOpen, mode, onClose, onSuccess, onSwitchMode }: Au
 
           {mode === 'change_pass' && (
             <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              <label className="block text-xs font-semibold text-ink dark:text-ink2 mb-1">
                 New Secure Password
               </label>
               <div className="relative">
-                <Lock className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+                <Lock className="w-4 h-4 absolute left-3 top-3 text-ink3" />
                 <input
                   type="password"
                   required
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   placeholder="Min 8 characters"
-                  className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
+                  className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-line dark:border-line bg-main dark:bg-surface2 text-ink dark:text-white text-xs focus:ring-2 focus:ring-accent outline-none"
                 />
               </div>
             </div>
@@ -205,7 +205,7 @@ export function AuthModal({ isOpen, mode, onClose, onSuccess, onSwitchMode }: Au
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs sm:text-sm transition-all shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2"
+            className="w-full py-3 px-4 rounded-xl bg-accent hover:bg-accent-hover text-white font-bold text-xs sm:text-sm transition-all shadow-lg shadow-accent/30 flex items-center justify-center gap-2"
           >
             {loading ? (
               <span>Processing...</span>
@@ -224,13 +224,13 @@ export function AuthModal({ isOpen, mode, onClose, onSuccess, onSwitchMode }: Au
         </form>
 
         {/* Footer Mode Switchers */}
-        <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800 text-center text-xs text-slate-500 dark:text-slate-400">
+        <div className="mt-6 pt-4 border-t border-line dark:border-line text-center text-xs text-ink2 dark:text-ink2">
           {mode === 'signin' && (
             <p>
               Don't have an agency account yet?{' '}
               <button
                 onClick={() => onSwitchMode('signup')}
-                className="font-bold text-indigo-600 dark:text-indigo-400 hover:underline"
+                className="font-bold text-primary dark:text-secondary hover:underline"
               >
                 Sign up free
               </button>
@@ -241,7 +241,7 @@ export function AuthModal({ isOpen, mode, onClose, onSuccess, onSwitchMode }: Au
               Already have an account?{' '}
               <button
                 onClick={() => onSwitchMode('signin')}
-                className="font-bold text-indigo-600 dark:text-indigo-400 hover:underline"
+                className="font-bold text-primary dark:text-secondary hover:underline"
               >
                 Sign in
               </button>
@@ -250,7 +250,7 @@ export function AuthModal({ isOpen, mode, onClose, onSuccess, onSwitchMode }: Au
           {(mode === 'forgot' || mode === 'change_pass') && (
             <button
               onClick={() => onSwitchMode('signin')}
-              className="font-bold text-indigo-600 dark:text-indigo-400 hover:underline"
+              className="font-bold text-primary dark:text-secondary hover:underline"
             >
               Return to Sign In
             </button>

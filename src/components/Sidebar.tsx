@@ -5,34 +5,35 @@ import {
   GitBranch,
   Mail,
   History,
-  CreditCard,
-  Calculator,
-  Database,
   Settings,
-  Sparkles,
-  ExternalLink,
+  LifeBuoy,
+  PlugZap,
+  Rocket,
   Menu,
   X,
-  ChevronDown
+  ChevronDown,
+  ArrowUpRight
 } from 'lucide-react';
+import { UserProfile } from '../types';
 
 export type NavigationTab =
   | 'dashboard'
   | 'invoices'
   | 'sequence'
-  | 'logs'
-  | 'portals'
-  | 'opex'
-  | 'sql'
-  | 'settings';
+  | 'templates'
+  | 'activity'
+  | 'connectors'
+  | 'settings'
+  | 'help';
 
 interface SidebarProps {
   activeTab: NavigationTab;
   onTabChange: (tab: NavigationTab) => void;
   unpaidCount: number;
+  user: UserProfile;
 }
 
-export function Sidebar({ activeTab, onTabChange, unpaidCount }: SidebarProps) {
+export function Sidebar({ activeTab, onTabChange, unpaidCount, user }: SidebarProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const menuItems = [
@@ -44,56 +45,45 @@ export function Sidebar({ activeTab, onTabChange, unpaidCount }: SidebarProps) {
     },
     {
       id: 'invoices' as NavigationTab,
-      label: 'Active Invoices',
+      label: 'Invoices',
       icon: Receipt,
-      badge: unpaidCount > 0 ? `${unpaidCount} unpaid` : null,
+      badge: unpaidCount > 0 ? `${unpaidCount} open` : null,
       badgeColor: 'bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300',
     },
     {
       id: 'sequence' as NavigationTab,
-      label: 'Sequence Builder',
+      label: 'Recovery Flows',
       icon: GitBranch,
-      badge: 'Multi-Step',
-      badgeColor: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-300',
+      badge: null,
     },
     {
-      id: 'custom_emails' as NavigationTab,
-      label: 'Custom Email Templates',
+      id: 'templates' as NavigationTab,
+      label: 'Message Templates',
       icon: Mail,
-      badge: 'AI Powered',
-      badgeColor: 'bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300',
+      badge: null,
     },
     {
-      id: 'logs' as NavigationTab,
-      label: 'Reminder Audit Logs',
+      id: 'activity' as NavigationTab,
+      label: 'Activity Log',
       icon: History,
       badge: null,
     },
     {
-      id: 'portals' as NavigationTab,
-      label: 'Client Payment Portal',
-      icon: CreditCard,
-      badge: 'Public',
-      badgeColor: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300',
-    },
-    {
-      id: 'opex' as NavigationTab,
-      label: 'OpEx Calculator',
-      icon: Calculator,
-      badge: '$0 - $1k Users',
-      badgeColor: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300',
-    },
-    {
-      id: 'sql' as NavigationTab,
-      label: 'Supabase SQL Schema',
-      icon: Database,
-      badge: 'RLS Enabled',
-      badgeColor: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-950/80 dark:text-cyan-300',
+      id: 'connectors' as NavigationTab,
+      label: 'Connectors',
+      icon: PlugZap,
+      badge: null,
     },
     {
       id: 'settings' as NavigationTab,
       label: 'Settings & Billing',
       icon: Settings,
+      badge: null,
+    },
+    {
+      id: 'help' as NavigationTab,
+      label: 'Help & Support',
+      icon: LifeBuoy,
       badge: null,
     },
   ];
@@ -107,18 +97,18 @@ export function Sidebar({ activeTab, onTabChange, unpaidCount }: SidebarProps) {
   };
 
   return (
-    <aside className="w-full lg:w-64 shrink-0 bg-white dark:bg-slate-900 border-b lg:border-b-0 lg:border-r border-slate-200 dark:border-slate-800 transition-colors">
+    <aside className="w-full lg:w-64 shrink-0 bg-white dark:bg-surface border-b lg:border-b-0 lg:border-r border-line dark:border-line transition-colors">
       {/* Mobile Header Bar (< lg screens): Collapsible Dropdown Nav */}
-      <div className="lg:hidden p-3 border-b border-slate-100 dark:border-slate-800">
+      <div className="lg:hidden p-3 border-b border-line dark:border-line">
         <button
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          className="w-full flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white font-bold text-xs"
+          className="w-full flex items-center justify-between p-2.5 rounded-xl bg-main dark:bg-surface2/80 border border-line dark:border-line text-ink dark:text-white font-bold text-xs"
         >
           <div className="flex items-center gap-2.5">
-            <CurrentIcon className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+            <CurrentIcon className="w-4 h-4 text-primary dark:text-secondary" />
             <span>{currentItem.label}</span>
           </div>
-          <div className="flex items-center gap-1.5 text-slate-400">
+          <div className="flex items-center gap-1.5 text-ink3">
             <span className="text-[10px] uppercase tracking-wider font-semibold">
               {mobileMenuOpen ? 'Close Menu' : 'Menu'}
             </span>
@@ -134,7 +124,7 @@ export function Sidebar({ activeTab, onTabChange, unpaidCount }: SidebarProps) {
         }`}
       >
         <div className="space-y-1">
-          <div className="hidden lg:block px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+          <div className="hidden lg:block px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-ink3 dark:text-ink2">
             Main Navigation
           </div>
 
@@ -147,12 +137,12 @@ export function Sidebar({ activeTab, onTabChange, unpaidCount }: SidebarProps) {
                 onClick={() => handleSelectTab(item.id)}
                 className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl font-medium text-xs sm:text-sm transition-all ${
                   isActive
-                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20 font-semibold'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-slate-200'
+                    ? 'bg-accent text-white shadow-md shadow-accent/25 font-semibold'
+                    : 'text-ink2 dark:text-ink2 hover:bg-surface2 dark:hover:bg-surface2/80 hover:text-ink dark:hover:text-ink'
                 }`}
               >
                 <div className="flex items-center gap-2.5 truncate">
-                  <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-white' : 'text-slate-400'}`} />
+                  <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-white' : 'text-ink3'}`} />
                   <span className="truncate">{item.label}</span>
                 </div>
                 {item.badge && (
@@ -160,7 +150,7 @@ export function Sidebar({ activeTab, onTabChange, unpaidCount }: SidebarProps) {
                     className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ml-2 ${
                       isActive
                         ? 'bg-white/20 text-white'
-                        : item.badgeColor || 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                        : item.badgeColor || 'bg-surface2 text-ink2 dark:bg-surface2 dark:text-ink2'
                     }`}
                   >
                     {item.badge}
@@ -171,25 +161,26 @@ export function Sidebar({ activeTab, onTabChange, unpaidCount }: SidebarProps) {
           })}
         </div>
 
-        {/* Quick Agency ROI Callout Box */}
-        <div className="mt-6 p-4 rounded-2xl bg-gradient-to-br from-indigo-900 via-indigo-950 to-slate-950 text-white border border-indigo-800/60 shadow-lg hidden sm:block">
+        {/* Current Plan Summary Callout */}
+        <div className="mt-6 p-4 rounded-2xl bg-gradient-to-br from-primary via-primary-strong to-primary-strong text-white border border-line shadow-lg hidden sm:block">
           <div className="flex items-center gap-2 mb-2">
-            <Sparkles className="w-4 h-4 text-amber-400 animate-pulse" />
-            <span className="text-xs font-bold text-indigo-200">Recovery Efficiency</span>
+            <Rocket className="w-4 h-4 text-amber-400" />
+            <span className="text-xs font-bold text-secondary">Your Plan</span>
           </div>
-          <p className="text-xs text-indigo-100 leading-relaxed font-normal">
-            Automated B2B sequences reduce overdue invoice age from <span className="font-semibold text-white">28 days down to 6 days</span>.
+          <p className="text-xs text-secondary leading-relaxed font-normal">
+            You're on the{' '}
+            <span className="font-semibold text-white capitalize">{user.subscription_tier}</span> plan.
+            Reminders, connectors and AI drafting are all working for you.
           </p>
           <button
-            onClick={() => handleSelectTab('sequence')}
-            className="mt-3 w-full py-2 px-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs transition-all flex items-center justify-center gap-1.5 shadow-md"
+            onClick={() => handleSelectTab('settings')}
+            className="mt-3 w-full py-2 px-3 rounded-lg bg-accent hover:bg-accent-hover text-white font-semibold text-xs transition-all flex items-center justify-center gap-1.5 shadow-md"
           >
-            <span>Optimize Sequences</span>
-            <ExternalLink className="w-3.5 h-3.5" />
+            <span>Manage Plan</span>
+            <ArrowUpRight className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>
     </aside>
   );
 }
-

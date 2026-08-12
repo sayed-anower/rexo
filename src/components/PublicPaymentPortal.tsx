@@ -1,58 +1,91 @@
 import React, { useState } from 'react';
 import {
-  ShieldCheck,
   CreditCard,
-  Building2,
   CheckCircle2,
   Lock,
-  Download,
   Copy,
   Check,
   ArrowRight,
-  Printer
+  Printer,
+  Info,
+  Wallet,
+  Landmark,
+  Banknote,
+  AlertTriangle
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { Invoice, UserProfile } from '../types';
+import { createInvoicePaymentSession } from '../lib/storage';
+
+type PaymentMethod = 'card' | 'bank' | 'paypal' | 'wallet';
+
+interface PortalAgency {
+  company_name: string;
+  logo_url?: string;
+  brand_color?: string;
+}
 
 interface PublicPaymentPortalProps {
-  invoice: Invoice;
-  agencyProfile: UserProfile;
-  onPaymentComplete: (invoiceId: string) => Promise<any>;
+  invoice: Invoice | null;
+  agencyProfile: PortalAgency;
+  testMode: boolean;
+  invoiceId: string;
   onBackToApp?: () => void;
 }
+
+const GATEWAY_FEE_RATE = 0.029;
+const GATEWAY_FEE_FLAT = 0.3;
 
 export function PublicPaymentPortal({
   invoice,
   agencyProfile,
-  onPaymentComplete,
+  testMode,
+  invoiceId,
   onBackToApp
 }: PublicPaymentPortalProps) {
-  const [paymentMethod, setPaymentMethod] = useState<'card' | 'bank'>('card');
-  const [cardName, setCardName] = useState('');
-  const [cardNumber, setCardNumber] = useState('');
-  const [expiry, setExpiry] = useState('');
-  const [cvc, setCvc] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('card');
   const [processing, setProcessing] = useState(false);
-  const [paid, setPaid] = useState(invoice.status === 'paid');
+  const [paid, setPaid] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [showTestCards, setShowTestCards] = useState(testMode);
 
-  const handlePay = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const isPaid = paid || invoice?.status === 'paid';
+
+  if (!invoice) {
+    return (
+      <div className="min-h-screen bg-main dark:bg-main text-ink dark:text-ink flex items-center justify-center p-6">
+        <div className="text-center space-y-3">
+          <div className="w-12 h-12 rounded-2xl bg-accent mx-auto flex items-center justify-center text-white">
+            <AlertTriangle className="w-6 h-6" />
+          </div>
+          <p className="text-sm font-bold">Invoice not found, is paid, or the payment link is invalid.</p>
+          {onBackToApp && (
+            <button onClick={onBackToApp} className="text-xs font-bold text-primary hover:underline">
+              ← Return to RecoverFlow
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  const fee = invoice.amount_due * GATEWAY_FEE_RATE + GATEWAY_FEE_FLAT;
+  const totalDue = invoice.amount_due + fee;
+
+  const handlePay = async () => {
     setProcessing(true);
-
+    setError(null);
     try {
-      await onPaymentComplete(invoice.id);
-      setPaid(true);
-
-      // Trigger Confetti
-      confetti({
-        particleCount: 120,
-        spread: 80,
-        origin: { y: 0.6 },
-        colors: ['#2563eb', '#10b981', '#f59e0b', '#6366f1'],
-      });
-    } catch (err) {
-      console.error(err);
+      const session = await createInvoicePaymentSession(invoiceId, paymentMethod);
+      if (session.url) {
+        // Real provider checkout (card, PayPal, wallets, bank transfers).
+        window.location.href = session.url;
+        return;
+      }
+      setError('Checkout session created but no redirect URL was returned.');
+    } catch (err: any) {
+      setError(err.message || 'Payment provider failure. Please try another method.');
     } finally {
       setProcessing(false);
     }
@@ -64,55 +97,76 @@ export function PublicPaymentPortal({
     setTimeout(() => setCopiedLink(false), 2000);
   };
 
-  const handlePrint = () => {
-    window.print();
+  const handlePrint = () => window.print();
+  const handleConfetti = () => {
+    confetti({
+      particleCount: 120,
+      spread: 80,
+      origin: { y: 0.6 },
+      colors: ['#E58233', '#F97316', '#F4A460', '#FBBF24'],
+    });
   };
 
+  const methods: { id: PaymentMethod; label: string; hint: string; icon: React.ElementType }[] = [
+    { id: 'card', label: 'Credit / Debit Card', hint: 'Visa, Mastercard, Amex, Apple Pay & Google Pay', icon: CreditCard },
+    { id: 'paypal', label: 'PayPal', hint: 'Pay with your PayPal balance or linked card', icon: Wallet },
+    { id: 'bank', label: 'Bank Transfer / ACH', hint: 'SEPA, iDEAL and US bank debits', icon: Landmark },
+    { id: 'wallet', label: 'Wallets & Local', hint: 'Apple Pay, Google Pay, Klarna and more', icon: Banknote },
+  ];
+
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col justify-between py-8 px-4 sm:px-6 transition-colors">
+    <div className="min-h-screen bg-main dark:bg-main text-ink dark:text-ink flex flex-col justify-between py-8 px-4 sm:px-6 transition-colors">
       <div className="max-w-2xl mx-auto w-full space-y-6">
-        {/* Navigation back option if viewing inside app */}
         {onBackToApp && (
           <div className="flex justify-between items-center mb-2">
             <button
               onClick={onBackToApp}
-              className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1"
+              className="text-xs font-bold text-primary dark:text-secondary hover:underline flex items-center gap-1"
             >
               ← Return to RecoverFlow Dashboard
             </button>
-            <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300">
-              Client Portal Preview
+            <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-primary-soft text-primary dark:bg-surface2 dark:text-secondary">
+              Client Portal
             </span>
           </div>
         )}
 
         {/* Agency Brand Header */}
-        <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between">
+        <div className="p-6 rounded-3xl bg-white dark:bg-surface border border-line dark:border-line shadow-sm flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white font-black text-xl flex items-center justify-center shadow-md">
-              {agencyProfile.company_name?.charAt(0) || 'A'}
-            </div>
+            {agencyProfile.logo_url ? (
+              <img
+                src={agencyProfile.logo_url}
+                alt={agencyProfile.company_name || 'Agency'}
+                className="w-12 h-12 rounded-2xl object-cover border border-line dark:border-line"
+              />
+            ) : (
+              <div
+                className="w-12 h-12 rounded-2xl text-white font-black text-xl flex items-center justify-center shadow-md"
+                style={{ backgroundColor: agencyProfile.brand_color || '#E58233' }}
+              >
+                {agencyProfile.company_name?.charAt(0) || 'R'}
+              </div>
+            )}
             <div>
-              <h1 className="font-extrabold text-lg text-slate-900 dark:text-white">
-                {agencyProfile.company_name || 'Apex Digital Agency'}
+              <h1 className="font-extrabold text-lg text-ink dark:text-white">
+                {agencyProfile.company_name || 'Client Billing'}
               </h1>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Official Client Payment Portal
-              </p>
+              <p className="text-xs text-ink2 dark:text-ink2">Official Client Payment Portal</p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
             <button
               onClick={handlePrint}
-              className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold transition-colors"
+              className="p-2 rounded-xl bg-surface2 dark:bg-surface2 hover:bg-line dark:hover:bg-surface2 text-ink dark:text-ink2 text-xs font-semibold transition-colors"
               title="Print / Save PDF Receipt"
             >
               <Printer className="w-4 h-4" />
             </button>
             <button
               onClick={handleCopyLink}
-              className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold transition-colors flex items-center gap-1.5"
+              className="p-2 rounded-xl bg-surface2 dark:bg-surface2 hover:bg-line dark:hover:bg-surface2 text-ink dark:text-ink2 text-xs font-semibold transition-colors flex items-center gap-1.5"
               title="Copy Direct Link"
             >
               {copiedLink ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
@@ -121,51 +175,41 @@ export function PublicPaymentPortal({
         </div>
 
         {/* Invoice Summary Card */}
-        <div className="p-6 sm:p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-lg space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-100 dark:border-slate-800">
+        <div className="p-6 sm:p-8 rounded-3xl bg-white dark:bg-surface border border-line dark:border-line shadow-lg space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-line dark:border-line">
             <div>
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                Invoice Reference
-              </span>
-              <h2 className="text-2xl font-black text-slate-900 dark:text-white mt-1">
-                {invoice.external_invoice_id}
-              </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Billed to: <span className="font-semibold text-slate-800 dark:text-slate-200">{invoice.client_name}</span> ({invoice.client_email})
+              <span className="text-xs font-bold text-ink3 uppercase tracking-wider">Invoice Reference</span>
+              <h2 className="text-2xl font-black text-ink dark:text-white mt-1">{invoice.external_invoice_id}</h2>
+              <p className="text-xs text-ink2 dark:text-ink2 mt-0.5">
+                Billed to: <span className="font-semibold text-ink dark:text-ink">{invoice.client_name}</span> ({invoice.client_email})
               </p>
             </div>
 
             <div className="text-left sm:text-right">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">
-                Total Amount Due
-              </span>
-              <p className="text-3xl font-black text-indigo-600 dark:text-indigo-400">
+              <span className="text-xs font-bold text-ink3 uppercase tracking-wider block">Total Amount Due</span>
+              <p className="text-3xl font-black text-primary dark:text-secondary">
                 ${invoice.amount_due.toLocaleString('en-US', { minimumFractionDigits: 2 })} {invoice.currency}
               </p>
               <span
                 className={`inline-block mt-1 text-[10px] font-bold uppercase px-2.5 py-0.5 rounded-full ${
-                  paid
+                  isPaid
                     ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
                     : 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
                 }`}
               >
-                {paid ? 'PAID & SETTLED' : `DUE: ${invoice.due_date}`}
+                {isPaid ? 'PAID & SETTLED' : `DUE: ${invoice.due_date}`}
               </span>
             </div>
           </div>
 
-          {/* Project Deliverable Description */}
-          <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 space-y-2">
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-              Project / Service Deliverable
-            </span>
-            <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+          <div className="p-4 rounded-2xl bg-main dark:bg-surface2/60 border border-line dark:border-line space-y-2">
+            <span className="text-[11px] font-bold text-ink3 uppercase tracking-wider">Project / Service Deliverable</span>
+            <p className="text-sm font-semibold text-ink dark:text-ink">
               {invoice.description || 'Professional Digital Agency Services'}
             </p>
           </div>
 
-          {/* Payment Section or Receipt */}
-          {paid ? (
+          {isPaid ? (
             <div className="p-6 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-center space-y-3">
               <div className="w-12 h-12 rounded-full bg-emerald-600 text-white flex items-center justify-center mx-auto shadow-lg shadow-emerald-600/30">
                 <CheckCircle2 className="w-7 h-7" />
@@ -174,140 +218,122 @@ export function PublicPaymentPortal({
                 Payment Successfully Completed!
               </h3>
               <p className="text-xs text-emerald-700 dark:text-emerald-300 max-w-md mx-auto">
-                Thank you! Your payment of ${invoice.amount_due.toFixed(2)} {invoice.currency} has been received and verified by {agencyProfile.company_name}. An official receipt was sent to {invoice.client_email}.
+                Thank you! Your payment of ${invoice.amount_due.toFixed(2)} {invoice.currency} has been received and verified by{' '}
+                {agencyProfile.company_name}. An official receipt was sent to {invoice.client_email}.
               </p>
             </div>
           ) : (
-            <form onSubmit={handlePay} className="space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-                <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                  <CreditCard className="w-4 h-4 text-indigo-600" />
-                  Select Payment Option
+            <div className="space-y-4">
+              <div className="flex items-center justify-between border-b border-line dark:border-line pb-3">
+                <h3 className="text-sm font-bold text-ink dark:text-white flex items-center gap-2">
+                  <CreditCard className="w-4 h-4 text-primary" />
+                  Select Payment Method
                 </h3>
-                <span className="text-xs text-slate-400 flex items-center gap-1 font-medium">
+                <span className="text-xs text-ink3 flex items-center gap-1 font-medium">
                   <Lock className="w-3 h-3 text-emerald-500" /> 256-Bit SSL Encrypted
                 </span>
               </div>
 
-              {/* Payment Method Toggle */}
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod('card')}
-                  className={`p-3 rounded-xl border text-xs font-bold transition-all text-center ${
-                    paymentMethod === 'card'
-                      ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300'
-                      : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
-                  }`}
-                >
-                  Credit Card (Stripe Instant)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod('bank')}
-                  className={`p-3 rounded-xl border text-xs font-bold transition-all text-center ${
-                    paymentMethod === 'bank'
-                      ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300'
-                      : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
-                  }`}
-                >
-                  ACH / Wire Transfer
-                </button>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {methods.map((m) => {
+                  const Icon = m.icon;
+                  const selected = paymentMethod === m.id;
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setPaymentMethod(m.id)}
+                      className={`p-3 rounded-xl border text-left transition-all ${
+                        selected
+                          ? 'border-accent bg-primary-soft dark:bg-surface2 ring-2 ring-accent/20'
+                          : 'border-line dark:border-line bg-main dark:bg-surface2 hover:border-primary'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <Icon className={`w-4 h-4 shrink-0 ${selected ? 'text-accent' : 'text-ink3'}`} />
+                        <span className="text-xs font-bold text-ink dark:text-white">{m.label}</span>
+                      </div>
+                      <p className="text-[10px] text-ink2 mt-1 leading-relaxed">{m.hint}</p>
+                    </button>
+                  );
+                })}
               </div>
 
-              {paymentMethod === 'card' ? (
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                      Cardholder Name
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={cardName}
-                      onChange={(e) => setCardName(e.target.value)}
-                      placeholder="e.g. Sarah Connor"
-                      className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                      Card Number
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={cardNumber}
-                      onChange={(e) => setCardNumber(e.target.value)}
-                      placeholder="4242 •••• •••• 4242"
-                      className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-mono text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                        Expiry Date
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={expiry}
-                        onChange={(e) => setExpiry(e.target.value)}
-                        placeholder="MM / YY"
-                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-mono text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                        CVC Security Code
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={cvc}
-                        onChange={(e) => setCvc(e.target.value)}
-                        placeholder="123"
-                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-mono text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
-                      />
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-800 text-xs space-y-2">
-                  <p className="font-bold text-slate-900 dark:text-white">Agency Bank Transfer Wire Instructions:</p>
-                  <p className="text-slate-500 font-mono">Bank Name: Silicon Valley Bank / First Republic</p>
-                  <p className="text-slate-500 font-mono">Account Name: Apex Digital Agency Inc.</p>
-                  <p className="text-slate-500 font-mono">Routing #: 121141822 | Account #: 9920182741</p>
-                  <p className="text-slate-400 text-[11px]">Include Invoice #{invoice.external_invoice_id} as payment memo.</p>
+              {testMode && (
+                <div className="p-3 rounded-xl bg-surface2 dark:bg-surface2/50 border border-line dark:border-line text-[11px] text-ink2 space-y-1">
+                  <p className="font-bold text-ink flex items-center gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 text-warn" /> Test mode is active on this portal
+                  </p>
+                  <p>Test cards: <span className="font-mono text-ink">4242 4242 4242 4242</span> (succeeds) ·{' '}
+                    <span className="font-mono text-ink">4000 0000 0000 0002</span> (declined) ·{' '}
+                    <span className="font-mono text-ink">4000 0000 0000 3155</span> (3DS).</p>
+                  <p>Test bank: routing <span className="font-mono text-ink">110000000</span>, account <span className="font-mono text-ink">000123456789</span>.</p>
+                  <button
+                    type="button"
+                    onClick={() => setShowTestCards(!showTestCards)}
+                    className="text-primary font-semibold hover:underline"
+                  >
+                    {showTestCards ? 'Hide' : 'Show more'} test credentials
+                  </button>
+                  {showTestCards && (
+                    <ul className="list-disc pl-4 space-y-0.5">
+                      <li>PayPal sandbox: paypal-test@example.com</li>
+                      <li>iDEAL/SEPA: use bank details shown at checkout</li>
+                      <li>3DS challenge: any test OTP works (e.g. 1234)</li>
+                    </ul>
+                  )}
                 </div>
               )}
 
+              {error && (
+                <div className="p-3 rounded-xl bg-red-50 dark:bg-red-950/60 border border-red-200 dark:border-red-800 text-xs text-red-800 dark:text-red-300 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>{error}</span>
+                </div>
+              )}
+
+              <div className="p-3 rounded-xl bg-surface2 dark:bg-surface2/50 border border-line dark:border-line flex items-start gap-2">
+                <Info className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
+                <p className="text-[11px] text-ink2 dark:text-ink2 leading-relaxed">
+                  A processing fee of <span className="font-bold text-ink dark:text-white">${fee.toFixed(2)}</span>{' '}
+                  (2.9% + $0.30, charged by the payment provider) is added to your invoice total of{' '}
+                  <span className="font-bold text-ink dark:text-white">${invoice.amount_due.toFixed(2)}</span>, for a{' '}
+                  <span className="font-bold text-ink dark:text-white">total of ${totalDue.toFixed(2)}</span>. No hidden fees — ever.
+                </p>
+              </div>
+
               <button
-                type="submit"
+                type="button"
+                onClick={handlePay}
                 disabled={processing}
-                className="w-full py-3.5 px-4 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-sm transition-all shadow-xl shadow-indigo-600/30 flex items-center justify-center gap-2"
+                className="w-full py-3.5 px-4 rounded-2xl bg-accent hover:bg-accent-hover text-white font-extrabold text-sm transition-all shadow-xl shadow-accent/30 flex items-center justify-center gap-2"
               >
                 {processing ? (
-                  <span>Processing SSL Payment...</span>
+                  <span>Contacting secure payment provider...</span>
                 ) : (
                   <>
-                    <span>Pay ${invoice.amount_due.toFixed(2)} {invoice.currency} Now</span>
+                    <span>Pay ${totalDue.toFixed(2)} {invoice.currency} Securely</span>
                     <ArrowRight className="w-4 h-4" />
                   </>
                 )}
               </button>
-            </form>
+            </div>
           )}
         </div>
 
-        {/* Footer */}
-        <div className="text-center text-xs text-slate-400">
-          Powered by <span className="font-bold text-slate-700 dark:text-slate-300">RecoverFlow SaaS</span> • B2B Payment Portal
+        <div className="text-center text-xs text-ink3">
+          Powered by <span className="font-bold text-ink dark:text-ink2">RecoverFlow SaaS</span> • Stripe & Lemon Squeezy payment rails
         </div>
       </div>
+      {isPaid && <ConfettiFn trigger={handleConfetti} />}
     </div>
   );
+}
+
+function ConfettiFn({ trigger }: { trigger: () => void }) {
+  React.useEffect(() => {
+    const t = setTimeout(trigger, 400);
+    return () => clearTimeout(t);
+  }, [trigger]);
+  return null;
 }

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   fetchUserProfile,
   fetchInvoices,
@@ -13,14 +13,24 @@ import {
   syncStripeInvoices,
   saveSequence,
   triggerManualReminder,
-  toggleIntegration,
-  changeSubscriptionTier,
   saveCustomEmailTemplate,
   deleteCustomEmailTemplate,
   sendCustomEmailToInvoice,
-  generateAiCustomEmail
+  generateAiCustomEmail,
+  fetchUsage,
+  recordUsage,
+  fetchSchedulingPrefs,
+  saveSchedulingPrefs,
+  fetchAppConnectors,
+  connectApp,
+  disconnectApp,
+  logoutUser,
+  fetchPortalInvoice,
+  createPlanCheckout,
+  applyPlanTier,
+  PlanGateError,
 } from './lib/storage';
-import { UserProfile, Invoice, Sequence, ReminderLog, Integration, SubscriptionTier, CustomEmailTemplate } from './types';
+import { UserProfile, Invoice, Sequence, ReminderLog, Integration, CustomEmailTemplate, UsageStats, SchedulingPrefs, AppConnectorInfo } from './types';
 import { Navbar } from './components/Navbar';
 import { Sidebar, NavigationTab } from './components/Sidebar';
 import { DashboardOverview } from './components/DashboardOverview';
@@ -29,114 +39,209 @@ import { SequenceBuilder } from './components/SequenceBuilder';
 import { CustomEmailTemplates } from './components/CustomEmailTemplates';
 import { ReminderLogs } from './components/ReminderLogs';
 import { PublicPaymentPortal } from './components/PublicPaymentPortal';
-import { OpExCalculator } from './components/OpExCalculator';
-import { SqlSchemaViewer } from './components/SqlSchemaViewer';
 import { SettingsBilling } from './components/SettingsBilling';
-import { AuthModal } from './components/AuthModal';
+import { Connectors } from './components/Connectors';
+import { HelpPage } from './components/HelpPage';
+import { ChangePasswordModal } from './components/ChangePasswordModal';
 import { AiSequenceModal } from './components/AiSequenceModal';
 import { HomePage } from './components/HomePage';
 import { AuthPage } from './components/AuthPage';
-import { INITIAL_USER_PROFILE } from './data/initialData';
+import { PlanSelection } from './components/PlanSelection';
 import { CheckCircle2 } from 'lucide-react';
 
+const TAB_TO_PATH: Record<NavigationTab, string> = {
+  dashboard: '/app/overview',
+  invoices: '/app/invoices',
+  sequence: '/app/sequences',
+  templates: '/app/templates',
+  activity: '/app/activity',
+  connectors: '/app/connectors',
+  settings: '/app/settings',
+  help: '/app/help',
+};
+
+const PATH_TO_TAB: Record<string, NavigationTab> = {
+  '/app/overview': 'dashboard',
+  '/app/invoices': 'invoices',
+  '/app/sequences': 'sequence',
+  '/app/templates': 'templates',
+  '/app/activity': 'activity',
+  '/app/connectors': 'connectors',
+  '/app/settings': 'settings',
+  '/app/help': 'help',
+};
+
+type Route =
+  | { name: 'home' }
+  | { name: 'signin' }
+  | { name: 'signup' }
+  | { name: 'app'; tab: NavigationTab }
+  | { name: 'pay'; invoiceId: string };
+
+function routeFromPath(path: string): Route {
+  if (path.startsWith('/pay/')) {
+    const id = path.replace(/^\/pay\//, '');
+    if (id) return { name: 'pay', invoiceId: decodeURIComponent(id) };
+  }
+  if (path === '/signin') return { name: 'signin' };
+  if (path === '/signup') return { name: 'signup' };
+  const tab = PATH_TO_TAB[path];
+  if (tab) return { name: 'app', tab };
+  return { name: 'home' };
+}
+
+let pathToRouteCache = routeFromPath(window.location.pathname);
+
+export function navigate(path: string): void {
+  if (window.location.pathname !== path) {
+    window.history.pushState({}, '', path);
+  }
+  window.dispatchEvent(new Event('rf:route'));
+}
+
 export default function App() {
-  const [user, setUser] = useState<UserProfile>(INITIAL_USER_PROFILE);
+  const [route, setRoute] = useState<Route>(() => routeFromPath(window.location.pathname));
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [portalInvoice, setPortalInvoice] = useState<Invoice | null>(null);
+  const [portalAgency, setPortalAgency] = useState<{ company_name: string; logo_url?: string; brand_color?: string } | null>(null);
+  const [portalTestMode, setPortalTestMode] = useState(false);
+
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [sequences, setSequences] = useState<Sequence[]>([]);
   const [logs, setLogs] = useState<ReminderLog[]>([]);
   const [integrations, setIntegrations] = useState<Integration[]>([]);
   const [customTemplates, setCustomTemplates] = useState<CustomEmailTemplate[]>([]);
+  const [usage, setUsage] = useState<UsageStats | null>(null);
+  const [scheduling, setScheduling] = useState<SchedulingPrefs | null>(null);
+  const [connectors, setConnectors] = useState<AppConnectorInfo[]>([]);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
 
-  // Authentication & Public View States
-  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
-  const [authPageMode, setAuthPageMode] = useState<'home' | 'signin' | 'signup'>('home');
-
-  const [activeTab, setActiveTab] = useState<NavigationTab>('dashboard');
-  const [publicPortalInvoiceId, setPublicPortalInvoiceId] = useState<string | null>(null);
-
-  const [authModal, setAuthModal] = useState<{ isOpen: boolean; mode: 'signin' | 'signup' | 'forgot' | 'change_pass' }>({
-    isOpen: false,
-    mode: 'signin',
-  });
-
+  const [changePassOpen, setChangePassOpen] = useState(false);
   const [aiModalOpen, setAiModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Check URL pathname for direct public payment portal link e.g. /pay/inv_101
-  useEffect(() => {
-    const path = window.location.pathname;
-    if (path.startsWith('/pay/')) {
-      const invId = path.replace('/pay/', '');
-      if (invId) setPublicPortalInvoiceId(invId);
-    }
-  }, []);
-
-  // Initial Data Load
-  useEffect(() => {
-    async function loadAll() {
-      try {
-        const u = await fetchUserProfile();
-        setUser(u);
-
-        const invs = await fetchInvoices();
-        setInvoices(invs);
-
-        const seqs = await fetchSequences();
-        setSequences(seqs);
-
-        const lgs = await fetchReminderLogs();
-        setLogs(lgs);
-
-        const ints = await fetchIntegrations();
-        setIntegrations(ints);
-
-        const tmpls = await fetchCustomEmailTemplates();
-        setCustomTemplates(tmpls);
-      } catch (err) {
-        console.error('Data loading error:', err);
-      }
-    }
-    loadAll();
-  }, []);
-
-  const showToast = (msg: string) => {
+  const showToast = useCallback((msg: string) => {
     setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3500);
+    setTimeout(() => setToastMessage(null), 4000);
+  }, []);
+
+  const handleGateError = useCallback(
+    (err: any) => {
+      if (err instanceof PlanGateError) {
+        showToast(err.message);
+        if (err.code === 'PLAN_REQUIRED') navigate('/app/settings');
+        return true;
+      }
+      return false;
+    },
+    [showToast]
+  );
+
+  // Synchronize route from popstate / programmatic navigation
+  useEffect(() => {
+    const sync = () => setRoute(routeFromPath(window.location.pathname));
+    window.addEventListener('popstate', sync);
+    window.addEventListener('rf:route', sync);
+    return () => {
+      window.removeEventListener('popstate', sync);
+      window.removeEventListener('rf:route', sync);
+    };
+  }, []);
+
+  // Public payment portal data (no session needed)
+  useEffect(() => {
+    if (route.name !== 'pay') return;
+    let cancelled = false;
+    setPortalInvoice(null);
+    (async () => {
+      try {
+        const data = await fetchPortalInvoice(route.invoiceId);
+        if (cancelled) return;
+        setPortalInvoice(data.invoice);
+        setPortalAgency(data.agency);
+        setPortalTestMode(data.testMode);
+      } catch {
+        if (!cancelled) showToast('Invoice not found.');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [route, showToast]);
+
+  // Session + protected data load
+  useEffect(() => {
+    if (route.name === 'pay') return;
+    let cancelled = false;
+    (async () => {
+      const profile = await fetchUserProfile();
+      if (cancelled) return;
+      if (!profile) {
+        setAuthChecked(true);
+        setIsLoggedIn(false);
+        setUser(null);
+        setInvoices([]);
+        return;
+      }
+      setUser(profile);
+      setIsLoggedIn(true);
+      setAuthChecked(true);
+      if (profile.subscription_status === 'active' && profile.subscription_tier) {
+        try {
+          const [invs, seqs, lgs, ints, tmpls, usg, sch, conns] = await Promise.all([
+            fetchInvoices(),
+            fetchSequences(),
+            fetchReminderLogs(),
+            fetchIntegrations(),
+            fetchCustomEmailTemplates(),
+            fetchUsage(),
+            fetchSchedulingPrefs(),
+            fetchAppConnectors(),
+          ]);
+          if (cancelled) return;
+          setInvoices(invs);
+          setSequences(seqs);
+          setLogs(lgs);
+          setIntegrations(ints);
+          setCustomTemplates(tmpls);
+          setUsage(usg);
+          setScheduling(sch);
+          setConnectors(conns);
+        } catch (err) {
+          if (!cancelled && err instanceof PlanGateError) showToast(err.message);
+          else console.error('Data loading error:', err);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [route.name, isLoggedIn, showToast]);
+
+  const handleLogout = async () => {
+    await logoutUser();
+    setIsLoggedIn(false);
+    setUser(null);
+    setInvoices([]);
+    navigate('/');
+    showToast('Signed out of your session.');
   };
 
-  // Custom Email Handlers
-  const handleSaveCustomEmailTemplate = async (tmplData: Partial<CustomEmailTemplate>) => {
-    await saveCustomEmailTemplate(tmplData);
-    const updated = await fetchCustomEmailTemplates();
-    setCustomTemplates(updated);
-    showToast(`Custom email template "${tmplData.title || 'Template'}" saved!`);
+  const handleAuthSuccess = (u: UserProfile) => {
+    setUser(u);
+    setIsLoggedIn(true);
+    setAuthChecked(true);
+    setInvoices([]);
+    navigate('/app/overview');
+    showToast(`Welcome to RecoverFlow, ${u.company_name}!`);
   };
 
-  const handleDeleteCustomEmailTemplate = async (id: string) => {
-    const updated = await deleteCustomEmailTemplate(id);
-    setCustomTemplates(updated);
-    showToast('Custom email template deleted.');
-  };
-
-  const handleSendCustomEmail = async (tmpl: CustomEmailTemplate, inv: Invoice) => {
-    const log = await sendCustomEmailToInvoice(tmpl, inv);
-    const updatedLogs = await fetchReminderLogs();
-    const updatedInvs = await fetchInvoices();
-    setLogs(updatedLogs);
-    setInvoices(updatedInvs);
-    showToast(`Transmitted custom email "${tmpl.title}" to ${inv.client_name}!`);
-  };
-
-  const handleGenerateAiEmail = async (prompt: string, tone: string, senderName: string, senderEmail: string) => {
-    return await generateAiCustomEmail(prompt, tone, senderName, senderEmail);
-  };
-
-  // Handlers
   const handleSaveInvoice = async (invData: Partial<Invoice>) => {
     const saved = await saveInvoice(invData);
     const updated = await fetchInvoices();
     setInvoices(updated);
-    showToast(`Invoice ${saved.external_invoice_id} saved & sequence attached.`);
+    showToast(`Invoice ${saved.external_invoice_id} saved & recovery flow attached.`);
     return saved;
   };
 
@@ -144,11 +249,13 @@ export default function App() {
     const target = await toggleInvoiceSequencePause(id);
     const updated = await fetchInvoices();
     setInvoices(updated);
-    showToast(`Sequence ${target.sequence_paused ? 'paused' : 'resumed'} for invoice.`);
+    showToast(`Recovery ${target.sequence_paused ? 'paused' : 'resumed'} for invoice.`);
   };
 
   const handleTriggerManualReminder = async (id: string) => {
     const newLog = await triggerManualReminder(id);
+    const updatedUsage = await fetchUsage();
+    setUsage(updatedUsage);
     const updatedLogs = await fetchReminderLogs();
     const updatedInvs = await fetchInvoices();
     setLogs(updatedLogs);
@@ -156,121 +263,185 @@ export default function App() {
     showToast(`Reminder sent for ${newLog.invoice_number} via ${newLog.channel.toUpperCase()}`);
   };
 
-  const handleSyncStripe = async () => {
+  const handleSyncInvoices = async () => {
     const updated = await syncStripeInvoices();
     setInvoices(updated);
-    showToast('Stripe Connect invoices auto-synced successfully!');
+    showToast('Invoices synced from your connected accounting app!');
   };
 
-  const handleTriggerQStash = async () => {
+  const handleRunAutomation = async () => {
     try {
       const res = await fetch('/api/cron/process-reminders', { method: 'POST' });
-      if (res.ok) {
-        const data = await res.json();
-        const updatedLogs = await fetchReminderLogs();
-        const updatedInvs = await fetchInvoices();
-        setLogs(updatedLogs);
-        setInvoices(updatedInvs);
-        showToast(`QStash Worker Executed: Processed ${data.processed_count} invoice steps!`);
-      }
-    } catch (e) {
-      showToast('QStash Cron Triggered!');
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Automation run failed.');
+      const updatedLogs = await fetchReminderLogs();
+      const updatedInvs = await fetchInvoices();
+      setLogs(updatedLogs);
+      setInvoices(updatedInvs);
+      showToast(`Automation run complete: processed ${data.processed_count} reminder step(s)!`);
+    } catch (e: any) {
+      showToast(e.message || 'Automation run triggered!');
     }
   };
 
   const handlePaymentComplete = async (invoiceId: string) => {
-    await payInvoice(invoiceId);
+    const paid = await payInvoice(invoiceId);
+    const updatedUsage = await fetchUsage();
+    setUsage(updatedUsage);
     const updatedInvs = await fetchInvoices();
     const updatedLogs = await fetchReminderLogs();
     setInvoices(updatedInvs);
     setLogs(updatedLogs);
-    showToast('Invoice payment completed & verified!');
+    showToast(`Payment received for invoice ${paid.external_invoice_id} — thank you!`);
   };
 
   const handleSaveSequence = async (seq: Sequence) => {
     await saveSequence(seq);
     const updated = await fetchSequences();
     setSequences(updated);
-    showToast(`Sequence workflow "${seq.name}" saved!`);
+    showToast(`Recovery flow "${seq.name}" saved!`);
   };
 
-  const handleToggleIntegration = async (provider: string) => {
-    const updated = await toggleIntegration(provider);
-    setIntegrations(updated);
-    showToast(`${provider.toUpperCase()} integration updated.`);
+  const handleSaveCustomEmailTemplate = async (tmplData: Partial<CustomEmailTemplate>) => {
+    await saveCustomEmailTemplate(tmplData);
+    const updated = await fetchCustomEmailTemplates();
+    setCustomTemplates(updated);
+    showToast(`Email template "${tmplData.title || 'Template'}" saved!`);
   };
 
-  const handleChangeTier = async (tier: SubscriptionTier) => {
-    const updatedProfile = await changeSubscriptionTier(tier);
-    setUser(updatedProfile);
-    showToast(`Subscription plan updated to ${tier.toUpperCase()} via Lemon Squeezy.`);
+  const handleDeleteCustomEmailTemplate = async (id: string) => {
+    const updated = await deleteCustomEmailTemplate(id);
+    setCustomTemplates(updated);
+    showToast('Email template deleted.');
+  };
+
+  const handleSendCustomEmail = async (tmpl: CustomEmailTemplate, inv: Invoice) => {
+    await sendCustomEmailToInvoice(tmpl, inv);
+    await recordUsage({ emails_sent: 1, reminders_delivered: 1 });
+    const updatedUsage = await fetchUsage();
+    setUsage(updatedUsage);
+    const updatedLogs = await fetchReminderLogs();
+    const updatedInvs = await fetchInvoices();
+    setLogs(updatedLogs);
+    setInvoices(updatedInvs);
+    showToast(`Sent "${tmpl.title}" to ${inv.client_name}!`);
+  };
+
+  const handleGenerateAiEmail = async (prompt: string, tone: string, senderName: string, senderEmail: string) => {
+    return await generateAiCustomEmail(prompt, tone, senderName, senderEmail);
   };
 
   const handleApplyAiSteps = (newSteps: any[]) => {
     if (sequences.length > 0) {
-      const active = { ...sequences[0], steps: newSteps };
-      handleSaveSequence(active);
-      showToast('Gemini AI sequence copy applied to workflow builder!');
+      handleSaveSequence({ ...sequences[0], steps: newSteps });
+      showToast('AI-generated sequence applied to your recovery flow!');
     }
   };
 
-  // Render Public Portal route if active
-  if (publicPortalInvoiceId) {
-    const targetInvoice = invoices.find((i) => i.id === publicPortalInvoiceId || i.external_invoice_id === publicPortalInvoiceId) || invoices[0];
+  const handleConnectApp = async (provider: string) => {
+    const result = await connectApp(provider);
+    if (result.oauth_url) {
+      window.location.href = result.oauth_url;
+      return;
+    }
+    showToast(`${provider} connected!`);
+  };
+
+  const handleDisconnectApp = async (provider: string) => {
+    await disconnectApp(provider);
+    const ints = await fetchAppConnectors();
+    setConnectors(ints);
+    showToast(`${provider} disconnected.`);
+  };
+
+  // --- Public payment portal route ---
+  if (route.name === 'pay') {
     return (
       <PublicPaymentPortal
-        invoice={targetInvoice}
-        agencyProfile={user}
-        onPaymentComplete={handlePaymentComplete}
-        onBackToApp={() => {
-          setPublicPortalInvoiceId(null);
-          window.history.pushState({}, '', '/');
+        invoice={portalInvoice}
+        agencyProfile={
+          portalAgency
+            ? { company_name: portalAgency.company_name, logo_url: portalAgency.logo_url, brand_color: portalAgency.brand_color }
+            : { company_name: 'Client Billing' }
+        }
+        testMode={portalTestMode}
+        invoiceId={route.invoiceId}
+        onPaymentComplete={async () => {
+          if (portalInvoice) await handlePaymentComplete(portalInvoice.id);
+          else {
+            const data = await fetchPortalInvoice(route.invoiceId);
+            setPortalInvoice(data.invoice);
+          }
         }}
+        onBackToApp={() => navigate('/')}
       />
     );
   }
 
-  // Unauthenticated View Flow (Landing Page / Dedicated Auth Page)
+  // --- Unauthenticated routes ---
   if (!isLoggedIn) {
-    if (authPageMode === 'signin' || authPageMode === 'signup') {
+    if (route.name === 'signin' || route.name === 'signup') {
       return (
         <AuthPage
-          initialMode={authPageMode}
-          onSuccess={(u) => {
-            setUser(u);
-            setIsLoggedIn(true);
-            setAuthPageMode('home');
-            showToast(`Welcome back to RexoFlow, ${u.company_name}!`);
-          }}
-          onBackToHome={() => setAuthPageMode('home')}
+          initialMode={route.name}
+          onSuccess={handleAuthSuccess}
+          onBackToHome={() => navigate('/')}
         />
       );
     }
 
     return (
-      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors">
-        {/* Toast Notification */}
-        {toastMessage && (
-          <div className="fixed bottom-6 right-6 z-50 p-4 rounded-2xl bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-2xl flex items-center gap-3 text-xs font-bold animate-in slide-in-from-bottom-5 duration-200 border border-slate-800 dark:border-slate-200">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400 dark:text-emerald-600 shrink-0" />
-            <span>{toastMessage}</span>
-          </div>
-        )}
+      <div className="min-h-screen bg-main dark:bg-main text-ink dark:text-ink flex flex-col font-sans transition-colors">
+        {toastMessage && <Toast message={toastMessage} />}
+        <Navbar
+          user={null}
+          isLoggedIn={false}
+          onOpenAuth={(mode) => navigate(mode === 'signup' ? '/signup' : '/signin')}
+          onLogout={() => {}}
+          onNavigateToBilling={() => navigate('/app/settings')}
+          onNavigateHome={() => navigate('/')}
+        />
+        <HomePage
+          onOpenAuth={(mode) => navigate(mode === 'signup' ? '/signup' : '/signin')}
+          onGoogleSignIn={() => navigate('/api/auth/google')}
+        />
+      </div>
+    );
+  }
 
+  // --- Logged in: plan gate (no free tier — an action requires a plan) ---
+  const needsPlan = !user?.subscription_tier || user.subscription_status !== 'active';
+  if (needsPlan) {
+    return (
+      <div className="min-h-screen bg-main dark:bg-main text-ink dark:text-ink flex flex-col font-sans transition-colors">
+        {toastMessage && <Toast message={toastMessage} />}
         <Navbar
           user={user}
-          isLoggedIn={false}
-          onOpenAuth={(mode) => setAuthPageMode(mode === 'signup' ? 'signup' : 'signin')}
-          onLogout={() => {}}
-          onNavigateToBilling={() => {}}
-          onNavigateHome={() => setAuthPageMode('home')}
+          isLoggedIn={true}
+          onOpenAuth={(mode) => {
+            if (mode === 'change_pass') setChangePassOpen(true);
+          }}
+          onLogout={handleLogout}
+          onNavigateToBilling={() => navigate('/app/settings')}
+          onNavigateHome={() => navigate('/app/overview')}
         />
-
-        <HomePage
-          onOpenAuth={(mode) => setAuthPageMode(mode)}
-          onDemoLogin={() => {
-            setIsLoggedIn(true);
-            showToast('Entered Demo Agency Dashboard!');
+        <PlanSelection
+          user={user}
+          onPlanChosen={async (tier) => {
+            try {
+              const checkout = await createPlanCheckout(tier);
+              window.open(checkout.url, '_blank');
+              showToast('Opening secure checkout with your payment provider...');
+            } catch (err: any) {
+              showToast(err.message);
+            }
+          }}
+          onRefreshStatus={async () => {
+            const profile = await fetchUserProfile();
+            if (profile) {
+              setUser(profile);
+              setIsLoggedIn(true);
+            }
           }}
         />
       </div>
@@ -278,50 +449,46 @@ export default function App() {
   }
 
   const unpaidCount = invoices.filter((i) => i.status === 'unpaid' || i.status === 'overdue').length;
+  const activeTab = route.name === 'app' ? route.tab : 'dashboard';
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors">
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 p-4 rounded-2xl bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-2xl flex items-center gap-3 text-xs font-bold animate-in slide-in-from-bottom-5 duration-200 border border-slate-800 dark:border-slate-200">
-          <CheckCircle2 className="w-4 h-4 text-emerald-400 dark:text-emerald-600 shrink-0" />
-          <span>{toastMessage}</span>
-        </div>
-      )}
+    <div className="min-h-screen bg-main dark:bg-main text-ink dark:text-ink flex flex-col font-sans transition-colors">
+      {toastMessage && <Toast message={toastMessage} />}
 
-      {/* Top Navbar */}
       <Navbar
         user={user}
         isLoggedIn={true}
-        onOpenAuth={(mode) => setAuthModal({ isOpen: true, mode })}
-        onLogout={() => {
-          setIsLoggedIn(false);
-          setAuthPageMode('home');
-          showToast('Signed out of agency session.');
+        onOpenAuth={(mode) => {
+          if (mode === 'change_pass') setChangePassOpen(true);
         }}
-        onNavigateToBilling={() => setActiveTab('settings')}
-        onNavigateHome={() => setActiveTab('dashboard')}
+        onLogout={handleLogout}
+        onNavigateToBilling={() => navigate('/app/settings')}
+        onNavigateHome={() => navigate('/app/overview')}
       />
 
-      {/* Main Container */}
       <div className="flex-1 max-w-7xl mx-auto w-full flex flex-col lg:flex-row">
-        {/* Left Sidebar */}
         <Sidebar
           activeTab={activeTab}
-          onTabChange={setActiveTab}
+          onTabChange={(tab) => navigate(TAB_TO_PATH[tab])}
           unpaidCount={unpaidCount}
+          user={user}
         />
 
-        {/* Center Content Stage */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 min-w-0">
           {activeTab === 'dashboard' && (
             <DashboardOverview
               invoices={invoices}
               sequences={sequences}
               logs={logs}
-              onNavigateTab={setActiveTab}
-              onSyncStripe={handleSyncStripe}
-              onTriggerQStash={handleTriggerQStash}
+              usage={usage}
+              user={user}
+              onNavigateTab={(tab) => navigate(TAB_TO_PATH[tab as NavigationTab])}
+              onSyncInvoices={() =>
+                handleSyncInvoices().catch((err) => {
+                  if (!handleGateError(err)) showToast(err.message);
+                })
+              }
+              onRunAutomation={handleRunAutomation}
             />
           )}
 
@@ -330,12 +497,25 @@ export default function App() {
               invoices={invoices}
               sequences={sequences}
               customTemplates={customTemplates}
-              onSaveInvoice={handleSaveInvoice}
-              onTogglePause={handleTogglePause}
-              onTriggerManualReminder={handleTriggerManualReminder}
-              onSendCustomEmail={handleSendCustomEmail}
-              onSyncStripe={handleSyncStripe}
-              onOpenPublicPortal={(id) => setPublicPortalInvoiceId(id)}
+              user={user}
+              onSaveInvoice={(d) => handleSaveInvoice(d).catch((err) => { if (!handleGateError(err)) showToast(err.message); })}
+              onTogglePause={(id) => handleTogglePause(id).catch((err) => { if (!handleGateError(err)) showToast(err.message); })}
+              onTriggerManualReminder={(id) =>
+                handleTriggerManualReminder(id).catch((err) => {
+                  if (!handleGateError(err)) showToast(err.message);
+                })
+              }
+              onSendCustomEmail={(t, i) =>
+                handleSendCustomEmail(t, i).catch((err) => {
+                  if (!handleGateError(err)) showToast(err.message);
+                })
+              }
+              onSyncStripe={() =>
+                handleSyncInvoices().catch((err) => {
+                  if (!handleGateError(err)) showToast(err.message);
+                })
+              }
+              onOpenPublicPortal={(id) => navigate(`/pay/${id}`)}
             />
           )}
 
@@ -347,91 +527,92 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'custom_emails' && (
+          {activeTab === 'templates' && (
             <CustomEmailTemplates
               templates={customTemplates}
               invoices={invoices}
               onSaveTemplate={handleSaveCustomEmailTemplate}
               onDeleteTemplate={handleDeleteCustomEmailTemplate}
-              onSendCustomEmail={handleSendCustomEmail}
+              onSendCustomEmail={(t, i) =>
+                handleSendCustomEmail(t, i).catch((err) => {
+                  if (!handleGateError(err)) showToast(err.message);
+                })
+              }
               onGenerateAiEmail={handleGenerateAiEmail}
             />
           )}
 
-          {activeTab === 'logs' && <ReminderLogs logs={logs} />}
+          {activeTab === 'activity' && <ReminderLogs logs={logs} />}
 
-          {activeTab === 'portals' && (
-            <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
-              <h2 className="text-xl font-bold text-slate-900 dark:text-white">Public Client Payment Portals</h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Select an invoice below to preview its public client payment page (`/pay/[invoice_id]`).
-              </p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-                {invoices.map((inv) => (
-                  <div
-                    key={inv.id}
-                    className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-800 flex items-center justify-between"
-                  >
-                    <div>
-                      <span className="font-bold text-sm text-slate-900 dark:text-white block">
-                        {inv.client_name} ({inv.external_invoice_id})
-                      </span>
-                      <span className="text-xs text-slate-500">
-                        ${inv.amount_due.toFixed(2)} {inv.currency}
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => setPublicPortalInvoiceId(inv.id)}
-                      className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-xs"
-                    >
-                      Open Public Portal
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
+          {activeTab === 'connectors' && (
+            <Connectors
+              connectors={connectors}
+              onConnect={(p) =>
+                handleConnectApp(p).catch((err) => {
+                  if (!handleGateError(err)) showToast(err.message);
+                })
+              }
+              onDisconnect={(p) =>
+                handleDisconnectApp(p).catch((err) => {
+                  if (!handleGateError(err)) showToast(err.message);
+                })
+              }
+            />
           )}
 
-          {activeTab === 'opex' && <OpExCalculator />}
-
-          {activeTab === 'sql' && <SqlSchemaViewer />}
+          {activeTab === 'help' && <HelpPage user={user} />}
 
           {activeTab === 'settings' && (
             <SettingsBilling
               user={user}
-              integrations={integrations}
+              usage={usage}
+              scheduling={scheduling}
               onUpdateProfile={async (updates) => {
                 const u = await updateUserProfile(updates);
                 setUser(u);
                 showToast('Profile updated!');
               }}
-              onToggleIntegration={handleToggleIntegration}
-              onChangeSubscriptionTier={handleChangeTier}
+              onPlanChange={(tier) => {
+                applyPlanTier(tier)
+                  .then(() => {
+                    showToast(`Plan switched — new limits apply immediately.`);
+                    return fetchUserProfile();
+                  })
+                  .then((u) => u && setUser(u))
+                  .catch((err) => showToast(err.message));
+              }}
+              onCheckoutPlan={async (tier) => {
+                const checkout = await createPlanCheckout(tier);
+                window.open(checkout.url, '_blank');
+              }}
+              onSaveScheduling={async (prefs) => {
+                const updated = await saveSchedulingPrefs(prefs);
+                setScheduling(updated);
+                showToast('Automation schedule saved.');
+              }}
+              onNavigateConnectors={() => navigate('/app/connectors')}
+              onToast={showToast}
             />
           )}
         </main>
       </div>
 
-      {/* Auth Modal (Password updates when logged in) */}
-      <AuthModal
-        isOpen={authModal.isOpen}
-        mode={authModal.mode}
-        onClose={() => setAuthModal({ ...authModal, isOpen: false })}
-        onSuccess={(u) => {
-          setUser(u);
-          showToast(`Welcome ${u.company_name}!`);
-        }}
-        onSwitchMode={(mode) => setAuthModal({ isOpen: true, mode })}
-      />
-
-      {/* Gemini AI Sequence Generator Modal */}
+      <ChangePasswordModal isOpen={changePassOpen} onClose={() => setChangePassOpen(false)} />
       <AiSequenceModal
         isOpen={aiModalOpen}
         onClose={() => setAiModalOpen(false)}
         onApplySteps={handleApplyAiSteps}
-        agencyName={user.company_name}
+        agencyName={user?.company_name || 'My Agency'}
       />
     </div>
   );
 }
 
+function Toast({ message }: { message: string }) {
+  return (
+    <div className="fixed bottom-6 right-6 z-50 p-4 rounded-2xl bg-primary-strong text-white dark:text-ink shadow-2xl flex items-center gap-3 text-xs font-bold animate-in slide-in-from-bottom-5 duration-200 border border-line dark:border-line">
+      <CheckCircle2 className="w-4 h-4 text-amber-300 dark:text-amber-400 shrink-0" />
+      <span>{message}</span>
+    </div>
+  );
+}

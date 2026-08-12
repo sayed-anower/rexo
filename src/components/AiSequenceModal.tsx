@@ -68,25 +68,25 @@ export function AiSequenceModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="relative w-full max-w-xl max-h-[80vh] overflow-y-auto rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 sm:p-8 shadow-2xl">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-primary-strong/60 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="relative w-full max-w-xl max-h-[80vh] overflow-y-auto rounded-3xl bg-white dark:bg-surface border border-line dark:border-line p-6 sm:p-8 shadow-2xl">
         <button
           onClick={onClose}
-          className="absolute top-5 right-5 p-2 rounded-full text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+          className="absolute top-5 right-5 p-2 rounded-full text-ink3 hover:bg-surface2 dark:hover:bg-surface2"
         >
           <X className="w-5 h-5" />
         </button>
 
         <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white flex items-center justify-center shadow-lg shadow-indigo-600/30">
+          <div className="w-10 h-10 rounded-2xl bg-gradient-to-r from-accent to-accent-hover text-white flex items-center justify-center shadow-lg shadow-accent/30">
             <Sparkles className="w-5 h-5" />
           </div>
           <div>
-            <h3 className="text-xl font-black text-slate-900 dark:text-white">
-              Gemini AI Sequence Generator
+            <h3 className="text-xl font-black text-ink dark:text-white">
+              AI Sequence Generator
             </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Draft high-converting B2B reminder copy tailored for your digital agency.
+            <p className="text-xs text-ink2 dark:text-ink2">
+              Draft high-converting B2B reminder copy tailored for your agency.
             </p>
           </div>
         </div>
@@ -94,7 +94,7 @@ export function AiSequenceModal({
         {!generatedSteps ? (
           <form onSubmit={handleGenerate} className="space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              <label className="block text-xs font-semibold text-ink dark:text-ink2 mb-1">
                 Sequence Tone Persona
               </label>
               <div className="grid grid-cols-3 gap-2">
@@ -105,8 +105,8 @@ export function AiSequenceModal({
                     onClick={() => setTone(t)}
                     className={`py-2 px-3 rounded-xl border text-xs font-bold capitalize transition-all ${
                       tone === t
-                        ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300'
-                        : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                        ? 'border-accent bg-primary-soft dark:bg-surface2 text-primary dark:text-secondary'
+                        : 'border-line dark:border-line bg-main dark:bg-surface2 text-ink2 dark:text-ink2'
                     }`}
                   >
                     {t}
@@ -116,7 +116,7 @@ export function AiSequenceModal({
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              <label className="block text-xs font-semibold text-ink dark:text-ink2 mb-1">
                 Client Industry / Account Type
               </label>
               <input
@@ -124,40 +124,40 @@ export function AiSequenceModal({
                 value={clientType}
                 onChange={(e) => setClientType(e.target.value)}
                 placeholder="e.g. SaaS Startup or E-Commerce Retainer"
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full px-3 py-2 rounded-xl border border-line dark:border-line bg-main dark:bg-surface2 text-xs text-ink dark:text-white outline-none focus:ring-2 focus:ring-accent"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              <label className="block text-xs font-semibold text-ink dark:text-ink2 mb-1">
                 Target Invoice Amount ($)
               </label>
               <input
                 type="number"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full px-3 py-2 rounded-xl border border-line dark:border-line bg-main dark:bg-surface2 text-xs text-ink dark:text-white outline-none focus:ring-2 focus:ring-accent"
               />
             </div>
 
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-xs transition-all shadow-md flex items-center justify-center gap-2"
+              className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-accent to-accent-hover hover:from-accent-hover hover:to-accent text-white font-bold text-xs transition-all shadow-md flex items-center justify-center gap-2"
             >
               {loading ? (
-                <span>Generating Sequence Copy with Gemini AI...</span>
+                <span>Generating sequence copy with AI...</span>
               ) : (
                 <>
                   <Wand2 className="w-4 h-4" />
-                  <span>Generate B2B Copy Sequence</span>
+                  <span>Generate Sequence Copy</span>
                 </>
               )}
             </button>
           </form>
         ) : (
           <div className="space-y-4">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-ink3">
               AI Generated Steps Preview
             </h4>
 
@@ -165,22 +165,22 @@ export function AiSequenceModal({
               {generatedSteps.map((step, i) => (
                 <div
                   key={step.id}
-                  className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-800 text-xs space-y-1"
+                  className="p-3.5 rounded-2xl bg-main dark:bg-surface2/60 border border-line dark:border-line text-xs space-y-1"
                 >
-                  <div className="flex justify-between font-bold text-slate-900 dark:text-white">
+                  <div className="flex justify-between font-bold text-ink dark:text-white">
                     <span>
                       Step {i + 1}: {step.title} ({step.channel.toUpperCase()})
                     </span>
-                    <span className="text-indigo-600 dark:text-indigo-400">
+                    <span className="text-primary dark:text-secondary">
                       Day {step.days_relative_to_due}
                     </span>
                   </div>
                   {step.template_subject && (
-                    <p className="font-semibold text-slate-700 dark:text-slate-300">
+                    <p className="font-semibold text-ink dark:text-ink2">
                       Subject: {step.template_subject}
                     </p>
                   )}
-                  <p className="text-slate-500 dark:text-slate-400 font-mono text-[11px] whitespace-pre-wrap">
+                  <p className="text-ink2 dark:text-ink2 font-mono text-[11px] whitespace-pre-wrap">
                     {step.template_body}
                   </p>
                 </div>
@@ -190,13 +190,13 @@ export function AiSequenceModal({
             <div className="flex gap-2">
               <button
                 onClick={() => setGeneratedSteps(null)}
-                className="w-1/2 py-2.5 px-3 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold"
+                className="w-1/2 py-2.5 px-3 rounded-xl border border-line dark:border-line text-ink dark:text-ink2 text-xs font-bold"
               >
                 Regenerate
               </button>
               <button
                 onClick={handleApply}
-                className="w-1/2 py-2.5 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-md flex items-center justify-center gap-1.5"
+                className="w-1/2 py-2.5 px-3 rounded-xl bg-accent hover:bg-accent-hover text-white text-xs font-bold shadow-md flex items-center justify-center gap-1.5"
               >
                 <span>Apply to Builder</span>
                 <ArrowRight className="w-4 h-4" />

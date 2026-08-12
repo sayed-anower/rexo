@@ -1,6 +1,6 @@
-# RexoFlow — Automated Payment Recovery & Invoice Reminders SaaS
+# RecoverFlow — Automated Payment Recovery & Invoice Reminders SaaS
 
-RexoFlow is a production-ready **Automated Payment Recovery & Invoice Reminders SaaS** engineered specifically for B2B Digital Agencies. It solves the cash flow problem caused by late-paying clients by automatically syncing open invoices from Stripe/QuickBooks and running multi-step escalation sequences across Email (Resend API) and WhatsApp (Whapi.cloud API).
+RecoverFlow is a production-ready **Automated Payment Recovery & Invoice Reminders SaaS** engineered specifically for B2B Digital Agencies. It solves the cash flow problem caused by late-paying clients by automatically syncing open invoices from Stripe/QuickBooks and running multi-step escalation sequences across Email (Resend API) and WhatsApp (Whapi.cloud API).
 
 ---
 
@@ -76,7 +76,7 @@ Monetization is handled via **Lemon Squeezy (Merchant of Record)** for recurring
 
 ## 4. Supabase SQL Database Migration Script
 
-You can copy and run the full SQL schema script in your Supabase SQL Editor:
+The canonical, fully commented migration lives at **`src/data/supabaseSchema.sql`** (it is also rendered in-app on the **Supabase SQL Schema** tab and copied by its "Copy Supabase Migration SQL" button). Run it in your Supabase SQL Editor:
 
 ```sql
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
@@ -88,7 +88,7 @@ CREATE TYPE invoice_status AS ENUM ('unpaid', 'paid', 'overdue', 'cancelled');
 CREATE TYPE channel_type AS ENUM ('email', 'whatsapp', 'sms');
 CREATE TYPE reminder_status AS ENUM ('queued', 'sent', 'failed', 'delivered');
 
--- 1. PROFILES TABLE
+-- 1. PROFILES TABLE (one row per agency, linked to auth.users, auto-created on signup)
 CREATE TABLE IF NOT EXISTS public.profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   company_name TEXT NOT NULL,
@@ -104,7 +104,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 2. INTEGRATIONS TABLE
+-- 2. INTEGRATIONS TABLE (Stripe / QuickBooks / Whapi / Resend; one row per user+provider)
 CREATE TABLE IF NOT EXISTS public.integrations (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
@@ -118,7 +118,7 @@ CREATE TABLE IF NOT EXISTS public.integrations (
   CONSTRAINT unique_user_provider UNIQUE(user_id, provider)
 );
 
--- 3. SEQUENCES TABLE
+-- 3. SEQUENCES TABLE (ordered escalation steps stored as JSONB)
 CREATE TABLE IF NOT EXISTS public.sequences (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
@@ -130,7 +130,7 @@ CREATE TABLE IF NOT EXISTS public.sequences (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 4. INVOICES TABLE
+-- 4. INVOICES TABLE (synced invoices + live sequence-progress state)
 CREATE TABLE IF NOT EXISTS public.invoices (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
@@ -154,7 +154,7 @@ CREATE TABLE IF NOT EXISTS public.invoices (
   CONSTRAINT unique_user_external_invoice UNIQUE(user_id, external_invoice_id)
 );
 
--- 5. REMINDER LOGS TABLE
+-- 5. REMINDER LOGS TABLE (append-only audit trail of every dispatch)
 CREATE TABLE IF NOT EXISTS public.reminder_logs (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   invoice_id UUID NOT NULL REFERENCES public.invoices(id) ON DELETE CASCADE,
@@ -169,18 +169,50 @@ CREATE TABLE IF NOT EXISTS public.reminder_logs (
   sent_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- RLS SECURITY POLICIES
+-- PERFORMANCE INDEXES (keep the daily QStash cron scan fast)
+CREATE INDEX IF NOT EXISTS idx_invoices_user_status ON public.invoices(user_id, status);
+CREATE INDEX IF NOT EXISTS idx_invoices_due_date ON public.invoices(due_date);
+CREATE INDEX IF NOT EXISTS idx_invoices_next_reminder ON public.invoices(next_reminder_due_at) WHERE status = 'unpaid' OR status = 'overdue';
+CREATE INDEX IF NOT EXISTS idx_reminder_logs_invoice ON public.reminder_logs(invoice_id);
+CREATE INDEX IF NOT EXISTS idx_sequences_user ON public.sequences(user_id);
+
+-- ROW-LEVEL SECURITY (RLS) POLICIES (deny-by-default until policies are added)
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.integrations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sequences ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.invoices ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.reminder_logs ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Users can manage own profile" ON public.profiles FOR ALL USING (auth.uid() = id);
+CREATE POLICY "Users can view own profile" ON public.profiles FOR SELECT USING (auth.uid() = id);
+CREATE POLICY "Users can update own profile" ON public.profiles FOR UPDATE USING (auth.uid() = id);
 CREATE POLICY "Users can manage own integrations" ON public.integrations FOR ALL USING (auth.uid() = user_id);
 CREATE POLICY "Users can manage own sequences" ON public.sequences FOR ALL USING (auth.uid() = user_id);
 CREATE POLICY "Users can manage own invoices" ON public.invoices FOR ALL USING (auth.uid() = user_id);
+-- Public (unauthenticated) READ only for the /pay/[invoice_id] portal.
 CREATE POLICY "Public can view invoice for payment portal" ON public.invoices FOR SELECT USING (TRUE);
+-- Reminder logs are readable only through a user's own invoices.
+CREATE POLICY "Users can view reminder logs for their invoices" ON public.reminder_logs FOR SELECT USING (
+  EXISTS (SELECT 1 FROM public.invoices WHERE invoices.id = reminder_logs.invoice_id AND invoices.user_id = auth.uid())
+);
+
+-- AUTO-CREATE A STARTER PROFILE WHENEVER A NEW AUTH USER SIGNS UP
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO public.profiles (id, company_name, subscription_tier, subscription_status)
+  VALUES (
+    NEW.id,
+    COALESCE(NEW.raw_user_meta_data->>'company_name', 'My Agency'),
+    'starter'::subscription_tier,
+    'active'::subscription_status
+  );
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE OR REPLACE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 ```
 
 ---
@@ -209,17 +241,21 @@ CREATE POLICY "Public can view invoice for payment portal" ON public.invoices FO
 
 ## 6. Financial & Operating Expense (OpEx) Summary Table
 
-Below is the monthly cost breakdown for scaling RexoFlow from **0 to 1,000 active agency subscriptions**:
+Below is the monthly cost breakdown for scaling RecoverFlow from **0 to 1,000 active agency subscriptions**:
 
 | Scale | Tracked Invoices | Emails Sent | WhatsApp Msgs | Resend Cost | Whapi Cost | QStash Cost | Supabase | Lemon Squeezy Fees | Total OpEx | Gross MRR | Net Profit | Gross Margin |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **0 Users** | 0 | 0 | 0 | $0 | $0 | $0 | $0 | $0 | **$0** | **$0** | **$0** | 0% |
-| **10 Users** | 250 | 600 | 200 | $20 | $35 | $15 | $25 | $35 | **$130** | **$590** | **$460** | **78.0%** |
-| **50 Users** | 1,250 | 3,000 | 1,000 | $20 | $35 | $15 | $25 | $173 | **$268** | **$2,950** | **$2,682** | **90.9%** |
+| **10 Users** | 250 | 600 | 200 | $20 | $35 | $15 | $25 | $35 | **$130** | **$590** | **$461** | **78.1%** |
+| **50 Users** | 1,250 | 3,000 | 1,000 | $20 | $35 | $15 | $25 | $173 | **$268** | **$2,950** | **$2,683** | **90.9%** |
 | **100 Users**| 2,500 | 6,000 | 2,000 | $20 | $35 | $15 | $25 | $345 | **$440** | **$5,900** | **$5,460** | **92.5%** |
-| **250 Users**| 6,250 | 15,000 | 5,000 | $20 | $75 | $15 | $25 | $868 | **$1,003**| **$14,750**| **$13,747**| **93.2%** |
-| **500 Users**| 12,500 | 30,000 | 10,000 | $20 | $150 | $15 | $75 | $1,735 | **$1,995**| **$29,500**| **$27,505**| **93.2%** |
+| **250 Users**| 6,250 | 15,000 | 5,000 | $20 | $75 | $15 | $25 | $863 | **$998**| **$14,750**| **$13,753**| **93.2%** |
+| **500 Users**| 12,500 | 30,000 | 10,000 | $20 | $150 | $50 | $75 | $1,725 | **$2,020**| **$29,500**| **$27,480**| **93.2%** |
 | **1,000 Users**|25,000| 60,000 | 20,000 | $30 | $300 | $50 | $75 | $3,450 | **$3,905**| **$59,000**| **$55,095**| **93.4%** |
+
+> The interactive **Financial & Operating Expense (OpEx) Model** in-app reproduces
+> this table live via `calculateOpExForUsers()` (src/lib/storage.ts). Values are
+> covered by automated unit tests in `tests/opex.test.ts`.
 
 ---
 

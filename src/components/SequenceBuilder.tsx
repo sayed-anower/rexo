@@ -76,13 +76,13 @@ export function SequenceBuilder({ sequences, onSaveSequence, onOpenAiModal }: Se
   return (
     <div className="space-y-6">
       {/* Header Banner */}
-      <div className="p-4 sm:p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="p-4 sm:p-6 rounded-3xl bg-white dark:bg-surface border border-line dark:border-line shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <GitBranch className="w-5 h-5 text-indigo-600 dark:text-indigo-400 shrink-0" />
-            <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white">Visual Sequence Builder</h2>
+            <GitBranch className="w-5 h-5 text-primary dark:text-secondary shrink-0" />
+            <h2 className="text-lg sm:text-xl font-bold text-ink dark:text-white">Visual Sequence Builder</h2>
           </div>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
+          <p className="text-xs text-ink2 dark:text-ink2">
             Customize automated multi-channel follow-up escalation rules for unpaid B2B invoices.
           </p>
         </div>
@@ -90,7 +90,7 @@ export function SequenceBuilder({ sequences, onSaveSequence, onOpenAiModal }: Se
         <div className="flex flex-wrap items-center gap-2.5">
           <button
             onClick={onOpenAiModal}
-            className="flex-1 sm:flex-initial px-3.5 py-2 rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-700 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-xs transition-all shadow-md flex items-center justify-center gap-2"
+            className="flex-1 sm:flex-initial px-3.5 py-2 rounded-xl bg-gradient-to-r from-accent via-accent to-accent-hover hover:from-accent-hover hover:to-accent text-white font-bold text-xs transition-all shadow-md flex items-center justify-center gap-2"
           >
             <Sparkles className="w-4 h-4 text-amber-300 animate-pulse shrink-0" />
             <span>Generate with AI</span>
@@ -110,8 +110,8 @@ export function SequenceBuilder({ sequences, onSaveSequence, onOpenAiModal }: Se
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* Sequence Selector List */}
         <div className="lg:col-span-1 space-y-3">
-          <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">
+          <div className="p-4 rounded-2xl bg-white dark:bg-surface border border-line dark:border-line">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-ink3 mb-3">
               Workflow Presets
             </h3>
             <div className="space-y-2">
@@ -121,19 +121,19 @@ export function SequenceBuilder({ sequences, onSaveSequence, onOpenAiModal }: Se
                   onClick={() => handleSequenceSelect(seq.id)}
                   className={`w-full text-left p-3 rounded-xl border text-xs font-semibold transition-all ${
                     selectedSequenceId === seq.id
-                      ? 'border-indigo-600 bg-indigo-50/80 dark:bg-indigo-950/60 text-indigo-900 dark:text-indigo-200 font-bold shadow-sm'
-                      : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                      ? 'border-accent bg-primary-soft dark:bg-surface2 text-primary dark:text-secondary font-bold shadow-sm'
+                      : 'border-line dark:border-line bg-main dark:bg-surface2/40 text-ink dark:text-ink2 hover:bg-surface2 dark:hover:bg-surface2'
                   }`}
                 >
                   <div className="flex items-center justify-between mb-1">
                     <span className="truncate">{seq.name}</span>
                     {seq.is_default && (
-                      <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-indigo-600 text-white">
+                      <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-accent text-white">
                         Default
                       </span>
                     )}
                   </div>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400 line-clamp-2 font-normal">
+                  <p className="text-[10px] text-ink2 dark:text-ink2 line-clamp-2 font-normal">
                     {seq.steps.length} escalation steps
                   </p>
                 </button>
@@ -142,15 +142,15 @@ export function SequenceBuilder({ sequences, onSaveSequence, onOpenAiModal }: Se
           </div>
 
           {/* Placeholders Guide */}
-          <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-400 space-y-2">
-            <div className="flex items-center gap-1.5 font-bold text-slate-900 dark:text-white">
-              <HelpCircle className="w-4 h-4 text-indigo-500" />
+          <div className="p-4 rounded-2xl bg-main dark:bg-surface2/60 border border-line dark:border-line text-xs text-ink2 dark:text-ink2 space-y-2">
+            <div className="flex items-center gap-1.5 font-bold text-ink dark:text-white">
+              <HelpCircle className="w-4 h-4 text-primary" />
               <span>Variable Placeholders</span>
             </div>
             <p className="text-[11px] leading-relaxed">
               Insert these tags into your email or WhatsApp message templates:
             </p>
-            <div className="space-y-1 font-mono text-[10px] text-indigo-600 dark:text-indigo-400">
+            <div className="space-y-1 font-mono text-[10px] text-primary dark:text-secondary">
               <div><code>&#123;&#123;client_name&#125;&#125;</code></div>
               <div><code>&#123;&#123;external_invoice_id&#125;&#125;</code></div>
               <div><code>&#123;&#123;amount_due&#125;&#125;</code></div>
@@ -162,20 +162,20 @@ export function SequenceBuilder({ sequences, onSaveSequence, onOpenAiModal }: Se
 
         {/* Step Timeline Editor */}
         <div className="lg:col-span-3 space-y-4">
-          <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="p-4 rounded-2xl bg-white dark:bg-surface border border-line dark:border-line flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex flex-col sm:flex-row sm:items-center gap-2 w-full sm:w-auto">
-              <span className="text-xs font-bold text-slate-400 shrink-0">Sequence Name:</span>
+              <span className="text-xs font-bold text-ink3 shrink-0">Sequence Name:</span>
               <input
                 type="text"
                 value={sequenceName}
                 onChange={(e) => setSequenceName(e.target.value)}
-                className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm font-bold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 w-full sm:w-64"
+                className="px-3 py-1.5 rounded-xl border border-line dark:border-line bg-main dark:bg-surface2 text-sm font-bold text-ink dark:text-white outline-none focus:ring-2 focus:ring-accent w-full sm:w-64"
               />
             </div>
 
             <button
               onClick={handleAddStep}
-              className="px-3.5 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 text-xs font-bold transition-all flex items-center justify-center gap-1.5 border border-indigo-200 dark:border-indigo-800 w-full sm:w-auto"
+              className="px-3.5 py-2 rounded-xl bg-primary-soft dark:bg-surface2 hover:bg-primary-soft text-primary dark:text-secondary text-xs font-bold transition-all flex items-center justify-center gap-1.5 border border-primary-soft dark:border-line w-full sm:w-auto"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Add Escalation Step</span>
@@ -187,16 +187,16 @@ export function SequenceBuilder({ sequences, onSaveSequence, onOpenAiModal }: Se
             {editingSteps.map((step, idx) => (
               <div
                 key={step.id}
-                className="relative p-4 sm:p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm transition-all hover:border-indigo-300 dark:hover:border-indigo-800"
+                className="relative p-4 sm:p-5 rounded-3xl bg-white dark:bg-surface border border-line dark:border-line shadow-sm transition-all hover:border-primary dark:hover:border-primary"
               >
                 {/* Step Connector Line */}
                 {idx < editingSteps.length - 1 && (
-                  <div className="hidden sm:block absolute left-8 bottom-0 translate-y-full h-4 w-0.5 bg-indigo-300 dark:bg-indigo-800 z-10" />
+                  <div className="hidden sm:block absolute left-8 bottom-0 translate-y-full h-4 w-0.5 bg-secondary dark:bg-line z-10" />
                 )}
 
-                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-4 pb-3 border-b border-line dark:border-line">
                   <div className="flex items-center gap-3">
-                    <div className="w-7 h-7 rounded-full bg-indigo-600 text-white font-black text-xs flex items-center justify-center shrink-0">
+                    <div className="w-7 h-7 rounded-full bg-accent text-white font-black text-xs flex items-center justify-center shrink-0">
                       {idx + 1}
                     </div>
                     <div className="min-w-0 flex-1">
@@ -204,15 +204,15 @@ export function SequenceBuilder({ sequences, onSaveSequence, onOpenAiModal }: Se
                         type="text"
                         value={step.title}
                         onChange={(e) => handleUpdateStep(step.id, { title: e.target.value })}
-                        className="font-bold text-slate-900 dark:text-white text-sm bg-transparent outline-none border-b border-dashed border-slate-300 dark:border-slate-700 focus:border-indigo-500 w-full"
+                        className="font-bold text-ink dark:text-white text-sm bg-transparent outline-none border-b border-dashed border-line dark:border-line focus:border-accent w-full"
                       />
                     </div>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
                     {/* Days trigger selector */}
-                    <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-300">
-                      <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <div className="flex items-center gap-1 bg-surface2 dark:bg-surface2 px-2.5 py-1 rounded-xl text-xs font-medium text-ink dark:text-ink2">
+                      <Clock className="w-3.5 h-3.5 text-ink3 shrink-0" />
                       <span>Trigger:</span>
                       <input
                         type="number"
@@ -220,20 +220,20 @@ export function SequenceBuilder({ sequences, onSaveSequence, onOpenAiModal }: Se
                         onChange={(e) =>
                           handleUpdateStep(step.id, { days_relative_to_due: parseInt(e.target.value) || 0 })
                         }
-                        className="w-12 px-1 text-center font-bold bg-white dark:bg-slate-900 rounded border border-slate-200 dark:border-slate-700 outline-none"
+                        className="w-12 px-1 text-center font-bold bg-white dark:bg-surface rounded border border-line dark:border-line outline-none"
                       />
                       <span>days due</span>
                     </div>
 
                     {/* Channel selector */}
-                    <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl text-xs font-semibold">
+                    <div className="flex items-center gap-1 bg-surface2 dark:bg-surface2 p-1 rounded-xl text-xs font-semibold">
                       <button
                         type="button"
                         onClick={() => handleUpdateStep(step.id, { channel: 'email' })}
                         className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 ${
                           step.channel === 'email'
-                            ? 'bg-indigo-600 text-white shadow-xs'
-                            : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                            ? 'bg-accent text-white shadow-xs'
+                            : 'text-ink2 hover:text-ink dark:hover:text-ink'
                         }`}
                       >
                         <Mail className="w-3 h-3" />
@@ -246,7 +246,7 @@ export function SequenceBuilder({ sequences, onSaveSequence, onOpenAiModal }: Se
                         className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 ${
                           step.channel === 'whatsapp'
                             ? 'bg-emerald-600 text-white shadow-xs'
-                            : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                            : 'text-ink2 hover:text-ink dark:hover:text-ink'
                         }`}
                       >
                         <MessageSquare className="w-3 h-3" />
@@ -268,27 +268,27 @@ export function SequenceBuilder({ sequences, onSaveSequence, onOpenAiModal }: Se
                 <div className="space-y-3">
                   {step.channel === 'email' && (
                     <div>
-                      <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+                      <label className="block text-[11px] font-semibold text-ink2 mb-1">
                         Email Subject Line
                       </label>
                       <input
                         type="text"
                         value={step.template_subject || ''}
                         onChange={(e) => handleUpdateStep(step.id, { template_subject: e.target.value })}
-                        className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-semibold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
+                        className="w-full px-3 py-2 rounded-xl border border-line dark:border-line bg-main dark:bg-surface2 text-xs font-semibold text-ink dark:text-white outline-none focus:ring-2 focus:ring-accent"
                       />
                     </div>
                   )}
 
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+                    <label className="block text-[11px] font-semibold text-ink2 mb-1">
                       {step.channel === 'email' ? 'Email Body Template' : 'WhatsApp Message Body'}
                     </label>
                     <textarea
                       rows={3}
                       value={step.template_body}
                       onChange={(e) => handleUpdateStep(step.id, { template_body: e.target.value })}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-mono text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 leading-relaxed"
+                      className="w-full px-3 py-2 rounded-xl border border-line dark:border-line bg-main dark:bg-surface2 text-xs font-mono text-ink dark:text-white outline-none focus:ring-2 focus:ring-accent leading-relaxed"
                     />
                   </div>
                 </div>

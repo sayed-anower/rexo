@@ -1,6 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import { Sun, Moon } from 'lucide-react';
 
+/*
+ * ThemeToggle — Dark / Light mode switcher.
+ *
+ * The actual theming is driven by a `dark` class on the <html> element (see
+ * src/index.css `@custom-variant dark`). The initial state is resolved from:
+ *   1. The persisted "recoverflow_theme" key in localStorage, otherwise
+ *   2. The OS `prefers-color-scheme` media query.
+ * The index.html inline script mirrors this logic pre-hydration to avoid a
+ * flash of the wrong theme. The <html> class stays in sync with localStorage
+ * so reloads and direct links keep the user's choice.
+ */
 export function ThemeToggle() {
   const [isDark, setIsDark] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
@@ -10,6 +21,7 @@ export function ThemeToggle() {
     return false;
   });
 
+  // Apply the toggle to <html> and persist the choice.
   useEffect(() => {
     const root = document.documentElement;
     if (isDark) {
@@ -25,7 +37,7 @@ export function ThemeToggle() {
     <button
       id="btn-theme-toggle"
       onClick={() => setIsDark(!isDark)}
-      className="p-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center gap-2 text-xs font-medium"
+      className="p-2 rounded-lg border border-line dark:border-line bg-white dark:bg-surface text-ink2 dark:text-ink2 hover:bg-surface2 dark:hover:bg-surface2 transition-colors flex items-center gap-2 text-xs font-medium"
       title="Toggle Dark / Light Theme"
     >
       {isDark ? (
@@ -35,7 +47,7 @@ export function ThemeToggle() {
         </>
       ) : (
         <>
-          <Moon className="w-4 h-4 text-indigo-600" />
+          <Moon className="w-4 h-4 text-primary" />
           <span className="hidden sm:inline">Dark Mode</span>
         </>
       )}
