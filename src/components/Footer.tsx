@@ -17,7 +17,7 @@ export function Footer({ onNavigateHome, onOpenAuth }: FooterProps) {
             <div className="flex items-center gap-3">
               <img
                 src="/logo.svg"
-                alt="RecoverFlow"
+                alt="Eron"
                 className="w-10 h-10 rounded-xl shadow-md shadow-black/20"
               />
               <span className="font-extrabold text-xl text-white tracking-tight">
@@ -96,7 +96,7 @@ export function Footer({ onNavigateHome, onOpenAuth }: FooterProps) {
         </div>
 
         <div className="mt-12 pt-8 border-t border-white/20 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-orange-100/80">
-          <p>© {new Date().getFullYear()} RecoverFlow. All rights reserved.</p>
+          <p>© {new Date().getFullYear()} Eron. All rights reserved.</p>
           <div className="flex items-center gap-4">
             <span className="hover:text-white cursor-pointer">Privacy Policy</span>
             <span className="hover:text-white cursor-pointer">Terms of Service</span>

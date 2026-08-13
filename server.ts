@@ -358,7 +358,7 @@ function assertPlanActive(user: { profile: UserProfile }): { ok: boolean; code?:
     return {
       ok: false,
       code: 'PLAN_REQUIRED',
-      message: 'You must choose a paid plan before using RecoverFlow. No free tier is available.',
+      message: 'You must choose a paid plan before using Eron. No free tier is available.',
     };
   }
   return { ok: true };
@@ -618,7 +618,7 @@ async function createStripePaymentSession(opts: {
   const body: Record<string, string> = {
     amount: String(totalCents),
     currency: opts.currency.toLowerCase(),
-    description: `Invoice ${opts.externalInvoiceId} via RecoverFlow`,
+    description: `Invoice ${opts.externalInvoiceId} via Eron`,
     receipt_email: opts.clientEmail,
     'automatic_payment_methods[enabled]': 'true',
     ...(methods
@@ -746,7 +746,7 @@ app.use(express.json());
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
-    service: 'RecoverFlow Engine',
+    service: 'Eron Engine',
     version: '2.0.0',
     timestamp: new Date().toISOString(),
     db: Boolean(getSupabase()),
@@ -840,7 +840,7 @@ app.post('/api/test/send-email', async (req, res) => {
   const active = assertPlanActive(user);
   if (!active.ok) return res.status(402).json(active);
 
-  let html = body || '<p>Test email sent from RecoverFlow Test Mode.</p>';
+  let html = body || '<p>Test email sent from Eron Test Mode.</p>';
   if (templateId) {
     const sb = getSupabase();
     const { data: tmpl } = sb
@@ -853,7 +853,7 @@ app.post('/api/test/send-email', async (req, res) => {
     const dispatch = await sendEmailViaResend({
       from: keyFor('RESEND_FROM_EMAIL') || 'Reminders <reminders@youragency.com>',
       to,
-      subject: subject || 'RecoverFlow Test Email',
+      subject: subject || 'Eron Test Email',
       html,
     });
     const sb = getSupabase();
@@ -970,7 +970,7 @@ app.post('/api/auth/signup', async (req, res) => {
 
   setSessionCookie(res, profile.id);
   res.status(201).json({
-    message: 'Account created. Choose a plan to start using RecoverFlow (no free tier).',
+    message: 'Account created. Choose a plan to start using Eron (no free tier).',
     user: profile,
   });
 });
@@ -1050,8 +1050,8 @@ app.post('/api/auth/forgot-password', async (req, res) => {
     await sendEmailViaResend({
       from: keyFor('RESEND_FROM_EMAIL') || 'Reminders <reminders@youragency.com>',
       to: String(email),
-      subject: 'RecoverFlow — Password Reset',
-      html: `<p>Reset your RecoverFlow password <a href="${resetLink}">here</a>. Link expires in 1 hour.</p>`,
+      subject: 'Eron — Password Reset',
+      html: `<p>Reset your Eron password <a href="${resetLink}">here</a>. Link expires in 1 hour.</p>`,
     });
     await recordBillingEvent({ userId: data.id as string, type: 'password_reset_email' });
   } catch (err: any) {
@@ -1522,8 +1522,8 @@ app.get('/api/oauth/callback', async (req, res) => {
   res.send(
     `<!doctype html><html><body style="font-family:system-ui;background:#170F08;color:#FDF1E6;display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
     <div style="text-align:center"><h2>${provider} authorization code received</h2>
-    <p>RecoverFlow needs the provider token exchange to be wired with your credentials before this account becomes active.</p>
-    <a href="/" style="color:#F97316">Back to RecoverFlow</a></div></body></html>`
+    <p>Eron needs the provider token exchange to be wired with your credentials before this account becomes active.</p>
+    <a href="/" style="color:#F97316">Back to Eron</a></div></body></html>`
   );
 });
 
@@ -2292,7 +2292,7 @@ async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[RecoverFlow Engine] Server listening at http://localhost:${PORT}`);
+    console.log(`[Eron Engine] Server listening at http://localhost:${PORT}`);
   });
 }
 

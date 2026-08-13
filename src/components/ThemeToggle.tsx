@@ -6,7 +6,7 @@ import { Sun, Moon } from 'lucide-react';
  *
  * The actual theming is driven by a `dark` class on the <html> element (see
  * src/index.css `@custom-variant dark`). The initial state is resolved from:
- *   1. The persisted "recoverflow_theme" key in localStorage, otherwise
+ *   1. The persisted "eron_theme" key in localStorage, otherwise
  *   2. The OS `prefers-color-scheme` media query.
  * The index.html inline script mirrors this logic pre-hydration to avoid a
  * flash of the wrong theme. The <html> class stays in sync with localStorage
@@ -15,8 +15,8 @@ import { Sun, Moon } from 'lucide-react';
 export function ThemeToggle() {
   const [isDark, setIsDark] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
-      return localStorage.getItem('recoverflow_theme') === 'dark' ||
-        (!('recoverflow_theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      return localStorage.getItem('eron_theme') === 'dark' ||
+        (!('eron_theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches);
     }
     return false;
   });
@@ -26,10 +26,10 @@ export function ThemeToggle() {
     const root = document.documentElement;
     if (isDark) {
       root.classList.add('dark');
-      localStorage.setItem('recoverflow_theme', 'dark');
+      localStorage.setItem('eron_theme', 'dark');
     } else {
       root.classList.remove('dark');
-      localStorage.setItem('recoverflow_theme', 'light');
+      localStorage.setItem('eron_theme', 'light');
     }
   }, [isDark]);
 

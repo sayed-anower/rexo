@@ -233,7 +233,7 @@ export default function App() {
     setAuthChecked(true);
     setInvoices([]);
     navigate('/app/overview');
-    showToast(`Welcome to RecoverFlow, ${u.company_name}!`);
+    showToast(`Welcome to Eron, ${u.company_name}!`);
   };
 
   const handleSaveInvoice = async (invData: Partial<Invoice>) => {

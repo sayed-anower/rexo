@@ -3,7 +3,7 @@ import { Calculator, Users, TrendingUp, ShieldCheck, Wallet, Sparkles } from 'lu
 import { calculateOpExForUsers } from '../lib/storage';
 
 /*
- * OpExCalculator — Interactive cost model for running RecoverFlow.
+ * OpExCalculator — Interactive cost model for running Eron.
  *
  * Projects the unit economics of the platform from 0 up to 1,000 paying
  * customers by plugging the selected user count into the cost model in
@@ -35,7 +35,7 @@ export function OpExCalculator() {
             </h2>
           </div>
           <p className="text-xs text-ink2 dark:text-ink2">
-            See how RecoverFlow's unit economics scale from 0 to 1,000 paying customers.
+            See how Eron's unit economics scale from 0 to 1,000 paying customers.
           </p>
         </div>
       </div>

@@ -62,7 +62,7 @@ export function PublicPaymentPortal({
           <p className="text-sm font-bold">Invoice not found, is paid, or the payment link is invalid.</p>
           {onBackToApp && (
             <button onClick={onBackToApp} className="text-xs font-bold text-primary hover:underline">
-              ← Return to RecoverFlow
+              ← Return to Eron
             </button>
           )}
         </div>
@@ -123,7 +123,7 @@ export function PublicPaymentPortal({
               onClick={onBackToApp}
               className="text-xs font-bold text-primary dark:text-secondary hover:underline flex items-center gap-1"
             >
-              ← Return to RecoverFlow Dashboard
+              ← Return to Eron Dashboard
             </button>
             <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-primary-soft text-primary dark:bg-surface2 dark:text-secondary">
               Client Portal
@@ -322,7 +322,7 @@ export function PublicPaymentPortal({
         </div>
 
         <div className="text-center text-xs text-ink3">
-          Powered by <span className="font-bold text-ink dark:text-ink2">RecoverFlow SaaS</span> • Stripe & Lemon Squeezy payment rails
+          Powered by <span className="font-bold text-ink dark:text-ink2">Eron SaaS</span> • Stripe & Lemon Squeezy payment rails
         </div>
       </div>
       {isPaid && <ConfettiFn trigger={handleConfetti} />}

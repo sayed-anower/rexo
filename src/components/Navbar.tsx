@@ -41,7 +41,7 @@ export function Navbar({
         >
           <img
             src="/logo.svg"
-            alt="RecoverFlow"
+            alt="Eron"
             className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl shadow-md shadow-primary/20 shrink-0"
           />
           <div>

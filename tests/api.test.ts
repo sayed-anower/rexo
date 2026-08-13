@@ -61,7 +61,7 @@ test('GET /api/health reports an ok status with real provider flags', async () =
   const { status, json } = await request('GET', '/api/health');
   assert.strictEqual(status, 200);
   assert.strictEqual(json.status, 'ok');
-  assert.strictEqual(json.service, 'RecoverFlow Engine');
+  assert.strictEqual(json.service, 'Eron Engine');
   assert.strictEqual(json.db, false);
   assert.strictEqual(json.dbReady, false);
   assert.strictEqual(json.dbReason, 'SUPABASE_NOT_CONFIGURED');

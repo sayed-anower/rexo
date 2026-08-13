@@ -32,8 +32,8 @@ export function HomePage({ onOpenAuth, onGoogleSignIn }: HomePageProps) {
 
   const faqs = [
     {
-      q: 'How does RecoverFlow recover unpaid invoices automatically?',
-      a: 'RecoverFlow syncs your unpaid invoices from Stripe, QuickBooks, Xero or your own uploads. It then runs your custom recovery flow — friendly reminders before the due date, firm emails after, and optional WhatsApp follow-ups — each with a direct, secure payment link. The moment a client pays, all further reminders stop automatically.'
+      q: 'How does Eron recover unpaid invoices automatically?',
+      a: 'Eron syncs your unpaid invoices from Stripe, QuickBooks, Xero or your own uploads. It then runs your custom recovery flow — friendly reminders before the due date, firm emails after, and optional WhatsApp follow-ups — each with a direct, secure payment link. The moment a client pays, all further reminders stop automatically.'
     },
     {
       q: 'Is there a free tier?',
@@ -49,7 +49,7 @@ export function HomePage({ onOpenAuth, onGoogleSignIn }: HomePageProps) {
     },
     {
       q: 'What happens when an invoice is paid?',
-      a: 'RecoverFlow is notified by the payment provider webhook instantly. Any scheduled follow-up reminders are cancelled, the invoice is marked paid in your connected accounting app, and the payment is recorded in your activity log.'
+      a: 'Eron is notified by the payment provider webhook instantly. Any scheduled follow-up reminders are cancelled, the invoice is marked paid in your connected accounting app, and the payment is recorded in your activity log.'
     }
   ];
 
@@ -74,7 +74,7 @@ export function HomePage({ onOpenAuth, onGoogleSignIn }: HomePageProps) {
 
           {/* Subtitle */}
           <p className="text-sm sm:text-lg text-ink2 dark:text-ink2 leading-relaxed font-normal max-w-2xl mx-auto">
-            RecoverFlow connects to your accounting apps and automatically sends
+            Eron connects to your accounting apps and automatically sends
             friendly reminders, firm follow-ups, and payment links — until you get paid.
           </p>
 

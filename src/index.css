@@ -9,7 +9,7 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* ============================================================
-   RecoverFlow Brand Palette (Orange Theme)
+   Eron Brand Palette (Orange Theme)
    These raw tokens drive the entire UI. Tailwind theme colors
    (defined below in @theme) resolve through var() to these, so
    light/dark mode flipping happens in one place.

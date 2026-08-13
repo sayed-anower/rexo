@@ -41,8 +41,8 @@ export function TestModePanel({ onToast }: TestModePanelProps) {
   const [keys, setKeys] = useState<Record<string, string>>({});
   const [showKeys, setShowKeys] = useState(false);
   const [emailTo, setEmailTo] = useState('');
-  const [emailSubject, setEmailSubject] = useState('RecoverFlow Test Email');
-  const [emailBody, setEmailBody] = useState('<p>Test email sent from RecoverFlow Test Mode (real Resend dispatch).</p>');
+  const [emailSubject, setEmailSubject] = useState('Eron Test Email');
+  const [emailBody, setEmailBody] = useState('<p>Test email sent from Eron Test Mode (real Resend dispatch).</p>');
   const [payAmount, setPayAmount] = useState(10);
   const [working, setWorking] = useState<string | null>(null);
   const [result, setResult] = useState<{ type: 'success' | 'error'; text: string } | null>(null);

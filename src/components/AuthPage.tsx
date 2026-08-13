@@ -84,7 +84,7 @@ export function AuthPage({ initialMode = 'signin', onSuccess, onBackToHome }: Au
 
             <div>
               <h1 className="text-2xl sm:text-3xl font-extrabold text-ink dark:text-white tracking-tight">
-                {mode === 'signup' ? 'Create Your Agency Workspace' : 'Sign In to RecoverFlow'}
+                {mode === 'signup' ? 'Create Your Agency Workspace' : 'Sign In to Eron'}
               </h1>
             </div>
 

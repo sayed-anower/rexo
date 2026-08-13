@@ -45,7 +45,7 @@ export function DashboardOverview({
   const totalRecoveredThisMonth = paidInvoices.reduce((sum, i) => sum + i.amount_due, 0);
   const totalTrackedVolume = invoices.reduce((sum, i) => sum + i.amount_due, 0);
 
-  const avgDaysToPay = 6; // Days average with RecoverFlow sequences vs 28 days traditional
+  const avgDaysToPay = 6; // Days average with Eron sequences vs 28 days traditional
   const activeWorkflowsCount = sequences.filter((s) => s.is_default || invoices.some((i) => i.sequence_id === s.id)).length;
 
   // Simple 7-day activity bar chart derived from reminder logs

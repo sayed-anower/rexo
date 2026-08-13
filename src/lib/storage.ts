@@ -404,7 +404,7 @@ export const APP_CONNECTORS = [
     provider: 'quickbooks',
     name: 'QuickBooks',
     category: 'accounting',
-    description: 'Sync invoices from QuickBooks Online and let RecoverFlow chase them automatically.',
+    description: 'Sync invoices from QuickBooks Online and let Eron chase them automatically.',
   },
   {
     id: 'conn_xero',

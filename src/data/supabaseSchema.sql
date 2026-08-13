@@ -1,5 +1,5 @@
 -- ============================================================
--- RecoverFlow self-migration helper (run this file ONCE)
+-- Eron self-migration helper (run this file ONCE)
 -- Creates the exec_sql() function so the server can auto-apply
 -- schema changes on every boot. Security definer: the function
 -- executes with the service-role owner privileges. Revoke or

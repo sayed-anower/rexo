@@ -23,8 +23,8 @@ export function HelpPage({ user }: HelpPageProps) {
 
   const guides = [
     {
-      title: 'How do I set up RecoverFlow for my agency?',
-      body: '1. Sign in with Google or email.\n2. Open Connectors and connect Stripe, QuickBooks or Xero so unpaid invoices are pulled in automatically.\n3. Connect Gmail (or your own email sender) so reminders come from your real address.\n4. Open Recovery Flows to choose or customize the reminder sequence.\n5. Sit back — RecoverFlow sends reminders on schedule until you get paid.',
+      title: 'How do I set up Eron for my agency?',
+      body: '1. Sign in with Google or email.\n2. Open Connectors and connect Stripe, QuickBooks or Xero so unpaid invoices are pulled in automatically.\n3. Connect Gmail (or your own email sender) so reminders come from your real address.\n4. Open Recovery Flows to choose or customize the reminder sequence.\n5. Sit back — Eron sends reminders on schedule until you get paid.',
     },
     {
       title: 'Why do clients see a payment page?',
@@ -53,7 +53,7 @@ export function HelpPage({ user }: HelpPageProps) {
           <h2 className="text-xl font-bold text-ink dark:text-white">Help & Support</h2>
         </div>
         <p className="text-xs text-ink2 dark:text-ink2">
-          Get the most out of RecoverFlow. For anything else, email us and a real human replies.
+          Get the most out of Eron. For anything else, email us and a real human replies.
         </p>
       </div>
 
@@ -99,7 +99,7 @@ export function HelpPage({ user }: HelpPageProps) {
           <div className="flex items-center gap-2">
             <Calculator className="w-4 h-4 text-primary dark:text-secondary" />
             <div>
-              <h3 className="text-base font-bold text-ink dark:text-white">How RecoverFlow Makes Money</h3>
+              <h3 className="text-base font-bold text-ink dark:text-white">How Eron Makes Money</h3>
               <p className="text-xs text-ink2 dark:text-ink2">
                 Curious about our unit economics? View the business cost model.
               </p>
@@ -132,7 +132,7 @@ export function HelpPage({ user }: HelpPageProps) {
         </p>
         <div className="flex flex-wrap items-center gap-3">
           <a
-            href={`mailto:support@recoverflow.app?subject=Help request from ${encodeURIComponent(user.company_name)}`}
+            href={`mailto:support@eron.app?subject=Help request from ${encodeURIComponent(user.company_name)}`}
             className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-accent hover:bg-accent-hover text-white font-bold text-xs transition-all shadow-md"
           >
             <Mail className="w-4 h-4" />

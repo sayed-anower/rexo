@@ -1,6 +1,6 @@
-# RecoverFlow — Automated Payment Recovery & Invoice Reminders SaaS
+# Eron — Automated Payment Recovery & Invoice Reminders SaaS
 
-RecoverFlow is a **real-API, production-ready Automated Payment Recovery & Invoice Reminders SaaS** for B2B digital agencies. It syncs open invoices from Stripe, runs multi-step escalation sequences across Email (Resend) and WhatsApp (Whapi.cloud), and collects payments on a branded public portal via real Stripe / Lemon Squeezy rails. **There is no demo mode, no mock data and no free tier** — every account, invoice, reminder and payment flows through real providers and a real PostgreSQL database.
+Eron is a **real-API, production-ready Automated Payment Recovery & Invoice Reminders SaaS** for B2B digital agencies. It syncs open invoices from Stripe, runs multi-step escalation sequences across Email (Resend) and WhatsApp (Whapi.cloud), and collects payments on a branded public portal via real Stripe / Lemon Squeezy rails. **There is no demo mode, no mock data and no free tier** — every account, invoice, reminder and payment flows through real providers and a real PostgreSQL database.
 
 ---
 

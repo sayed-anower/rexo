@@ -457,7 +457,7 @@ export function SettingsBilling({
             <h3 className="text-lg font-bold text-ink dark:text-white">Automation Schedule</h3>
           </div>
           <p className="text-xs text-ink2 dark:text-ink2 mb-6">
-            Control when RecoverFlow evaluates your invoices and sends reminders.
+            Control when Eron evaluates your invoices and sends reminders.
           </p>
 
           <form onSubmit={handleSaveScheduling} className="space-y-4">

@@ -139,7 +139,7 @@ export function Connectors({ onConnect, onDisconnect }: ConnectorsProps) {
       {/* Description */}
       <p className="mt-1 text-sm text-white/90 max-w-2xl leading-relaxed">
         One-click connections to your accounting, email and communication apps.
-        RecoverFlow pulls unpaid invoices and sends reminders on your behalf.
+        Eron pulls unpaid invoices and sends reminders on your behalf.
       </p>
     </div>
   </div>
