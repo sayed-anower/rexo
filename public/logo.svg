@@ -1,17 +1,32 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 220" width="100%" height="100%">
+  <!-- Color definition -->
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#195280"/>
-      <stop offset="1" stop-color="#2B7FB3"/>
-    </linearGradient>
+    <style>
+      .logo-color {
+        fill: #6dcaec;
+      }
+    </style>
   </defs>
-  <rect x="2" y="2" width="60" height="60" rx="15" fill="url(#bg)"/>
-  <!-- receipt body -->
-  <rect x="17" y="16" width="30" height="26" rx="5" fill="#FFFFFF" opacity="0.96"/>
-  <rect x="22" y="23" width="20" height="2.5" rx="1.25" fill="#195280" opacity="0.45"/>
-  <rect x="22" y="29" width="20" height="2.5" rx="1.25" fill="#195280" opacity="0.45"/>
-  <rect x="22" y="35" width="12" height="2.5" rx="1.25" fill="#195280" opacity="0.45"/>
-  <!-- growth arrow -->
-  <path d="M20 46 L30 34 L36 39 L47 27" fill="none" stroke="#E58233" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M40 27 L47 27 L47 34" fill="none" stroke="#E58233" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Top Accent / Upper Bar of 'E' -->
+  <polygon class="logo-color" points="
+    61,10 
+    195,10 
+    186,48 
+    108,48 
+    102,74 
+    50,74
+  " />
+
+  <!-- Main Body of 'E' -->
+  <polygon class="logo-color" points="
+    45,96 
+    173,96 
+    165,132 
+    85,132 
+    78,166 
+    157,166 
+    148,204 
+    20,204
+  " />
 </svg>

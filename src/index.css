@@ -9,72 +9,72 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* ============================================================
-   Eron Brand Palette (Orange Theme)
+   Eron Brand Palette (Professional Blue Theme)
    These raw tokens drive the entire UI. Tailwind theme colors
    (defined below in @theme) resolve through var() to these, so
    light/dark mode flipping happens in one place.
    ============================================================ */
 :root {
-  /* Brand Palette (warm orange family) */
-  --color-primary: #E58233;
-  --color-primary-hover: #c96f26;
-  --color-primary-strong: #b3541e;
-  --color-primary-soft: #FDEFE3;
-  --color-secondary: #F4A460;
-  --color-secondary-soft: #FDEBD8;
-  --color-accent: #F97316;
-  --color-accent-hover: #EA580C;
-  --color-accent-light: #FBBF24;
-  --color-accent-tint: #FFF1E6;
+  /* Brand Palette (Trustworthy Corporate Blue Family) */
+  --color-primary: #2563EB;
+  --color-primary-hover: #1D4ED8;
+  --color-primary-strong: #1E40AF;
+  --color-primary-soft: #EFF6FF;
+  --color-secondary: #3B82F6;
+  --color-secondary-soft: #DBEAFE;
+  --color-accent: #0284C7;
+  --color-accent-hover: #0369A1;
+  --color-accent-light: #38BDF8;
+  --color-accent-tint: #F0F9FF;
 
-  /* Light Mode UI Theme */
-  --bg-main: #FAF6F1;
+  /* Light Mode UI Theme (Slate & Cool Whites) */
+  --bg-main: #F8FAFC;
   --bg-surface: #FFFFFF;
-  --bg-surface-elevated: #F4EADC;
-  --border-color: #EAD9C5;
+  --bg-surface-elevated: #F1F5F9;
+  --border-color: #E2E8F0;
 
-  --text-primary: #2B1A0E;
-  --text-secondary: #6B4A2C;
+  --text-primary: #0F172A;
+  --text-secondary: #475569;
   --text-inverse: #FFFFFF;
 }
 
 /* Automatic Dark Mode UI Theme (OS preference) */
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg-main: #170F08;
-    --bg-surface: #241710;
-    --bg-surface-elevated: #332217;
-    --border-color: #4A3120;
+    --bg-main: #0B1120;
+    --bg-surface: #0F172A;
+    --bg-surface-elevated: #1E293B;
+    --border-color: #334155;
 
-    --text-primary: #FDF1E6;
-    --text-secondary: #E0B68F;
-    --text-inverse: #170F08;
+    --text-primary: #F8FAFC;
+    --text-secondary: #94A3B8;
+    --text-inverse: #0F172A;
 
-    --color-primary: #F59E0B;
-    --color-primary-hover: #FBBF24;
-    --color-secondary: #F4A460;
-    --color-accent: #F97316;
-    --color-accent-hover: #F59E0B;
+    --color-primary: #3B82F6;
+    --color-primary-hover: #60A5FA;
+    --color-secondary: #2563EB;
+    --color-accent: #38BDF8;
+    --color-accent-hover: #60A5FA;
   }
 }
 
 /* Manual Dark Mode Class Override (ThemeToggle toggles `.dark`) */
 [data-theme="dark"],
 .dark {
-  --bg-main: #170F08;
-  --bg-surface: #241710;
-  --bg-surface-elevated: #332217;
-  --border-color: #4A3120;
+  --bg-main: #0B1120;
+  --bg-surface: #0F172A;
+  --bg-surface-elevated: #1E293B;
+  --border-color: #334155;
 
-  --text-primary: #FDF1E6;
-  --text-secondary: #E0B68F;
-  --text-inverse: #170F08;
+  --text-primary: #F8FAFC;
+  --text-secondary: #94A3B8;
+  --text-inverse: #0F172A;
 
-  --color-primary: #F59E0B;
-  --color-primary-hover: #FBBF24;
-  --color-secondary: #F4A460;
-  --color-accent: #F97316;
-  --color-accent-hover: #F59E0B;
+  --color-primary: #3B82F6;
+  --color-primary-hover: #60A5FA;
+  --color-secondary: #2563EB;
+  --color-accent: #38BDF8;
+  --color-accent-hover: #60A5FA;
 }
 
 /* ============================================================
@@ -91,7 +91,7 @@
   --color-secondary: var(--color-secondary);
   --color-secondary-soft: var(--color-secondary-soft);
 
-  /* Accent (CTA) orange */
+  /* Accent (CTA) blue */
   --color-accent: var(--color-accent);
   --color-accent-hover: var(--color-accent-hover);
   --color-accent-soft: var(--color-accent-light);
@@ -104,7 +104,7 @@
   --color-line: var(--border-color);
   --color-ink: var(--text-primary);
   --color-ink2: var(--text-secondary);
-  --color-ink3: #9C6B3F;
+  --color-ink3: #64748B;
   --color-ink-invert: var(--text-inverse);
 
   /* Semantic status colors (kept accessible on both themes) */
@@ -122,7 +122,7 @@
 .footer-tags {
   background-color: rgba(255, 255, 255, 0.08);
   border-color: rgba(255, 255, 255, 0.18);
-  color: #FFEBD8;
+  color: #E0F2FE;
 }
 
 .footer-tags.light {

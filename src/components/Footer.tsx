@@ -18,10 +18,10 @@ export function Footer({ onNavigateHome, onOpenAuth }: FooterProps) {
               <img
                 src="/logo.svg"
                 alt="Eron"
-                className="w-10 h-10 rounded-xl shadow-md shadow-black/20"
+                className="h-10"
               />
               <span className="font-extrabold text-xl text-white tracking-tight">
-                Recover<span className="text-amber-300">Flow</span>
+                <span className="font-bold text-2xl text-white">Eron</span>
               </span>
             </div>
 
@@ -76,7 +76,7 @@ export function Footer({ onNavigateHome, onOpenAuth }: FooterProps) {
                   <li>
                     <button
                       onClick={() => onOpenAuth('signin')}
-                      className="hover:text-amber-200 transition-colors font-medium text-amber-200"
+                      className="font-medium"
                     >
                       Sign In
                     </button>
@@ -84,7 +84,7 @@ export function Footer({ onNavigateHome, onOpenAuth }: FooterProps) {
                   <li>
                     <button
                       onClick={() => onOpenAuth('signup')}
-                      className="hover:text-amber-200 transition-colors font-medium text-amber-200"
+                      className="text-white font-medium"
                     >
                       Create Account — No Free Tier
                     </button>

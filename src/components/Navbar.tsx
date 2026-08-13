@@ -42,12 +42,10 @@ export function Navbar({
           <img
             src="/logo.svg"
             alt="Eron"
-            className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl shadow-md shadow-primary/20 shrink-0"
+            className="h-9 sm:h-10"
           />
           <div>
-            <span className="font-extrabold text-base sm:text-lg text-ink dark:text-white tracking-tight block leading-tight">
-              Recover<span className="text-primary dark:text-secondary">Flow</span>
-            </span>
+            <span className="font-bold text-xl text-black dark:text-white block">Eron</span>
             <p className="text-[10px] text-ink2 dark:text-ink2 hidden md:block">
               Get paid faster. Stop chasing invoices.
             </p>
