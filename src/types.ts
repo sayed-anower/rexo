@@ -29,6 +29,7 @@ export interface BillingEvent {
   prorated_amount: number;
   refund_amount: number;
   breakdown?: Record<string, number | string>;
+  provider?: string;
   created_at: string;
 }
 
@@ -193,11 +194,3 @@ export interface OpExTierData {
   margin_percentage: number;
 }
 
-export interface PricingPlan {
-  id: SubscriptionTier;
-  name: string;
-  price: number; // USD per month
-  invoice_limit: string;
-  features: string[];
-  recommended?: boolean;
-}

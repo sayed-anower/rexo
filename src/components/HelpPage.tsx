@@ -24,7 +24,7 @@ export function HelpPage({ user }: HelpPageProps) {
   const guides = [
     {
       title: 'How do I set up RecoverFlow for my agency?',
-      body: '1. Sign in with Google or Facebook.\n2. Open Connectors and connect Stripe, QuickBooks or Xero so unpaid invoices are pulled in automatically.\n3. Connect Gmail (or your own email sender) so reminders come from your real address.\n4. Open Recovery Flows to choose or customize the reminder sequence.\n5. Sit back — RecoverFlow sends reminders on schedule until you get paid.',
+      body: '1. Sign in with Google or email.\n2. Open Connectors and connect Stripe, QuickBooks or Xero so unpaid invoices are pulled in automatically.\n3. Connect Gmail (or your own email sender) so reminders come from your real address.\n4. Open Recovery Flows to choose or customize the reminder sequence.\n5. Sit back — RecoverFlow sends reminders on schedule until you get paid.',
     },
     {
       title: 'Why do clients see a payment page?',

@@ -48,7 +48,7 @@ export function buildPlanFeatures(def: PlanDefinition): PlanFeature[] {
   const feats: PlanFeature[] = [
     { id: 'invoices', label: `Track up to ${def.limits.tracked_invoices === -1 ? 'unlimited' : def.limits.tracked_invoices} invoices / mo`, included: true },
     { id: 'emails', label: `${def.limits.emails_per_month === -1 ? 'Unlimited' : `${def.limits.emails_per_month.toLocaleString()} emails`} per month`, included: true },
-    { id: 'whatsapp', label: `WhatsApp reminders (${def.limits.whatsapp_per_month === -1 ? 'unlimited' : def.limits.whatsapp_per_month}/${def.limits.whatsapp_per_month === 0 ? 'mo' : 'mo'})`, included: def.limits.whatsapp_per_month > 0 },
+    { id: 'whatsapp', label: `WhatsApp reminders (${def.limits.whatsapp_per_month === -1 ? 'unlimited' : `${def.limits.whatsapp_per_month}/mo`})`, included: def.limits.whatsapp_per_month > 0 },
     { id: 'team', label: `${def.limits.team_seats} team seat${def.limits.team_seats === 1 ? '' : 's'}`, included: true },
     { id: 'ai', label: `AI email & sequence drafts`, included: def.limits.ai_generations > 0 },
     { id: 'custom_domain', label: 'White-label payment domain', included: def.limits.custom_domain },
@@ -69,9 +69,26 @@ function plan(
   limits: PlanLimits,
   recommended?: boolean
 ): PlanDefinition {
-  const def: PlanDefinition = { id, name, price, period: 'monthly', tagline, invoice_limit, limits, recommended };
-  def.features = buildPlanFeatures(def);
-  return def;
+  return {
+    id,
+    name,
+    price,
+    period: 'monthly',
+    tagline,
+    invoice_limit,
+    limits,
+    recommended,
+    features: buildPlanFeatures({
+      id,
+      name,
+      price,
+      period: 'monthly',
+      tagline,
+      invoice_limit,
+      limits,
+      recommended,
+    } as PlanDefinition),
+  };
 }
 
 export const PLANS: PlanDefinition[] = [

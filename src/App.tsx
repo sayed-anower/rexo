@@ -27,7 +27,6 @@ import {
   logoutUser,
   fetchPortalInvoice,
   createPlanCheckout,
-  applyPlanTier,
   PlanGateError,
 } from './lib/storage';
 import { UserProfile, Invoice, Sequence, ReminderLog, Integration, CustomEmailTemplate, UsageStats, SchedulingPrefs, AppConnectorInfo } from './types';
@@ -366,13 +365,6 @@ export default function App() {
         }
         testMode={portalTestMode}
         invoiceId={route.invoiceId}
-        onPaymentComplete={async () => {
-          if (portalInvoice) await handlePaymentComplete(portalInvoice.id);
-          else {
-            const data = await fetchPortalInvoice(route.invoiceId);
-            setPortalInvoice(data.invoice);
-          }
-        }}
         onBackToApp={() => navigate('/')}
       />
     );
@@ -403,7 +395,9 @@ export default function App() {
         />
         <HomePage
           onOpenAuth={(mode) => navigate(mode === 'signup' ? '/signup' : '/signin')}
-          onGoogleSignIn={() => navigate('/api/auth/google')}
+          onGoogleSignIn={() => {
+            window.location.href = '/api/auth/google';
+          }}
         />
       </div>
     );
@@ -546,7 +540,6 @@ export default function App() {
 
           {activeTab === 'connectors' && (
             <Connectors
-              connectors={connectors}
               onConnect={(p) =>
                 handleConnectApp(p).catch((err) => {
                   if (!handleGateError(err)) showToast(err.message);
@@ -572,18 +565,16 @@ export default function App() {
                 setUser(u);
                 showToast('Profile updated!');
               }}
-              onPlanChange={(tier) => {
-                applyPlanTier(tier)
-                  .then(() => {
-                    showToast(`Plan switched — new limits apply immediately.`);
-                    return fetchUserProfile();
-                  })
-                  .then((u) => u && setUser(u))
-                  .catch((err) => showToast(err.message));
-              }}
               onCheckoutPlan={async (tier) => {
                 const checkout = await createPlanCheckout(tier);
                 window.open(checkout.url, '_blank');
+              }}
+              onRefreshStatus={async () => {
+                const profile = await fetchUserProfile();
+                if (profile) {
+                  setUser(profile);
+                  setIsLoggedIn(true);
+                }
               }}
               onSaveScheduling={async (prefs) => {
                 const updated = await saveSchedulingPrefs(prefs);

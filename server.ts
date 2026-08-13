@@ -20,6 +20,7 @@ import {
   roundMoney,
 } from './src/data/plans';
 import { INITIAL_SEQUENCES, INITIAL_CUSTOM_EMAIL_TEMPLATES } from './src/data/initialData';
+import { MIGRATION_SQL } from './src/data/migration';
 import { SubscriptionTier, UserProfile } from './src/types';
 
 const app = express();
@@ -67,7 +68,7 @@ interface TestOverrides {
 let testOverrides: TestOverrides = { enabled: false };
 
 function keyFor(envName: string): string | undefined {
-  const map: Record<string, keyof TestOverrides> = {
+  const map: Record<string, string> = {
     STRIPE_SECRET_KEY: 'stripeSecret',
     STRIPE_WEBHOOK_SECRET: 'stripeWebhookSecret',
     RESEND_API_KEY: 'resendKey',
@@ -80,9 +81,9 @@ function keyFor(envName: string): string | undefined {
     GOOGLE_CLIENT_SECRET: 'googleClientSecret',
     QSTASH_TOKEN: 'qstashToken',
   };
-  if (testOverrides.enabled && map[envName]) {
-    const v = testOverrides[map[envName]];
-    if (v) return v;
+  if (testOverrides.enabled) {
+    const v = (testOverrides as unknown as Record<string, unknown>)[map[envName]];
+    if (typeof v === 'string' && v) return v;
   }
   return process.env[envName];
 }
@@ -120,162 +121,50 @@ export function getSupabase(): SupabaseClient | null {
   return supabase;
 }
 
-const SCHEMA = `
-create table if not exists public.users (
-  id uuid primary key default gen_random_uuid(),
-  email text unique not null,
-  password_hash text,
-  company_name text not null default '',
-  subscription_tier text,
-  subscription_status text not null default 'pending',
-  lemon_squeezy_customer_id text,
-  lemon_squeezy_subscription_id text,
-  stripe_customer_id text,
-  plan_started_at timestamptz,
-  plan_period text default 'monthly',
-  custom_domain text,
-  brand_color text default '#E58233',
-  logo_url text,
-  email_signature text,
-  created_at timestamptz default now()
-);
 
-create table if not exists public.invoices (
-  id text primary key,
-  user_id uuid not null references public.users(id) on delete cascade,
-  external_invoice_id text not null,
-  client_name text not null,
-  client_email text not null,
-  client_phone text not null default '',
-  amount_due numeric not null default 0,
-  currency text not null default 'USD',
-  due_date text not null,
-  status text not null default 'unpaid',
-  payment_link text not null,
-  sequence_id text,
-  sequence_paused boolean not null default false,
-  current_step_index integer not null default 0,
-  last_reminder_sent_at timestamptz,
-  next_reminder_due_at timestamptz,
-  description text,
-  created_at timestamptz default now()
-);
-create index if not exists invoices_user_id_idx on public.invoices(user_id);
-
-create table if not exists public.reminder_logs (
-  id text primary key,
-  user_id uuid not null references public.users(id) on delete cascade,
-  invoice_id text,
-  invoice_number text,
-  client_name text,
-  client_email text,
-  sequence_step_title text,
-  channel text,
-  status text,
-  error_message text,
-  sent_at timestamptz default now(),
-  payload_preview text
-);
-create index if not exists reminder_logs_user_idx on public.reminder_logs(user_id, sent_at desc);
-
-create table if not exists public.sequences (
-  id text primary key,
-  user_id uuid not null references public.users(id) on delete cascade,
-  name text not null,
-  description text,
-  steps jsonb not null default '[]',
-  is_default boolean not null default false,
-  created_at timestamptz default now()
-);
-create index if not exists sequences_user_idx on public.sequences(user_id);
-
-create table if not exists public.custom_email_templates (
-  id text primary key,
-  user_id uuid not null references public.users(id) on delete cascade,
-  title text not null,
-  sender_name text,
-  sender_email text,
-  subject text,
-  body text,
-  category text default 'custom',
-  is_default boolean default false,
-  created_at timestamptz default now()
-);
-create index if not exists templates_user_idx on public.custom_email_templates(user_id);
-
-create table if not exists public.usage (
-  user_id uuid not null references public.users(id) on delete cascade,
-  month text not null,
-  emails_sent integer not null default 0,
-  whatsapp_sent integer not null default 0,
-  sms_sent integer not null default 0,
-  ai_generations integer not null default 0,
-  reminders_delivered integer not null default 0,
-  amount_recovered numeric not null default 0,
-  primary key (user_id, month)
-);
-
-create table if not exists public.integrations (
-  id text primary key,
-  user_id uuid not null references public.users(id) on delete cascade,
-  provider text not null,
-  is_active boolean not null default false,
-  account_name text,
-  access_token text,
-  refresh_token text,
-  last_synced_at timestamptz,
-  updated_at timestamptz default now()
-);
-create index if not exists integrations_user_idx on public.integrations(user_id);
-
-create table if not exists public.scheduling (
-  user_id uuid primary key references public.users(id) on delete cascade,
-  frequency text not null default 'daily',
-  time_of_day text not null default '09:00',
-  timezone text not null default 'UTC',
-  auto_pause_paid boolean not null default true,
-  updated_at timestamptz default now()
-);
-
-create table if not exists public.billing_events (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references public.users(id) on delete cascade,
-  type text not null,
-  tier text,
-  amount numeric not null default 0,
-  currency text not null default 'USD',
-  prorated_amount numeric not null default 0,
-  refund_amount numeric not null default 0,
-  breakdown jsonb,
-  provider text,
-  created_at timestamptz default now()
-);
-create index if not exists billing_events_user_idx on public.billing_events(user_id, created_at desc);
-`;
-
-let dbInitPromise: Promise<boolean> | null = null;
-export function initDb(): Promise<boolean> {
-  if (!getSupabase()) return Promise.resolve(false);
+let dbInitPromise: Promise<DbStatus> | null = null;
+export function initDb(): Promise<DbStatus> {
+  const sb = getSupabase();
+  if (!sb) return Promise.resolve({ ready: false, reason: 'SUPABASE_NOT_CONFIGURED' });
   if (!dbInitPromise) {
     dbInitPromise = (async () => {
-      const { error } = await getSupabase()!.from('_init_guard').select('1').limit(1).maybeSingle();
-      if (!error) return true;
-      const { error: ddlError } = await getSupabase()!.rpc('exec_sql', { sql: SCHEMA });
-      if (ddlError) {
-        console.warn(`[DB] exec_sql unavailable (${ddlError.message}); creating tables via raw SQL fallback`);
-        for (const stmt of SCHEMA.split(';').map((s) => s.trim()).filter(Boolean)) {
-          const r = await getSupabase()!.rpc('exec_sql', { sql: stmt + ';' });
-          if (r.error) console.warn(`[DB] fallback stmt skipped: ${r.error.message}`);
-        }
+      const { error } = await sb.from('_init_guard').select('1').limit(1).maybeSingle();
+      if (!error) return { ready: true };
+
+      // Preferred path: the `exec_sql` helper (defined in src/data/supabaseSchema.sql)
+      // lets the server self-migrate. Run that migration once in the Supabase SQL
+      // editor and every boot after that is fully automatic.
+      const { error: ddlError } = await sb.rpc('exec_sql', { sql: MIGRATION_SQL });
+      if (!ddlError) {
+        const ok = await sb.from('_init_guard').select('1').limit(1).maybeSingle();
+        return ok.error ? { ready: false, reason: 'MIGRATION_FAILED' } : { ready: true };
       }
-      return true;
+      return {
+        ready: false,
+        reason: 'MANUAL_SQL_REQUIRED',
+        message: `exec_sql helper not found (${ddlError.message}). Run the migration in src/data/supabaseSchema.sql once in the Supabase SQL editor (see GET /api/db/migration), then restart.`,
+      };
     })().catch((e) => {
       console.error('[DB] init failed:', e);
-      return false;
+      return { ready: false, reason: 'INIT_ERROR', message: String(e?.message || e) };
     });
   }
   return dbInitPromise;
 }
+
+interface DbStatus {
+  ready: boolean;
+  reason?: string;
+  message?: string;
+}
+
+let dbReady: DbStatus | null = null;
+initDb().then((r) => {
+  dbReady = r;
+  if (!r.ready) {
+    console.warn(`[DB] Not ready (${r.reason})${r.message ? `: ${r.message}` : ''}`);
+  }
+});
 
 function dbError(res: express.Response): express.Response {
   return res.status(503).json({
@@ -861,6 +750,9 @@ app.get('/api/health', (req, res) => {
     version: '2.0.0',
     timestamp: new Date().toISOString(),
     db: Boolean(getSupabase()),
+    dbReady: dbReady?.ready ?? false,
+    dbReason: dbReady?.ready ? undefined : dbReady?.reason,
+    dbMessage: dbReady?.ready ? undefined : dbReady?.message,
     testMode: testOverrides.enabled,
     env: {
       supabaseConfigured: Boolean(getSupabase()),
@@ -875,6 +767,11 @@ app.get('/api/health', (req, res) => {
       geminiConfigured: Boolean(effectiveKey('GEMINI_API_KEY')),
     },
   });
+});
+
+app.get('/api/db/migration', (req, res) => {
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.send(MIGRATION_SQL);
 });
 
 app.get('/api/test-mode', (req, res) => {
@@ -2375,7 +2272,10 @@ app.post('/api/cron/process-reminders', async (req, res) => {
 // 12. VITE MIDDLEWARE & PRODUCTION STATIC SERVING
 // ==========================================
 async function startServer() {
-  await initDb();
+  dbReady = await initDb();
+  if (!dbReady.ready) {
+    console.warn(`[DB] Not ready (${dbReady.reason})${dbReady.message ? `: ${dbReady.message}` : ''}`);
+  }
   if (process.env.NODE_ENV !== 'production') {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
@@ -2414,5 +2314,8 @@ if (isMain) {
   startServer();
 }
 
-// Ensure the schema exists even when the server is imported by the test runner.
-initDb().catch((e) => console.error('[DB] init failed:', e));
+// Ensure the schema is bootstrapped even when the server is imported by the
+// test runner (results are stored in `dbReady` and reported via /api/health).
+initDb().then((r) => {
+  dbReady = r;
+}).catch((e) => console.error('[DB] init failed:', e));
