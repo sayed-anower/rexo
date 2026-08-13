@@ -1,0 +1,17 @@
+# Allow all standard search engines to index the public site
+User-agent: *
+Disallow: /dashboard/
+Allow: /
+
+# Optional: Specifically block aggressive AI scrapers and bots from sensitive areas
+User-agent: GPTBot
+Disallow: /dashboard/
+
+User-agent: ChatGPT-User
+Disallow: /dashboard/
+
+User-agent: ClaudeBot
+Disallow: /dashboard/
+
+# Reference your XML sitemap (replace with your actual domain and sitemap path)
+Sitemap: https://www.example.com/sitemap.xml
