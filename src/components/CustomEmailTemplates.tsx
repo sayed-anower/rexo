@@ -511,7 +511,7 @@ export function CustomEmailTemplates({
                   className="px-5 py-2.5 rounded-xl bg-accent hover:bg-accent-hover text-white text-xs font-bold transition-all shadow-md flex items-center gap-2"
                 >
                   <CheckCircle2 className="w-4 h-4" />
-                  <span>Save Custom Email Template</span>
+                  <span>Save</span>
                 </button>
               </div>
             </form>
@@ -715,7 +715,7 @@ export function CustomEmailTemplates({
                       company_name: 'Your Studio',
                     })}
                   </div>
-                  <div className="text-ink2 dark:text-ink2 whitespace-pre-line leading-relaxed font-sans text-[11px] pt-1 border-t border-line dark:border-line">
+                  <div className="text-ink2 dark:text-ink2 whitespace-pre-line leading-relaxed font-sans text-[11px] pt-1 border-t border-line dark:border-line break-all">
                     {renderPlaceholders(targetTemplate.body, {
                       client_name: selectedInvoice.client_name,
                       external_invoice_id: selectedInvoice.external_invoice_id,

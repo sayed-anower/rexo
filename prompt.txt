@@ -1,9 +1,8 @@
-Build a production-ready Automated Payment Recovery & Invoice Reminders SaaS based on README.md.:
-
-1. Live Integrations: Real QuickBooks & Xero integration via .env.
-2. Direct Payments: Email/SMS notifications with live Stripe links that pay directly to the user's account.
-3. Instead of using link for changing password/forgotten password & for Sign Up use otp verification.
-4. Use tricks for QuickBooks & Xero:
-* Use Webhooks (Don't Poll): Instead of running a background loop that asks "Are there new invoices?" every 10 minutes, let QuickBooks and Xero ping your server only when an invoice is updated. This cuts API calls by ~90%.
-* Fetch in Batches: Don't request invoices one by one. Use pagination and request up to 50–100 invoices in a single API call.  
-* Smart Caching: Store invoice data in database and only fetch from QuickBooks/Xero when a webhook notifies of a change.
+In invoice page, how user set what to use email/whatsapp, add a feature where user can set email/whatsapp/sms (sms charges 2 cent, add this to cost model, no extra cost, all is included in plan, if hit limits, just remind that), user can set multiple not only sms or whatsapp. Also, when user create a New Invoice, they can add automation if want like every month/day/week/year/once.
+In Automation Schedule page, user can create multiple schedule to send reminders & set time based on any country. User can use custom email/sequence/template email.
+In Your Branding & Payment Page, remove Brand Primary Accent Color, add upload logo feature, that views over the web as company logo.
+In Account Settings & Billing page, add multiple account support & invite via link, if some clicks that link, then user have to signup/signin to thier dashboard via a code & can work with them like doing any work on the invited person dashboard. And, the limits, I can change, how many accounts will be allowed in plans. (save it in a obj, so I can change plan's limits)
+Remove all thi kind of variables {{client_name}}, use this [client_name] (user can use the variables in his own template, but can't create a new variable, vars are formed and finity/selected like client_name, etc). All variables always auto fills when send message.
+If somewhere have to save time, save time based on utc timezone. And, shows time by doing +-time in history (if have to show like activity logs).
+Fix Write Email with AI & Visual Sequence Builder With AI, it should create a message/sequence and show, if user click on save then save details (like if user change/delete) in DB. Add a btn New Sequence to build a brand new Sequence. A icon to delete completely a sequence or a email template. User can select email templates or write an custom mail at building sequence. And then user apply that sequence in automation page.
+When the web loads something from db or others, either shows the previous view or not found like view, add showing loading.

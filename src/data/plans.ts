@@ -95,7 +95,7 @@ export const PLANS: PlanDefinition[] = [
   plan(
     'starter',
     'Starter',
-    29,
+    69,
     'For solo agencies getting serious about cash flow.',
     'Track up to 100 invoices / mo',
     {
@@ -113,7 +113,7 @@ export const PLANS: PlanDefinition[] = [
   plan(
     'pro',
     'Pro',
-    59,
+    129,
     'The sweet spot for growing teams that chase invoices everyday.',
     'Track up to 500 invoices / mo',
     {
@@ -132,7 +132,7 @@ export const PLANS: PlanDefinition[] = [
   plan(
     'agency',
     'Agency',
-    119,
+    699,
     'For multi-client agencies that need everything white-label.',
     'Unlimited tracked invoices',
     {

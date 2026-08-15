@@ -55,10 +55,10 @@ export function PlanSelection({ user, onPlanChosen, onRefreshStatus }: PlanSelec
         <div className="text-center space-y-3 max-w-2xl mx-auto">
           <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-accent-tint dark:bg-surface2 border border-accent/30 text-accent text-xs font-bold">
             <Sparkles className="w-4 h-4" />
-            Welcome, {user.company_name} — choose your plan
+            Welcome, {user.company_name} — please choose your plan
           </div>
           <h1 className="text-2xl sm:text-4xl font-black text-ink dark:text-white tracking-tight">
-            No free tier. Pick a plan to start recovering payments.
+            Sorry, we have no free tier. Pick a plan to start recovering payments.
           </h1>
           <p className="text-sm text-ink2 leading-relaxed max-w-xl mx-auto">
             Your account is created (no charge). The moment you choose a plan and complete a secure
@@ -112,7 +112,7 @@ export function PlanSelection({ user, onPlanChosen, onRefreshStatus }: PlanSelec
           </button>
           <div className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary-soft text-primary dark:bg-surface2 dark:text-secondary text-xs font-bold">
             <ShieldCheck className="w-4 h-4" />
-            Secure payments via Stripe & Lemon Squeezy: card, bank, PayPal, Apple Pay, Google Pay
+            Secure payments via card, bank, PayPal, Apple Pay, Google Pay
           </div>
         </div>
       </div>

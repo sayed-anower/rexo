@@ -135,8 +135,7 @@ export function ReminderLogs({ logs }: ReminderLogsProps) {
                         onClick={() => setSelectedLog(log)}
                         className="p-1.5 rounded-lg hover:bg-surface2 dark:hover:bg-surface2 text-primary dark:text-secondary font-semibold text-xs transition-colors flex items-center gap-1 ml-auto"
                       >
-                        <Eye className="w-3.5 h-3.5" />
-                        <span>Inspect Payload</span>
+                        <Eye className="w-5 h-5" />
                       </button>
                     </td>
                   </tr>
@@ -165,12 +164,12 @@ export function ReminderLogs({ logs }: ReminderLogsProps) {
               Audit record for {selectedLog.invoice_number} ({selectedLog.channel.toUpperCase()})
             </p>
 
-            <div className="p-4 rounded-2xl bg-primary-strong text-ink font-mono text-xs space-y-2 border border-line overflow-x-auto leading-relaxed">
-              <div><span className="text-secondary">log_id:</span> "{selectedLog.id}"</div>
-              <div><span className="text-secondary">client:</span> "{selectedLog.client_name} &lt;{selectedLog.client_email}&gt;"</div>
-              <div><span className="text-secondary">step:</span> "{selectedLog.sequence_step_title}"</div>
-              <div><span className="text-secondary">timestamp:</span> "{selectedLog.sent_at}"</div>
-              <div><span className="text-secondary">preview:</span> "{selectedLog.payload_preview}"</div>
+            <div className="p-4 rounded-2xl bg-black text-white font-mono text-xs space-y-2 border border-line overflow-x-auto leading-relaxed">
+              <div><span className="font-bold">log_id:</span> {selectedLog.id}</div>
+              <div><span className="font-bold">client:</span> {selectedLog.client_name} &lt;{selectedLog.client_email}&gt;</div>
+              <div><span className="font-bold">step:</span> {selectedLog.sequence_step_title}</div>
+              <div><span className="font-bold">timestamp:</span> {selectedLog.sent_at}</div>
+              <div><span className="font-bold">preview:</span> {selectedLog.payload_preview}</div>
             </div>
           </div>
         </div>

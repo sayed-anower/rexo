@@ -513,7 +513,7 @@ export function InvoicesTable({
                             company_name: user?.company_name || 'Your Studio',
                           })}
                         </div>
-                        <div className="text-ink2 dark:text-ink2 whitespace-pre-line leading-relaxed font-sans text-[11px] pt-2 border-t border-line dark:border-line">
+                        <div className="text-ink2 dark:text-ink2 whitespace-pre-line leading-relaxed font-sans text-[11px] pt-2 border-t border-line dark:border-line break-all">
                           {renderPlaceholders(tmpl.body, {
                             client_name: sendModalInvoice.client_name,
                             external_invoice_id: sendModalInvoice.external_invoice_id,
