@@ -80,6 +80,15 @@ function keyFor(envName: string): string | undefined {
     GOOGLE_CLIENT_ID: 'googleClientId',
     GOOGLE_CLIENT_SECRET: 'googleClientSecret',
     QSTASH_TOKEN: 'qstashToken',
+    QUICKBOOKS_CLIENT_ID: 'quickbooksClientId',
+    QUICKBOOKS_CLIENT_SECRET: 'quickbooksClientSecret',
+    QUICKBOOKS_WEBHOOK_TOKEN: 'quickbooksWebhookToken',
+    XERO_CLIENT_ID: 'xeroClientId',
+    XERO_CLIENT_SECRET: 'xeroClientSecret',
+    XERO_WEBHOOK_KEY: 'xeroWebhookKey',
+    TWILIO_ACCOUNT_SID: 'twilioAccountSid',
+    TWILIO_AUTH_TOKEN: 'twilioAuthToken',
+    TWILIO_FROM_NUMBER: 'twilioFromNumber',
   };
   if (testOverrides.enabled) {
     const v = (testOverrides as unknown as Record<string, unknown>)[map[envName]];
@@ -200,6 +209,133 @@ function verifyPassword(password: string, stored: string): boolean {
   } catch {
     return false;
   }
+}
+
+// ==========================================
+// OTP VERIFICATION (signup, password reset, password change)
+// No reset links or magic links anywhere — every verification is a
+// short-lived, single-use 6-digit code delivered by real Resend email.
+// ==========================================
+const OTP_PURPOSES = ['signup', 'reset', 'change'] as const;
+type OtpPurpose = (typeof OTP_PURPOSES)[number];
+const OTP_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const OTP_MAX_ATTEMPTS = 5;
+const OTP_RESEND_COOLDOWN_MS = 60 * 1000;
+
+class OtpError extends Error {
+  code: string;
+  constructor(code: string, message: string) {
+    super(message);
+    this.code = code;
+  }
+}
+
+function generateOtp(): string {
+  return String(crypto.randomInt(100000, 1000000));
+}
+
+function maskEmail(email: string): string {
+  const [user, domain] = email.split('@');
+  if (!domain) return email;
+  return `${user.slice(0, 2)}***@${domain}`;
+}
+
+async function persistOtp(email: string, purpose: OtpPurpose, codeHash: string): Promise<boolean> {
+  const sb = getSupabase();
+  if (!sb) return false;
+  const { error } = await sb.from('otp_codes').insert({
+    email: String(email).toLowerCase(),
+    purpose,
+    code_hash: codeHash,
+    expires_at: new Date(Date.now() + OTP_TTL_MS).toISOString(),
+  });
+  return !error;
+}
+
+async function lastOtpSentAt(email: string, purpose: OtpPurpose): Promise<number | null> {
+  const sb = getSupabase();
+  if (!sb) return null;
+  const { data } = await sb
+    .from('otp_codes')
+    .select('created_at')
+    .eq('email', String(email).toLowerCase())
+    .eq('purpose', purpose)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return data ? new Date((data as unknown as { created_at: string }).created_at).getTime() : null;
+}
+
+async function sendOtpEmail(email: string, purpose: OtpPurpose, code: string): Promise<void> {
+  const key = effectiveKey('RESEND_API_KEY');
+  if (!key) throw new ProviderError('RESEND', 'Resend is not configured (RESEND_API_KEY).');
+  const subjectByPurpose: Record<OtpPurpose, string> = {
+    signup: 'Eron — Verify your email address',
+    reset: 'Eron — Password reset verification code',
+    change: 'Eron — Verify password change',
+  };
+  const messageByPurpose: Record<OtpPurpose, string> = {
+    signup: 'You are one step away from creating your Eron workspace.',
+    reset: 'Use the code below to reset your Eron password.',
+    change: 'Use the code below to confirm your Eron password change.',
+  };
+  await sendEmailViaResend({
+    from: keyFor('RESEND_FROM_EMAIL') || 'Reminders <reminders@youragency.com>',
+    to: email,
+    subject: subjectByPurpose[purpose],
+    html: `<p>Hi,</p><p>${messageByPurpose[purpose]}</p><p style="font-size:28px;font-weight:800;letter-spacing:6px;color:#E58233">${code}</p><p>This code expires in 10 minutes and can only be used once. If you didn't request it, you can safely ignore this email.</p>`,
+  });
+}
+
+async function requestOtp(email: string, purpose: OtpPurpose): Promise<{ message: string }> {
+  const normalized = String(email).toLowerCase();
+  const lastSent = await lastOtpSentAt(normalized, purpose);
+  if (lastSent && Date.now() - lastSent < OTP_RESEND_COOLDOWN_MS) {
+    throw new OtpError('OTP_RATE_LIMITED', 'Please wait a minute before requesting another code.');
+  }
+  const code = generateOtp();
+  if (!(await persistOtp(normalized, purpose, hashPassword(code)))) {
+    throw new OtpError('OTP_STORE_FAILED', 'Could not store the verification code.');
+  }
+  await sendOtpEmail(normalized, purpose, code);
+  return { message: `A 6-digit verification code was sent to ${maskEmail(normalized)}.` };
+}
+
+async function verifyOtp(
+  email: string,
+  purpose: OtpPurpose,
+  code: string
+): Promise<{ ok: boolean; code?: string; message?: string }> {
+  const sb = getSupabase();
+  if (!sb) return { ok: false, code: 'NO_DB', message: 'Database is not configured.' };
+  if (!/^\d{6}$/.test(String(code || ''))) {
+    return { ok: false, code: 'OTP_INVALID', message: 'Verification code must be 6 digits.' };
+  }
+  const { data } = await sb
+    .from('otp_codes')
+    .select('*')
+    .eq('email', String(email).toLowerCase())
+    .eq('purpose', purpose)
+    .eq('used', false)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!data) {
+    return { ok: false, code: 'OTP_INVALID', message: 'No active verification code found for this email. Request a new one.' };
+  }
+  const row = data as unknown as { id: string; expires_at: string; attempts: number; code_hash: string };
+  if (new Date(row.expires_at).getTime() < Date.now()) {
+    return { ok: false, code: 'OTP_EXPIRED', message: 'This verification code has expired. Request a new one.' };
+  }
+  if (row.attempts >= OTP_MAX_ATTEMPTS) {
+    return { ok: false, code: 'OTP_EXPIRED', message: 'Too many failed attempts. Request a new code.' };
+  }
+  if (!verifyPassword(String(code), row.code_hash)) {
+    await sb.from('otp_codes').update({ attempts: row.attempts + 1 }).eq('id', row.id);
+    return { ok: false, code: 'OTP_INVALID', message: 'Incorrect verification code.' };
+  }
+  await sb.from('otp_codes').update({ used: true }).eq('id', row.id);
+  return { ok: true };
 }
 
 function signSession(uid: string, exp: number): string {
@@ -351,7 +487,7 @@ async function addUsage(uid: string, partial: Partial<UsageRow>): Promise<UsageR
 // ==========================================
 // PLAN ENFORCEMENT (server-side, per action)
 // ==========================================
-type LimitKind = 'tracked_invoices' | 'emails' | 'whatsapp' | 'ai_generations';
+type LimitKind = 'tracked_invoices' | 'emails' | 'whatsapp' | 'sms' | 'ai_generations';
 
 function assertPlanActive(user: { profile: UserProfile }): { ok: boolean; code?: string; message?: string } {
   if (!user.profile.subscription_tier || user.profile.subscription_status !== 'active') {
@@ -387,6 +523,10 @@ async function assertLimit(
     limit = plan.limits.emails_per_month;
   } else if (kind === 'whatsapp') {
     used = usage.whatsapp_sent;
+    limit = plan.limits.whatsapp_per_month;
+  } else if (kind === 'sms') {
+    // SMS shares the premium messaging bucket with WhatsApp reminders.
+    used = usage.sms_sent;
     limit = plan.limits.whatsapp_per_month;
   } else {
     used = usage.ai_generations;
@@ -522,6 +662,24 @@ async function sendWhatsAppViaWhapi(opts: { to: string; message: string }) {
   return { provider: 'whapi', id: json.message_id || json.messages?.[0]?.id || `wa_${Date.now()}` };
 }
 
+async function sendSmsViaTwilio(opts: { to: string; body: string }): Promise<{ provider: string; id: string }> {
+  const sid = effectiveKey('TWILIO_ACCOUNT_SID');
+  const token = effectiveKey('TWILIO_AUTH_TOKEN');
+  const from = effectiveKey('TWILIO_FROM_NUMBER');
+  if (!sid || !token || !from) throw new ProviderError('TWILIO', 'SMS is not configured (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER).');
+  const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Basic ${Buffer.from(`${sid}:${token}`).toString('base64')}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams({ From: from, To: opts.to, Body: opts.body }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json?.message || 'Twilio SMS send failed');
+  return { provider: 'twilio', id: json.sid || `sms_${Date.now()}` };
+}
+
 async function scheduleQStashReminder(payload: unknown, delaySeconds = 0) {
   const token = effectiveKey('QSTASH_TOKEN');
   const url = process.env.QSTASH_URL || 'https://qstash.upstash.io';
@@ -569,6 +727,65 @@ function verifyQStashSignature(req: express.Request): boolean {
   }
 }
 
+async function createStripePaymentLink(externalInvoiceId: string, totalCents: number, currency: string): Promise<string> {
+  const key = effectiveKey('STRIPE_SECRET_KEY');
+  if (!key) throw new ProviderError('STRIPE', 'Stripe is not configured (STRIPE_SECRET_KEY).');
+  const headers = { Authorization: `Bearer ${key}`, 'Content-Type': 'application/x-www-form-urlencoded' };
+
+  const price = await fetch('https://api.stripe.com/v1/prices', {
+    method: 'POST',
+    headers,
+    body: new URLSearchParams({
+      currency,
+      unit_amount: String(totalCents),
+      'product_data[name]': `Invoice ${externalInvoiceId}`,
+    }),
+  });
+  const priceJson = await price.json();
+  if (!price.ok) throw new Error(priceJson?.error?.message || 'Stripe price creation failed');
+
+  const pl = await fetch('https://api.stripe.com/v1/payment_links', {
+    method: 'POST',
+    headers,
+    body: new URLSearchParams({
+      'line_items[0][price]': priceJson.id,
+      'line_items[0][quantity]': '1',
+    }),
+  });
+  const plJson = await pl.json();
+  if (!pl.ok) throw new Error(plJson?.error?.message || 'Stripe payment link creation failed');
+  return plJson.url as string;
+}
+
+// Smart caching: the Stripe Payment Link is created once per invoice and stored
+// in the database. Reminders (email / WhatsApp / SMS) then use the same live
+// checkout.stripe.com link that pays directly into the agency's Stripe account.
+async function ensureStripePaymentLink(inv: {
+  id: string;
+  external_invoice_id: string;
+  amount_due: number;
+  currency: string;
+  payment_link?: string;
+}): Promise<string> {
+  const sb = getSupabase();
+  const cached =
+    inv.payment_link ||
+    (sb ? (await sb.from('invoices').select('payment_link').eq('id', inv.id).maybeSingle()).data?.payment_link : '') ||
+    '';
+  if (cached && /^https?:\/\//.test(cached)) return cached;
+
+  const key = effectiveKey('STRIPE_SECRET_KEY');
+  if (!key) return cached || `/pay/${inv.id}`; // branded portal fallback stays relative
+
+  const fee = roundMoney(Number(inv.amount_due) * GATEWAY_FEE_RATE + GATEWAY_FEE_FLAT);
+  const totalCents = Math.round((Number(inv.amount_due) + fee) * 100);
+  const url = await createStripePaymentLink(String(inv.external_invoice_id), totalCents, String(inv.currency).toLowerCase());
+  if (sb) {
+    await sb.from('invoices').update({ payment_link: url }).eq('id', inv.id);
+  }
+  return url;
+}
+
 async function createStripePaymentSession(opts: {
   invoiceId: string;
   externalInvoiceId: string;
@@ -588,30 +805,8 @@ async function createStripePaymentSession(opts: {
   const headers = { Authorization: `Bearer ${key}`, 'Content-Type': 'application/x-www-form-urlencoded' };
 
   if (opts.method === 'paypal' || opts.method === 'link' || opts.method === 'wallet') {
-    const price = await fetch('https://api.stripe.com/v1/prices', {
-      method: 'POST',
-      headers,
-      body: new URLSearchParams({
-        currency: opts.currency.toLowerCase(),
-        unit_amount: String(totalCents),
-        'product_data[name]': `Invoice ${opts.externalInvoiceId}`,
-      }),
-    });
-    const priceJson = await price.json();
-    if (!price.ok) throw new Error(priceJson?.error?.message || 'Stripe price creation failed');
-
-    const pl = await fetch('https://api.stripe.com/v1/payment_links', {
-      method: 'POST',
-      headers,
-      body: new URLSearchParams({
-        'line_items[0][price]': priceJson.id,
-        'line_items[0][quantity]': '1',
-        after_completion_redirect_url: `${appUrl()}/pay/${opts.invoiceId}?success=1`,
-      }),
-    });
-    const plJson = await pl.json();
-    if (!pl.ok) throw new Error(plJson?.error?.message || 'Stripe payment link creation failed');
-    return { url: plJson.url, provider: 'stripe-payment-link', intent_id: priceJson.id };
+    const url = await createStripePaymentLink(opts.externalInvoiceId, totalCents, opts.currency.toLowerCase());
+    return { url, provider: 'stripe-payment-link', intent_id: `pl_${Date.now()}` };
   }
 
   const methods = opts.method === 'bank' ? ['us_bank_account'] : undefined;
@@ -738,6 +933,8 @@ async function cancelWithProvider(profile: UserProfile): Promise<{ provider: str
 
 // Raw & JSON body parsing (webhook signature verification needs the raw body)
 app.use('/api/webhooks/stripe', express.raw({ type: '*/*' }));
+app.use('/api/webhooks/quickbooks', express.raw({ type: '*/*' }));
+app.use('/api/webhooks/xero', express.raw({ type: '*/*' }));
 app.use(express.json());
 
 // ==========================================
@@ -762,8 +959,11 @@ app.get('/api/health', (req, res) => {
       whapiConfigured: Boolean(effectiveKey('WHAPI_API_TOKEN')),
       stripeConfigured: Boolean(effectiveKey('STRIPE_SECRET_KEY')),
       googleConfigured: Boolean(effectiveKey('GOOGLE_CLIENT_ID') && effectiveKey('GOOGLE_CLIENT_SECRET')),
-      quickbooksConfigured: Boolean(effectiveKey('QUICKBOOKS_CLIENT_ID')),
-      xeroConfigured: Boolean(effectiveKey('XERO_CLIENT_ID')),
+      quickbooksConfigured: Boolean(effectiveKey('QUICKBOOKS_CLIENT_ID') && effectiveKey('QUICKBOOKS_CLIENT_SECRET')),
+      xeroConfigured: Boolean(effectiveKey('XERO_CLIENT_ID') && effectiveKey('XERO_CLIENT_SECRET')),
+      twilioConfigured: Boolean(
+        effectiveKey('TWILIO_ACCOUNT_SID') && effectiveKey('TWILIO_AUTH_TOKEN') && effectiveKey('TWILIO_FROM_NUMBER')
+      ),
       geminiConfigured: Boolean(effectiveKey('GEMINI_API_KEY')),
     },
   });
@@ -787,6 +987,11 @@ app.get('/api/test-mode', (req, res) => {
       whapi: Boolean(effectiveKey('WHAPI_API_TOKEN')),
       qstash: Boolean(effectiveKey('QSTASH_TOKEN')),
       google: Boolean(effectiveKey('GOOGLE_CLIENT_ID') && effectiveKey('GOOGLE_CLIENT_SECRET')),
+      quickbooks: Boolean(effectiveKey('QUICKBOOKS_CLIENT_ID') && effectiveKey('QUICKBOOKS_CLIENT_SECRET')),
+      xero: Boolean(effectiveKey('XERO_CLIENT_ID') && effectiveKey('XERO_CLIENT_SECRET')),
+      twilio: Boolean(
+        effectiveKey('TWILIO_ACCOUNT_SID') && effectiveKey('TWILIO_AUTH_TOKEN') && effectiveKey('TWILIO_FROM_NUMBER')
+      ),
       gemini: Boolean(effectiveKey('GEMINI_API_KEY')),
     },
     lsVariants: testOverrides.lsVariants || {},
@@ -907,7 +1112,7 @@ app.post('/api/test/payment-intent', async (req, res) => {
 // 2. AUTHENTICATION (real, cookie sessions)
 // ==========================================
 app.post('/api/auth/signup', async (req, res) => {
-  const { email, password, company_name } = req.body || {};
+  const { email, password, company_name, otp } = req.body || {};
   if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(email))) {
     return res.status(400).json({ error: 'VALIDATION', message: 'A valid email address is required.' });
   }
@@ -923,6 +1128,12 @@ app.post('/api/auth/signup', async (req, res) => {
   const { data: existing } = await sb.from('users').select('id').eq('email', String(email).toLowerCase()).maybeSingle();
   if (existing) {
     return res.status(409).json({ error: 'EMAIL_TAKEN', message: 'An account with this email already exists. Sign in instead.' });
+  }
+
+  // Signup is verified with a real 6-digit OTP sent by email — no magic links.
+  const verified = await verifyOtp(String(email), 'signup', String(otp || ''));
+  if (!verified.ok) {
+    return res.status(verified.code === 'NO_DB' ? 503 : 400).json(verified);
   }
 
   const { data, error } = await sb
@@ -1021,12 +1232,17 @@ app.put('/api/auth/profile', async (req, res) => {
 app.post('/api/auth/change-password', async (req, res) => {
   const user = await requireUser(req, res);
   if (!user) return;
-  const { current_password, new_password } = req.body || {};
+  const { current_password, new_password, otp } = req.body || {};
   if (!user.row.password_hash || !verifyPassword(String(current_password || ''), user.row.password_hash)) {
     return res.status(401).json({ error: 'INVALID_CREDENTIALS', message: 'Current password is incorrect.' });
   }
   if (!new_password || String(new_password).length < 8) {
     return res.status(400).json({ error: 'VALIDATION', message: 'New password must be at least 8 characters.' });
+  }
+  // Password changes are confirmed with a real email OTP — no magic links.
+  const verified = await verifyOtp(user.profile.email, 'change', String(otp || ''));
+  if (!verified.ok) {
+    return res.status(verified.code === 'NO_DB' ? 503 : 400).json(verified);
   }
   const sb = getSupabase();
   if (!sb) return dbError(res);
@@ -1034,36 +1250,88 @@ app.post('/api/auth/change-password', async (req, res) => {
   res.json({ message: 'Password updated successfully' });
 });
 
+app.post('/api/auth/otp/request', async (req, res) => {
+  const { email, purpose } = req.body || {};
+  if (!OTP_PURPOSES.includes(purpose)) {
+    return res.status(400).json({ error: 'VALIDATION', message: `purpose must be one of: ${OTP_PURPOSES.join(', ')}.` });
+  }
+  if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(email))) {
+    return res.status(400).json({ error: 'VALIDATION', message: 'A valid email address is required.' });
+  }
+  const sb = getSupabase();
+  if (!sb) return dbError(res);
+
+  if (purpose === 'change') {
+    const user = await requireUser(req, res);
+    if (!user) return;
+    if (String(email).toLowerCase() !== user.profile.email) {
+      return res.status(400).json({ error: 'VALIDATION', message: 'Use the email address on your account.' });
+    }
+  } else if (purpose === 'signup') {
+    const { data: existing } = await sb.from('users').select('id').eq('email', String(email).toLowerCase()).maybeSingle();
+    if (existing) {
+      return res.status(409).json({ error: 'EMAIL_TAKEN', message: 'An account with this email already exists. Sign in instead.' });
+    }
+  }
+
+  try {
+    const result = await requestOtp(String(email), purpose);
+    res.json(result);
+  } catch (err: any) {
+    if (err instanceof OtpError) return res.status(429).json({ error: err.code, message: err.message });
+    res.status(err instanceof ProviderError ? 503 : 502).json({ error: 'OTP_SEND_FAILED', message: err.message });
+  }
+});
+
+app.post('/api/auth/otp/verify', async (req, res) => {
+  const { email, purpose, otp } = req.body || {};
+  if (!OTP_PURPOSES.includes(purpose) || !email || !otp) {
+    return res.status(400).json({ error: 'VALIDATION', message: 'email, purpose and otp are required.' });
+  }
+  const result = await verifyOtp(String(email), String(purpose) as OtpPurpose, String(otp));
+  if (!result.ok) return res.status(result.code === 'NO_DB' ? 503 : 400).json({ error: result.code, message: result.message });
+  res.json({ success: true, message: 'Verification code confirmed.' });
+});
+
 app.post('/api/auth/forgot-password', async (req, res) => {
   const { email } = req.body || {};
   if (!email) return res.status(400).json({ error: 'VALIDATION', message: 'Email is required.' });
-  const key = effectiveKey('RESEND_API_KEY');
-  if (!key) return providerUnavailable(res, 'RESEND');
   const sb = getSupabase();
   if (!sb) return dbError(res);
-  const { data } = await sb.from('users').select('id, company_name').eq('email', String(email).toLowerCase()).maybeSingle();
-  if (!data) return res.json({ message: 'If that email exists, a reset link has been sent.' });
-  const token = crypto.randomBytes(24).toString('hex');
-  const expiry = Date.now() + 60 * 60 * 1000;
-  const resetLink = `${appUrl()}/reset-password?token=${token}&exp=${expiry}`;
   try {
-    await sendEmailViaResend({
-      from: keyFor('RESEND_FROM_EMAIL') || 'Reminders <reminders@youragency.com>',
-      to: String(email),
-      subject: 'Eron — Password Reset',
-      html: `<p>Reset your Eron password <a href="${resetLink}">here</a>. Link expires in 1 hour.</p>`,
-    });
-    await recordBillingEvent({ userId: data.id as string, type: 'password_reset_email' });
+    // Password reset is verified with a real 6-digit OTP — no reset links.
+    const result = await requestOtp(String(email), 'reset');
+    res.json(result);
   } catch (err: any) {
-    return res.status(502).json({ error: 'SEND_FAILED', message: err.message });
+    if (err instanceof OtpError) return res.status(429).json({ error: err.code, message: err.message });
+    res.status(err instanceof ProviderError ? 503 : 502).json({ error: 'OTP_SEND_FAILED', message: err.message });
   }
-  res.json({ message: 'Password reset link sent to your email.' });
+});
+
+app.post('/api/auth/reset-password', async (req, res) => {
+  const { email, otp, new_password } = req.body || {};
+  if (!email || !otp) {
+    return res.status(400).json({ error: 'VALIDATION', message: 'Email and verification code are required.' });
+  }
+  if (!new_password || String(new_password).length < 8) {
+    return res.status(400).json({ error: 'VALIDATION', message: 'New password must be at least 8 characters.' });
+  }
+  const sb = getSupabase();
+  if (!sb) return dbError(res);
+  const verified = await verifyOtp(String(email), 'reset', String(otp));
+  if (!verified.ok) return res.status(verified.code === 'NO_DB' ? 503 : 400).json(verified);
+  const { data } = await sb.from('users').select('id').eq('email', String(email).toLowerCase()).maybeSingle();
+  // Generic response either way so account existence is never revealed.
+  if (!data) return res.json({ message: 'Password updated successfully.' });
+  await sb.from('users').update({ password_hash: hashPassword(String(new_password)) }).eq('id', (data as unknown as { id: string }).id);
+  await recordBillingEvent({ userId: (data as unknown as { id: string }).id, type: 'password_reset_email' });
+  res.json({ message: 'Password updated successfully. You can now sign in.' });
 });
 
 // ==========================================
 // 3. GOOGLE OAUTH (real sign in — homepage/signup button redirects here)
 // ==========================================
-const oauthStates = new Map<string, { exp: number }>();
+const oauthStates = new Map<string, { exp: number; provider?: string; uid?: string; verifier?: string }>();
 
 app.get('/api/auth/google', (req, res) => {
   const clientId = effectiveKey('GOOGLE_CLIENT_ID');
@@ -1211,7 +1479,7 @@ app.post('/api/invoices', async (req, res) => {
     currency: inv.currency || 'USD',
     due_date: inv.due_date || new Date().toISOString().split('T')[0],
     status: inv.status || 'unpaid',
-    payment_link: inv.payment_link || `/pay/${id}`,
+    payment_link: `/pay/${id}`,
     sequence_id: inv.sequence_id || null,
     sequence_paused: Boolean(inv.sequence_paused),
     current_step_index: inv.current_step_index || 0,
@@ -1220,7 +1488,12 @@ app.post('/api/invoices', async (req, res) => {
 
   const { data, error } = await sb.from('invoices').upsert(row).select('*').single();
   if (error) return res.status(500).json({ error: 'INVOICE_SAVE_FAILED', message: error.message });
-  res.json({ success: true, invoice: normalizeInvoice(data) });
+  // Direct payments: attach a live Stripe Payment Link (pays straight into the
+  // agency's Stripe account). Falls back to the branded portal when Stripe is
+  // not configured.
+  const saved = { ...data, payment_link: row.payment_link };
+  const liveLink = await ensureStripePaymentLink(saved as any).catch(() => row.payment_link);
+  res.json({ success: true, invoice: normalizeInvoice({ ...saved, payment_link: liveLink }) });
 });
 
 app.post('/api/invoices/:id/pay', async (req, res) => {
@@ -1267,6 +1540,45 @@ app.post('/api/invoices/:id/toggle-pause', async (req, res) => {
   res.json({ success: true, invoice: normalizeInvoice(data) });
 });
 
+async function syncStripeInvoicesFor(uid: string): Promise<{ synced: number; paid: number; invoices: any[] }> {
+  const key = effectiveKey('STRIPE_SECRET_KEY');
+  if (!key) throw new ProviderError('STRIPE', 'Stripe is not configured (STRIPE_SECRET_KEY).');
+
+  const rows: ProviderInvoiceInput[] = [];
+  let startAfter: string | undefined;
+  // Batched fetch: up to 100 invoices per API call, paginated via starting_after.
+  for (let page = 0; page < 20; page++) {
+    const qs = new URLSearchParams({ status: 'open', limit: '100', expand: ['data.customer'] as unknown as string });
+    if (startAfter) qs.set('starting_after', startAfter);
+    const res1 = await fetch(`https://api.stripe.com/v1/invoices?${qs.toString()}`, {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    const json: any = await res1.json();
+    if (!res1.ok) throw new Error(json?.error?.message || 'Stripe invoice fetch failed');
+    for (const inv of json.data || []) {
+      const cust = inv.customer;
+      const email = typeof cust === 'object' && cust ? cust.email : '';
+      const name = typeof cust === 'object' && cust ? cust.name || cust.email : '';
+      rows.push({
+        providerId: `inv_stripe_${inv.id}`,
+        external_invoice_id: String(inv.number || inv.id),
+        client_name: name || 'Stripe Customer',
+        client_email: email || '',
+        client_phone: '',
+        amount_due: (inv.amount_due || 0) / 100,
+        currency: (inv.currency || 'usd').toUpperCase(),
+        due_date: inv.due_date ? new Date(inv.due_date * 1000).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+        status: 'unpaid',
+        description: `Synced from Stripe ${inv.id}`,
+      });
+    }
+    const data = json.data || [];
+    startAfter = data.length ? data[data.length - 1].id : undefined;
+    if (!data.length) break;
+  }
+  return upsertProviderInvoices(uid, rows, 'stripe');
+}
+
 app.post('/api/invoices/sync-stripe', async (req, res) => {
   const user = await requireUser(req, res);
   if (!user) return;
@@ -1275,46 +1587,11 @@ app.post('/api/invoices/sync-stripe', async (req, res) => {
   const limit = await assertLimit(user.profile.id, user.profile.subscription_tier!, 'tracked_invoices');
   if (!limit.ok) return res.status(402).json(limit);
 
-  const key = effectiveKey('STRIPE_SECRET_KEY');
-  if (!key) return providerUnavailable(res, 'STRIPE');
-
   try {
-    const res1 = await fetch('https://api.stripe.com/v1/invoices?status=open&limit=50', {
-      headers: { Authorization: `Bearer ${key}` },
-    });
-    const json: any = await res1.json();
-    if (!res1.ok) throw new Error(json?.error?.message || 'Stripe invoice fetch failed');
-
-    const sb = getSupabase();
-    if (!sb) return dbError(res);
-
-    const existing = await sb.from('invoices').select('id, external_invoice_id').eq('user_id', user.profile.id);
-    const existingIds = new Set((existing.data || []).map((r: any) => r.external_invoice_id));
-
-    for (const inv of json.data || []) {
-      const number = inv.number || inv.id;
-      if (existingIds.has(number)) continue;
-      const newId = `inv_stripe_${inv.id}`;
-      await sb.from('invoices').upsert({
-        id: newId,
-        user_id: user.profile.id,
-        external_invoice_id: number,
-        client_name: inv.customer_name || inv.customer_email || 'Stripe Customer',
-        client_email: inv.customer_email || '',
-        client_phone: '',
-        amount_due: (inv.amount_due || 0) / 100,
-        currency: (inv.currency || 'usd').toUpperCase(),
-        due_date: inv.due_date ? new Date(inv.due_date * 1000).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-        status: 'unpaid',
-        payment_link: `/pay/${newId}`,
-        description: `Synced from Stripe ${inv.id}`,
-        created_at: new Date().toISOString(),
-      });
-    }
-    const invs = await listInvoices(user.profile.id);
-    res.json({ success: true, count: (json.data || []).length, invoices: invs });
+    const result = await syncStripeInvoicesFor(user.profile.id);
+    res.json({ success: true, count: result.synced, invoices: result.invoices });
   } catch (err: any) {
-    res.status(502).json({ error: 'SYNC_FAILED', message: err.message });
+    res.status(err instanceof ProviderError ? 503 : 502).json({ error: 'SYNC_FAILED', message: err.message });
   }
 });
 
@@ -1425,14 +1702,464 @@ app.get('/api/integrations', async (req, res) => {
   const sb = getSupabase();
   if (!sb) return dbError(res);
   const { data } = await sb.from('integrations').select('*').eq('user_id', user.profile.id);
-  res.json({ integrations: data || [] });
+  res.json({
+    integrations: (data || []).map((r: any) => ({
+      ...r,
+      access_token: r.access_token ? '••••' : null,
+      refresh_token: r.refresh_token ? '••••' : null,
+      webhook_url:
+        r.provider === 'quickbooks'
+          ? `${appUrl()}/api/webhooks/quickbooks`
+          : r.provider === 'xero'
+          ? `${appUrl()}/api/webhooks/xero`
+          : r.webhook_url || null,
+    })),
+  });
 });
+
+// ==========================================
+// 5b. QUICKBOOKS & XERO — REAL OAUTH, BATCHED SYNC, WEBHOOKS
+// ==========================================
+interface ProviderInvoiceInput {
+  providerId: string;
+  external_invoice_id: string;
+  client_name: string;
+  client_email: string;
+  client_phone: string;
+  amount_due: number;
+  currency: string;
+  due_date: string;
+  status: 'unpaid' | 'paid';
+  description?: string;
+}
+
+interface ProviderIntegrationRow {
+  id: string;
+  user_id: string;
+  provider: string;
+  is_active: boolean;
+  account_name?: string;
+  access_token?: string;
+  refresh_token?: string;
+  realm_id?: string;
+}
+
+async function upsertProviderInvoices(
+  uid: string,
+  rows: ProviderInvoiceInput[],
+  provider: string
+): Promise<{ synced: number; paid: number; invoices: any[] }> {
+  const sb = getSupabase();
+  if (!sb) return { synced: 0, paid: 0, invoices: [] };
+  const { data: existing } = await sb.from('invoices').select('id, external_invoice_id, status, payment_link').eq('user_id', uid);
+  const byNumber = new Map<string, any>((existing || []).map((r: any) => [String(r.external_invoice_id), r]));
+  let synced = 0;
+  let paid = 0;
+
+  for (const row of rows) {
+    const prev = byNumber.get(row.external_invoice_id);
+    if (!prev && row.status !== 'unpaid') continue; // never import already-paid invoices
+    const id = prev?.id || row.providerId;
+    const status = row.status === 'paid' ? 'paid' : 'unpaid';
+    if (status === 'paid' && !prev) continue;
+    const isNewlyPaid = status === 'paid' && prev && prev.status !== 'paid';
+
+    await sb.from('invoices').upsert(
+      {
+        id,
+        user_id: uid,
+        external_invoice_id: row.external_invoice_id,
+        client_name: row.client_name,
+        client_email: row.client_email,
+        client_phone: row.client_phone,
+        amount_due: Number(row.amount_due),
+        currency: row.currency,
+        due_date: row.due_date,
+        status,
+        payment_link: prev?.payment_link && /^https?:\/\//.test(prev.payment_link) ? prev.payment_link : `/pay/${id}`,
+        sequence_paused: status === 'paid',
+        description: row.description || prev?.description || null,
+      },
+      { onConflict: 'id' }
+    );
+
+    if (isNewlyPaid) {
+      paid++;
+      await sb.from('reminder_logs').insert({
+        id: `log_provider_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        user_id: uid,
+        invoice_id: id,
+        invoice_number: row.external_invoice_id,
+        client_name: row.client_name,
+        client_email: row.client_email,
+        sequence_step_title: `${provider.toUpperCase()} Webhook — Invoice Paid`,
+        channel: 'email',
+        status: 'sent',
+        sent_at: new Date().toISOString(),
+        payload_preview: `${provider.toUpperCase()} reported ${row.external_invoice_id} as paid ($${Number(row.amount_due).toFixed(2)}). Sequence stopped automatically.`,
+      });
+      await addUsage(uid, { reminders_delivered: 1, amount_recovered: Number(row.amount_due) });
+    } else {
+      synced++;
+      // Direct payments: attach a live Stripe Payment Link (cached in DB).
+      await ensureStripePaymentLink({ id, external_invoice_id: row.external_invoice_id, amount_due: Number(row.amount_due), currency: row.currency }).catch(() => {});
+    }
+  }
+
+  return { synced, paid, invoices: await listInvoices(uid) };
+}
+
+async function qbRequest(int: ProviderIntegrationRow, path: string): Promise<any | null> {
+  const clientId = effectiveKey('QUICKBOOKS_CLIENT_ID');
+  if (!clientId || !int.realm_id) return null;
+  let token = int.access_token || '';
+  const doFetch = (tok: string) =>
+    fetch(`https://quickbooks.api.intuit.com${path}`, {
+      headers: { Authorization: `Bearer ${tok}`, Accept: 'application/json' },
+    });
+  let res = await doFetch(token);
+  if (res.status === 401) {
+    const fresh = await refreshQbToken(int);
+    if (!fresh) return null;
+    res = await doFetch(fresh);
+  }
+  const json = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(json?.Fault?.Error?.[0]?.Detail || `QuickBooks API error (${res.status})`);
+  return json;
+}
+
+async function qbPost(int: ProviderIntegrationRow, path: string, body: unknown): Promise<any | null> {
+  const clientId = effectiveKey('QUICKBOOKS_CLIENT_ID');
+  if (!clientId || !int.realm_id) return null;
+  let token = int.access_token || '';
+  const doPost = (tok: string) =>
+    fetch(`https://quickbooks.api.intuit.com${path}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${tok}`, Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  let res = await doPost(token);
+  if (res.status === 401) {
+    const fresh = await refreshQbToken(int);
+    if (!fresh) return null;
+    res = await doPost(fresh);
+  }
+  const json = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(json?.Fault?.Error?.[0]?.Detail || `QuickBooks API error (${res.status})`);
+  return json;
+}
+
+async function refreshQbToken(int: ProviderIntegrationRow): Promise<string | null> {
+  const clientId = effectiveKey('QUICKBOOKS_CLIENT_ID');
+  const clientSecret = effectiveKey('QUICKBOOKS_CLIENT_SECRET');
+  if (!clientId || !clientSecret || !int.refresh_token) return null;
+  const res = await fetch('https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`,
+    },
+    body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: int.refresh_token }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || !json.access_token) return null;
+  const sb = getSupabase();
+  if (sb) {
+    await sb
+      .from('integrations')
+      .update({ access_token: json.access_token, refresh_token: json.refresh_token || int.refresh_token, updated_at: new Date().toISOString() })
+      .eq('id', int.id);
+  }
+  return json.access_token;
+}
+
+async function exchangeQbCode(code: string): Promise<{ access_token: string; refresh_token: string }> {
+  const clientId = effectiveKey('QUICKBOOKS_CLIENT_ID');
+  const clientSecret = effectiveKey('QUICKBOOKS_CLIENT_SECRET');
+  if (!clientId || !clientSecret) throw new Error('QUICKBOOKS_CLIENT_ID / SECRET are not configured.');
+  const res = await fetch('https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`,
+    },
+    body: new URLSearchParams({
+      grant_type: 'authorization_code',
+      code,
+      redirect_uri: OAUTH_REDIRECT(),
+    }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || !json.access_token) {
+    throw new Error(json?.error_description || json?.error || 'QuickBooks token exchange failed');
+  }
+  return { access_token: json.access_token, refresh_token: json.refresh_token };
+}
+
+function mapQbInvoice(inv: any, emails: Map<string, string>): ProviderInvoiceInput {
+  const balance = Number(inv.Balance || 0);
+  return {
+    providerId: `qb_${inv.Id}`,
+    external_invoice_id: String(inv.DocNumber || inv.Id),
+    client_name: inv.CustomerRef?.name || 'QuickBooks Customer',
+    client_email: emails.get(String(inv.CustomerRef?.value)) || '',
+    client_phone: '',
+    amount_due: balance,
+    currency: inv.CurrencyRef?.value || 'USD',
+    due_date: inv.DueDate || new Date().toISOString().split('T')[0],
+    status: balance > 0 ? 'unpaid' : 'paid',
+    description: `Synced from QuickBooks ${inv.Id}`,
+  };
+}
+
+async function qbEmailsForCustomers(int: ProviderIntegrationRow, customerIds: string[]): Promise<Map<string, string>> {
+  const emails = new Map<string, string>();
+  // Batched fetch: up to 30 customers per batch API call.
+  for (let i = 0; i < customerIds.length; i += 30) {
+    const chunk = customerIds.slice(i, i + 30);
+    const batchJson = await qbPost(int, `/v3/company/${int.realm_id}/batch?minorversion=70`, {
+      BatchItemRequest: chunk.map((id, idx) => ({ bId: `b${idx}`, operation: 'query', Query: `select * from Customer where Id = '${id}'` })),
+    });
+    for (const b of batchJson?.BatchItemResponse || []) {
+      const c = b?.QueryResponse?.Customer?.[0];
+      if (c) emails.set(String(c.Id), c?.BillEmail?.Address || c?.PrimaryEmailAddr?.Address || '');
+    }
+  }
+  return emails;
+}
+
+// Webhook-driven (no polling): refetch only the invoices Intuit reported as
+// changed, in batches of 30 per API call.
+async function syncQbChangedInvoices(int: ProviderIntegrationRow, invIds: string[]): Promise<number> {
+  let processed = 0;
+  for (let i = 0; i < invIds.length; i += 30) {
+    const chunk = invIds.slice(i, i + 30);
+    const batchJson = await qbPost(int, `/v3/company/${int.realm_id}/batch?minorversion=70`, {
+      BatchItemRequest: chunk.map((id, idx) => ({ bId: `b${idx}`, operation: 'query', Query: `select * from Invoice where Id = '${id}'` })),
+    });
+    const invoices = (batchJson?.BatchItemResponse || [])
+      .map((b: any) => b?.QueryResponse?.Invoice?.[0])
+      .filter(Boolean);
+    if (!invoices.length) continue;
+    const customerIds = invoices.map((inv: any) => String(inv.CustomerRef?.value)).filter(Boolean);
+    const emails = await qbEmailsForCustomers(int, customerIds);
+    const rows = invoices.map((inv: any) => mapQbInvoice(inv, emails));
+    await upsertProviderInvoices(int.user_id, rows, 'quickbooks');
+    processed += rows.length;
+  }
+  return processed;
+}
+
+// Full batched sync: paginated queries of 100 invoices per API call.
+async function syncQuickBooksInvoices(uid: string, int: ProviderIntegrationRow): Promise<{ synced: number; paid: number; invoices: any[] }> {
+  const emails = new Map<string, string>();
+  // 1) Customer email map (paginated, 100 per query).
+  let startAt = 1;
+  while (startAt < 2000) {
+    const qr = await qbRequest(int, `/v3/company/${int.realm_id}/query?minorversion=70&query=${encodeURIComponent(`select * from Customer MAXRESULTS 100 STARTAT ${startAt}`)}`);
+    const customers = qr?.QueryResponse?.Customer || [];
+    for (const c of customers) emails.set(String(c.Id), c?.BillEmail?.Address || c?.PrimaryEmailAddr?.Address || '');
+    const total = Number(qr?.QueryResponse?.totalCount || 0);
+    startAt += customers.length;
+    if (!customers.length || startAt > total) break;
+  }
+  // 2) Invoices (paginated, 100 per query).
+  const rows: ProviderInvoiceInput[] = [];
+  startAt = 1;
+  while (startAt < 5000) {
+    const qr = await qbRequest(int, `/v3/company/${int.realm_id}/query?minorversion=70&query=${encodeURIComponent(`select * from Invoice MAXRESULTS 100 STARTAT ${startAt}`)}`);
+    const batch = qr?.QueryResponse?.Invoice || [];
+    for (const inv of batch) rows.push(mapQbInvoice(inv, emails));
+    const total = Number(qr?.QueryResponse?.totalCount || 0);
+    startAt += batch.length;
+    if (!batch.length || startAt > total) break;
+  }
+  return upsertProviderInvoices(uid, rows, 'quickbooks');
+}
+
+async function xeroGet(int: ProviderIntegrationRow, path: string): Promise<any | null> {
+  const clientId = effectiveKey('XERO_CLIENT_ID');
+  if (!clientId || !int.realm_id) return null;
+  let token = int.access_token || '';
+  const doGet = (tok: string) =>
+    fetch(`https://api.xero.com/api.xro/2.0${path}`, {
+      headers: { Authorization: `Bearer ${tok}`, Accept: 'application/json', 'Xero-Tenant-Id': int.realm_id },
+    });
+  let res = await doGet(token);
+  if (res.status === 401) {
+    const fresh = await refreshXeroToken(int);
+    if (!fresh) return null;
+    res = await doGet(fresh);
+  }
+  const json = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(json?.Error?.Message || `Xero API error (${res.status})`);
+  return json;
+}
+
+async function refreshXeroToken(int: ProviderIntegrationRow): Promise<string | null> {
+  const clientId = effectiveKey('XERO_CLIENT_ID');
+  const clientSecret = effectiveKey('XERO_CLIENT_SECRET');
+  if (!clientId || !clientSecret || !int.refresh_token) return null;
+  const res = await fetch('https://identity.xero.com/connect/token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`,
+    },
+    body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: int.refresh_token }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || !json.access_token) return null;
+  const sb = getSupabase();
+  if (sb) {
+    await sb
+      .from('integrations')
+      .update({ access_token: json.access_token, refresh_token: json.refresh_token || int.refresh_token, updated_at: new Date().toISOString() })
+      .eq('id', int.id);
+  }
+  return json.access_token;
+}
+
+async function exchangeXeroCode(code: string, codeVerifier: string): Promise<{ access_token: string; refresh_token: string }> {
+  const clientId = effectiveKey('XERO_CLIENT_ID');
+  const clientSecret = effectiveKey('XERO_CLIENT_SECRET');
+  if (!clientId || !clientSecret) throw new Error('XERO_CLIENT_ID / SECRET are not configured.');
+  const res = await fetch('https://identity.xero.com/connect/token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`,
+    },
+    body: new URLSearchParams({
+      grant_type: 'authorization_code',
+      code,
+      redirect_uri: OAUTH_REDIRECT(),
+      client_id: clientId,
+      code_verifier: codeVerifier,
+    }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || !json.access_token) {
+    throw new Error(json?.error_description || json?.error || 'Xero token exchange failed');
+  }
+  return { access_token: json.access_token, refresh_token: json.refresh_token };
+}
+
+async function xeroConnections(accessToken: string): Promise<Array<{ tenantId: string; tenantName: string; tenantType: string }>> {
+  const res = await fetch('https://api.xero.com/connections', {
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+  });
+  const json = await res.json().catch(() => []);
+  if (!res.ok) throw new Error('Could not list Xero connections.');
+  return json;
+}
+
+function mapXeroInvoice(i: any): ProviderInvoiceInput {
+  const amount = Number(i.AmountDue || 0);
+  return {
+    providerId: `xero_${i.InvoiceID}`,
+    external_invoice_id: String(i.InvoiceNumber || i.InvoiceID),
+    client_name: i.Contact?.Name || 'Xero Contact',
+    client_email: i.Contact?.EmailAddress || '',
+    client_phone: i.Contact?.Phones?.[0]?.PhoneNumber || '',
+    amount_due: amount,
+    currency: i.CurrencyCode || 'USD',
+    due_date: i.DueDate ? String(i.DueDate).slice(0, 10) : new Date().toISOString().split('T')[0],
+    status: amount > 0 ? 'unpaid' : 'paid',
+    description: `Synced from Xero ${i.InvoiceID}`,
+  };
+}
+
+// Full batched sync: 100 invoices per page, paginated until exhausted.
+async function syncXeroInvoices(uid: string, int: ProviderIntegrationRow): Promise<{ synced: number; paid: number; invoices: any[] }> {
+  const rows: ProviderInvoiceInput[] = [];
+  const where = encodeURIComponent('Status=="AUTHORISED"||Status=="OVERDUE"||Status=="SUBMITTED"');
+  let page = 1;
+  while (page <= 50) {
+    const json = await xeroGet(int, `/Invoices?page=${page}&where=${where}`);
+    const batch = json?.Invoices || [];
+    for (const i of batch) rows.push(mapXeroInvoice(i));
+    if (!batch.length || batch.length < 100) break;
+    page++;
+  }
+  return upsertProviderInvoices(uid, rows, 'xero');
+}
+
+// Webhook-driven (no polling): refetch only the invoices Xero reported as
+// changed — up to 100 at once via the IDs param.
+async function syncXeroChangedInvoices(int: ProviderIntegrationRow, ids: string[]): Promise<number> {
+  let processed = 0;
+  for (let i = 0; i < ids.length; i += 100) {
+    const chunk = ids.slice(i, i + 100);
+    const json = await xeroGet(int, `/Invoices?IDs=${chunk.join(',')}`);
+    const invoices = json?.Invoices || [];
+    if (!invoices.length) continue;
+    const rows = invoices.map((inv: any) => mapXeroInvoice(inv));
+    await upsertProviderInvoices(int.user_id, rows, 'xero');
+    processed += rows.length;
+  }
+  return processed;
+}
+
+function pkcePair(): { verifier: string; challenge: string } {
+  const verifier = crypto.randomBytes(32).toString('base64url');
+  const challenge = crypto.createHash('sha256').update(verifier).digest('base64url');
+  return { verifier, challenge };
+}
+
+const OAUTH_REDIRECT = () => `${appUrl()}/api/oauth/callback`;
+
+function buildOAuthUrl(provider: string, state: string, verifier?: string): { url: string; configured: boolean } {
+  switch (provider) {
+    case 'gmail':
+    case 'google': {
+      const id = effectiveKey('GOOGLE_CLIENT_ID');
+      if (id) {
+        return {
+          url: `https://accounts.google.com/o/oauth2/v2/auth?client_id=${id}&redirect_uri=${encodeURIComponent(OAUTH_REDIRECT())}&response_type=code&scope=${encodeURIComponent('https://www.googleapis.com/auth/gmail.send')}&access_type=offline&state=${state}`,
+          configured: true,
+        };
+      }
+      break;
+    }
+    case 'stripe':
+      if (process.env.STRIPE_CLIENT_ID && effectiveKey('STRIPE_SECRET_KEY')) {
+        return {
+          url: `https://connect.stripe.com/oauth/authorize?client_id=${process.env.STRIPE_CLIENT_ID}&redirect_uri=${encodeURIComponent(OAUTH_REDIRECT())}&response_type=code&scope=read_write&state=${state}`,
+          configured: true,
+        };
+      }
+      break;
+    case 'quickbooks':
+      if (effectiveKey('QUICKBOOKS_CLIENT_ID')) {
+        return {
+          url: `https://appcenter.intuit.com/connect/oauth2?client_id=${effectiveKey('QUICKBOOKS_CLIENT_ID')}&redirect_uri=${encodeURIComponent(OAUTH_REDIRECT())}&response_type=code&scope=${encodeURIComponent('com.intuit.quickbooks.accounting')}&state=${state}`,
+          configured: true,
+        };
+      }
+      break;
+    case 'xero':
+      if (effectiveKey('XERO_CLIENT_ID')) {
+        // PKCE: the challenge is derived from the verifier already stored
+        // server-side for this state (oauthStates[state].verifier).
+        const challenge = crypto.createHash('sha256').update(verifier || '').digest('base64url');
+        return {
+          url: `https://login.xero.com/identity/connect/authorize?client_id=${effectiveKey('XERO_CLIENT_ID')}&redirect_uri=${encodeURIComponent(OAUTH_REDIRECT())}&response_type=code&scope=${encodeURIComponent('accounting.transactions accounting.contacts offline_access')}&state=${state}&code_challenge=${challenge}&code_challenge_method=S256`,
+          configured: true,
+        };
+      }
+      break;
+  }
+  return { url: '', configured: false };
+}
 
 app.post('/api/integrations/:provider/connect', async (req, res) => {
   const user = await requireUser(req, res);
   if (!user) return;
   const provider = req.params.provider.toLowerCase();
-  const auth = buildOAuthUrl(provider);
+  const state = crypto.randomBytes(16).toString('hex');
+  const { verifier } = pkcePair();
+  const auth = buildOAuthUrl(provider, state, verifier);
   if (!auth.configured) {
     return res.status(503).json({
       success: false,
@@ -1448,11 +2175,18 @@ app.post('/api/integrations/:provider/connect', async (req, res) => {
     id,
     user_id: user.profile.id,
     provider,
-    is_active: true,
+    is_active: false,
     account_name: `${provider.toUpperCase()} account`,
-    last_synced_at: new Date().toISOString(),
+    webhook_url: provider === 'quickbooks' ? `${appUrl()}/api/webhooks/quickbooks` : provider === 'xero' ? `${appUrl()}/api/webhooks/xero` : null,
+    webhook_configured:
+      provider === 'quickbooks'
+        ? Boolean(effectiveKey('QUICKBOOKS_WEBHOOK_TOKEN'))
+        : provider === 'xero'
+        ? Boolean(effectiveKey('XERO_WEBHOOK_KEY'))
+        : false,
     updated_at: new Date().toISOString(),
   });
+  oauthStates.set(state, { exp: Date.now() + 10 * 60 * 1000, provider, uid: user.profile.id, verifier });
   res.json({ success: true, provider, oauth_url: auth.url, oauth_configured: true });
 });
 
@@ -1463,68 +2197,233 @@ app.post('/api/integrations/:provider/disconnect', async (req, res) => {
   if (!sb) return dbError(res);
   await sb
     .from('integrations')
-    .update({ is_active: false, updated_at: new Date().toISOString() })
+    .update({ is_active: false, access_token: null, refresh_token: null, updated_at: new Date().toISOString() })
     .eq('user_id', user.profile.id)
     .eq('provider', req.params.provider.toLowerCase());
   res.json({ success: true });
 });
 
-const OAUTH_REDIRECT = () => `${appUrl()}/api/oauth/callback`;
+// Manual batched sync (the database is the cache — webhooks keep it warm).
+app.post('/api/integrations/:provider/sync', async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const active = assertPlanActive(user);
+  if (!active.ok) return res.status(402).json(active);
+  const limit = await assertLimit(user.profile.id, user.profile.subscription_tier!, 'tracked_invoices');
+  if (!limit.ok) return res.status(402).json(limit);
 
-function buildOAuthUrl(provider: string): { url: string; configured: boolean } {
-  switch (provider) {
-    case 'gmail':
-    case 'google': {
-      const id = effectiveKey('GOOGLE_CLIENT_ID');
-      if (id) {
-        return {
-          url: `https://accounts.google.com/o/oauth2/v2/auth?client_id=${id}&redirect_uri=${encodeURIComponent(OAUTH_REDIRECT())}&response_type=code&scope=${encodeURIComponent('https://www.googleapis.com/auth/gmail.send')}&access_type=offline`,
-          configured: true,
-        };
-      }
-      break;
+  const provider = String(req.params.provider).toLowerCase();
+  const sb = getSupabase();
+  if (!sb) return dbError(res);
+  const { data: int } = await sb
+    .from('integrations')
+    .select('*')
+    .eq('user_id', user.profile.id)
+    .eq('provider', provider)
+    .eq('is_active', true)
+    .maybeSingle();
+  if (!int) return res.status(404).json({ error: 'NOT_CONNECTED', message: `${provider} is not connected.` });
+
+  try {
+    let result: { synced: number; paid: number; invoices: any[] };
+    if (provider === 'quickbooks') {
+      if (!effectiveKey('QUICKBOOKS_CLIENT_ID') || !effectiveKey('QUICKBOOKS_CLIENT_SECRET')) return providerUnavailable(res, 'QUICKBOOKS');
+      result = await syncQuickBooksInvoices(user.profile.id, int as unknown as ProviderIntegrationRow);
+    } else if (provider === 'xero') {
+      if (!effectiveKey('XERO_CLIENT_ID') || !effectiveKey('XERO_CLIENT_SECRET')) return providerUnavailable(res, 'XERO');
+      result = await syncXeroInvoices(user.profile.id, int as unknown as ProviderIntegrationRow);
+    } else if (provider === 'stripe') {
+      if (!effectiveKey('STRIPE_SECRET_KEY')) return providerUnavailable(res, 'STRIPE');
+      result = await syncStripeInvoicesFor(user.profile.id);
+    } else {
+      return res.status(400).json({ error: 'UNSUPPORTED', message: 'Only quickbooks, xero and stripe support batched syncing.' });
     }
-    case 'stripe':
-      if (process.env.STRIPE_CLIENT_ID && effectiveKey('STRIPE_SECRET_KEY')) {
-        return {
-          url: `https://connect.stripe.com/oauth/authorize?client_id=${process.env.STRIPE_CLIENT_ID}&redirect_uri=${encodeURIComponent(OAUTH_REDIRECT())}&response_type=code&scope=read_write`,
-          configured: true,
-        };
-      }
-      break;
-    case 'quickbooks':
-      if (process.env.QUICKBOOKS_CLIENT_ID) {
-        return {
-          url: `https://appcenter.intuit.com/connect/oauth2?client_id=${process.env.QUICKBOOKS_CLIENT_ID}&redirect_uri=${encodeURIComponent(OAUTH_REDIRECT())}&response_type=code&scope=${encodeURIComponent('com.intuit.quickbooks.accounting')}`,
-          configured: true,
-        };
-      }
-      break;
-    case 'xero':
-      if (process.env.XERO_CLIENT_ID) {
-        return {
-          url: `https://login.xero.com/identity/connect/authorize?client_id=${process.env.XERO_CLIENT_ID}&redirect_uri=${encodeURIComponent(OAUTH_REDIRECT())}&response_type=code&scope=${encodeURIComponent('accounting.transactions')}`,
-          configured: true,
-        };
-      }
-      break;
+    await sb.from('integrations').update({ last_synced_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', int.id);
+    res.json({ success: true, provider, ...result });
+  } catch (err: any) {
+    res.status(502).json({ error: 'SYNC_FAILED', message: err.message });
   }
-  return { url: '', configured: false };
-}
+});
 
 app.get('/api/oauth/callback', async (req, res) => {
-  const provider = String(req.query.provider || '').toLowerCase();
   const code = String(req.query.code || '');
+  const state = String(req.query.state || '');
+  const pending = state ? oauthStates.get(state) : null;
+  const provider = pending?.provider || String(req.query.provider || '').toLowerCase();
+
+  if (pending) oauthStates.delete(state);
   if (!provider || !code) {
     return res.status(400).send('Missing OAuth callback parameters.');
   }
-  // A real token exchange requires provider credentials + tenant scopes.
-  res.send(
-    `<!doctype html><html><body style="font-family:system-ui;background:#170F08;color:#FDF1E6;display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
+  if ((provider === 'quickbooks' || provider === 'xero') && (!pending || pending.exp < Date.now())) {
+    return res.status(400).send('Invalid or expired OAuth state. Please try connecting again.');
+  }
+
+  const sb = getSupabase();
+  if (!sb) return dbError(res);
+
+  try {
+    if (provider === 'quickbooks') {
+      const realmId = String(req.query.realmId || '');
+      if (!realmId) return res.status(400).send('QuickBooks OAuth failed: missing realmId.');
+      const tokens = await exchangeQbCode(code);
+      const { data: int } = await sb
+        .from('integrations')
+        .select('*')
+        .eq('user_id', pending!.uid)
+        .eq('provider', 'quickbooks')
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (!int) return res.status(400).send('No pending QuickBooks connection found. Please sign in and connect again.');
+      await sb
+        .from('integrations')
+        .update({
+          is_active: true,
+          account_name: 'QuickBooks Online',
+          access_token: tokens.access_token,
+          refresh_token: tokens.refresh_token,
+          realm_id: realmId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', int.id);
+      // Smart caching: prime the cache with a first batched pull (webhooks keep it fresh after).
+      await syncQuickBooksInvoices(pending!.uid, { ...(int as any), access_token: tokens.access_token, refresh_token: tokens.refresh_token, realm_id: realmId } as ProviderIntegrationRow).catch(() => {});
+      return res.redirect('/app/connectors?connected=quickbooks');
+    }
+
+    if (provider === 'xero') {
+      const tokens = await exchangeXeroCode(code, pending!.verifier || '');
+      const connections = await xeroConnections(tokens.access_token);
+      const tenant = connections[0];
+      if (!tenant) return res.status(400).send('No Xero organisation is connected to this account.');
+      const { data: int } = await sb
+        .from('integrations')
+        .select('*')
+        .eq('user_id', pending!.uid)
+        .eq('provider', 'xero')
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (!int) return res.status(400).send('No pending Xero connection found. Please sign in and connect again.');
+      await sb
+        .from('integrations')
+        .update({
+          is_active: true,
+          account_name: tenant.tenantName,
+          access_token: tokens.access_token,
+          refresh_token: tokens.refresh_token,
+          realm_id: tenant.tenantId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', int.id);
+      await syncXeroInvoices(pending!.uid, { ...(int as any), access_token: tokens.access_token, refresh_token: tokens.refresh_token, realm_id: tenant.tenantId } as ProviderIntegrationRow).catch(() => {});
+      return res.redirect('/app/connectors?connected=xero');
+    }
+
+    // Other providers (Gmail / Stripe Connect) — informational response until
+    // their token exchanges are enabled with the matching credentials.
+    res.send(
+      `<!doctype html><html><body style="font-family:system-ui;background:#170F08;color:#FDF1E6;display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
     <div style="text-align:center"><h2>${provider} authorization code received</h2>
     <p>Eron needs the provider token exchange to be wired with your credentials before this account becomes active.</p>
     <a href="/" style="color:#F97316">Back to Eron</a></div></body></html>`
-  );
+    );
+  } catch (err: any) {
+    console.error(`[${provider} OAuth]`, err.message);
+    res.status(502).send(`${provider} connect failed: ${err.message}. <a href="/app/connectors" style="color:#F97316">Back to Eron</a>`);
+  }
+});
+
+// ==========================================
+// 5c. QUICKBOOKS & XERO WEBHOOKS (no polling — the providers ping us)
+// ==========================================
+app.get('/api/webhooks/quickbooks', (req, res) => {
+  // Intuit webhook setup pings the endpoint with a `code` that must be echoed.
+  const code = typeof req.query.code === 'string' ? req.query.code : '';
+  if (!code) return res.status(400).send('QuickBooks webhook validation requires a code parameter.');
+  res.setHeader('Content-Type', 'text/plain');
+  res.send(code);
+});
+
+app.post('/api/webhooks/quickbooks', async (req, res) => {
+  const token = effectiveKey('QUICKBOOKS_WEBHOOK_TOKEN');
+  if (!token) return res.status(401).json({ error: 'WEBHOOK_UNCONFIGURED', message: 'QUICKBOOKS_WEBHOOK_TOKEN is not set.' });
+
+  const raw = req.body as Buffer;
+  const signature = (req.headers['intuit-signature'] as string) || '';
+  const expected = crypto.createHmac('sha256', token).update(raw.toString('utf8')).digest('hex');
+  const a = Buffer.from(expected, 'utf8');
+  const b = Buffer.from(signature, 'utf8');
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+    return res.status(401).json({ error: 'INVALID_SIGNATURE' });
+  }
+
+  const event = JSON.parse(raw.toString('utf8'));
+  const sb = getSupabase();
+  if (!sb) return dbError(res);
+
+  let processed = 0;
+  for (const notification of event?.eventNotifications || []) {
+    const realmId = String(notification.realmId || '');
+    const entities = notification.dataChangeEvent?.entities || [];
+    const invIds = entities.filter((e: any) => e.name === 'Invoice').map((e: any) => String(e.id));
+    if (!realmId || !invIds.length) continue;
+    const { data: ints } = await sb
+      .from('integrations')
+      .select('*')
+      .eq('provider', 'quickbooks')
+      .eq('realm_id', realmId)
+      .eq('is_active', true);
+    for (const int of ints || []) {
+      try {
+        processed += await syncQbChangedInvoices(int as unknown as ProviderIntegrationRow, invIds);
+      } catch (err: any) {
+        console.error('[QuickBooks webhook]', err.message);
+      }
+    }
+  }
+  res.json({ received: true, processed });
+});
+
+app.post('/api/webhooks/xero', async (req, res) => {
+  const key = effectiveKey('XERO_WEBHOOK_KEY');
+  if (!key) return res.status(401).json({ error: 'WEBHOOK_UNCONFIGURED', message: 'XERO_WEBHOOK_KEY is not set.' });
+
+  const raw = req.body as Buffer;
+  const signature = (req.headers['x-xero-signature'] as string) || '';
+  const expected = crypto.createHmac('sha256', key).update(raw.toString('utf8')).digest('base64');
+  const a = Buffer.from(expected, 'base64');
+  const b = Buffer.from(signature, 'base64');
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+    return res.status(401).json({ error: 'INVALID_SIGNATURE' });
+  }
+
+  const event = JSON.parse(raw.toString('utf8'));
+  const sb = getSupabase();
+  if (!sb) return dbError(res);
+
+  let processed = 0;
+  for (const e of event?.events || []) {
+    if (e?.eventCategory !== 'INVOICE') continue;
+    const resourceId = String(e?.resourceId || '');
+    const tenantId = String(e?.tenantId || '');
+    if (!resourceId || !tenantId) continue;
+    const { data: ints } = await sb
+      .from('integrations')
+      .select('*')
+      .eq('provider', 'xero')
+      .eq('realm_id', tenantId)
+      .eq('is_active', true);
+    for (const int of ints || []) {
+      try {
+        processed += await syncXeroChangedInvoices(int as unknown as ProviderIntegrationRow, [resourceId]);
+      } catch (err: any) {
+        console.error('[Xero webhook]', err.message);
+      }
+    }
+  }
+  res.json({ received: true, processed });
 });
 
 // ==========================================
@@ -2194,31 +3093,44 @@ app.post('/api/cron/process-reminders', async (req, res) => {
 
       const dueDate = new Date(inv.due_date + 'T00:00:00');
       const diffDays = Math.floor((now.getTime() - dueDate.getTime()) / 86400000);
-      const channel = diffDays >= 7 ? 'whatsapp' : 'email';
+      // Channel escalation: overdue ≥7 days → WhatsApp (or SMS as fallback),
+      // otherwise email. Never poll — the DB cache is updated by webhooks.
+      let channel: 'email' | 'whatsapp' | 'sms' = diffDays >= 7 ? 'whatsapp' : 'email';
+      if (channel === 'whatsapp' && !effectiveKey('WHAPI_API_TOKEN')) {
+        channel = effectiveKey('TWILIO_ACCOUNT_SID') && inv.client_phone ? 'sms' : 'email';
+      }
+      if (channel === 'whatsapp' && !inv.client_phone) channel = 'email';
 
-      const limit = await assertLimit(uid, tier, channel === 'whatsapp' ? 'whatsapp' : 'emails');
+      const limit = await assertLimit(uid, tier, channel === 'whatsapp' ? 'whatsapp' : channel === 'sms' ? 'sms' : 'emails');
       if (!limit.ok) continue; // plan limit reached — skip silently, webhook/user fixed by upgrade
 
       const stepTitle =
         diffDays >= 7
-          ? 'WhatsApp Escalation + Late Fee Notice'
+          ? 'WhatsApp / SMS Escalation + Late Fee Notice'
           : diffDays > 0
           ? 'Overdue Firm Reminder Email'
           : 'Upcoming Invoice Notice';
 
       try {
+        // Direct payment: ensure (and cache) a live Stripe Payment Link first.
+        const payLink = await ensureStripePaymentLink(inv).catch(() => inv.payment_link || `/pay/${inv.id}`);
         let dispatch: { provider: string; id: string };
         if (channel === 'whatsapp') {
           dispatch = await sendWhatsAppViaWhapi({
             to: inv.client_phone,
-            message: `Hello ${inv.client_name}, invoice ${inv.external_invoice_id} for $${Number(inv.amount_due).toFixed(2)} is overdue. Pay here: ${appUrl()}${inv.payment_link}`,
+            message: `Hello ${inv.client_name}, invoice ${inv.external_invoice_id} for $${Number(inv.amount_due).toFixed(2)} is overdue. Pay securely here: ${payLink}`,
+          });
+        } else if (channel === 'sms') {
+          dispatch = await sendSmsViaTwilio({
+            to: inv.client_phone,
+            body: `Hi ${inv.client_name}, invoice ${inv.external_invoice_id} for $${Number(inv.amount_due).toFixed(2)} is overdue. Pay securely here: ${payLink}`,
           });
         } else {
           dispatch = await sendEmailViaResend({
             from: keyFor('RESEND_FROM_EMAIL') || 'Reminders <reminders@youragency.com>',
             to: inv.client_email,
             subject: `Payment reminder: Invoice ${inv.external_invoice_id}`,
-            html: `<p>Hi ${inv.client_name},</p><p>Invoice ${inv.external_invoice_id} for $${Number(inv.amount_due).toFixed(2)} ${inv.currency} is ${diffDays > 0 ? `${diffDays} day(s) overdue` : 'due'}. Pay securely here:</p><p><a href="${appUrl()}${inv.payment_link}">Pay now</a></p>`,
+            html: `<p>Hi ${inv.client_name},</p><p>Invoice ${inv.external_invoice_id} for $${Number(inv.amount_due).toFixed(2)} ${inv.currency} is ${diffDays > 0 ? `${diffDays} day(s) overdue` : 'due'}. Pay securely here:</p><p><a href="${payLink}">Pay now with card, bank, PayPal or wallet</a></p>`,
           });
         }
 
@@ -2242,7 +3154,7 @@ app.post('/api/cron/process-reminders', async (req, res) => {
           .eq('id', inv.id);
         await addUsage(uid, {
           reminders_delivered: 1,
-          ...(channel === 'whatsapp' ? { whatsapp_sent: 1 } : { emails_sent: 1 }),
+          ...(channel === 'whatsapp' ? { whatsapp_sent: 1 } : channel === 'sms' ? { sms_sent: 1 } : { emails_sent: 1 }),
         });
         await scheduleQStashReminder({ invoice_id: inv.id }, 86400).catch(() => {});
         results.push(newLog);

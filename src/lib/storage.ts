@@ -125,14 +125,31 @@ export async function loginUser(email: string, password: string): Promise<{ user
   });
 }
 
+export type OtpPurpose = 'signup' | 'reset' | 'change';
+
+export async function requestOtp(email: string, purpose: OtpPurpose): Promise<{ message: string }> {
+  return apiFetch('/api/auth/otp/request', {
+    method: 'POST',
+    body: JSON.stringify({ email, purpose }),
+  });
+}
+
+export async function verifyOtp(email: string, purpose: OtpPurpose, otp: string): Promise<{ success: boolean; message?: string }> {
+  return apiFetch('/api/auth/otp/verify', {
+    method: 'POST',
+    body: JSON.stringify({ email, purpose, otp }),
+  });
+}
+
 export async function signupUser(
   email: string,
   password: string,
-  companyName: string
+  companyName: string,
+  otp: string
 ): Promise<{ user: UserProfile; message?: string }> {
   return apiFetch('/api/auth/signup', {
     method: 'POST',
-    body: JSON.stringify({ email, password, company_name: companyName }),
+    body: JSON.stringify({ email, password, company_name: companyName, otp }),
   });
 }
 
@@ -140,10 +157,24 @@ export async function logoutUser(): Promise<void> {
   await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
 }
 
-export async function changePassword(current: string, next: string): Promise<void> {
+export async function changePassword(current: string, next: string, otp: string): Promise<void> {
   await apiFetch('/api/auth/change-password', {
     method: 'POST',
-    body: JSON.stringify({ current_password: current, new_password: next }),
+    body: JSON.stringify({ current_password: current, new_password: next, otp }),
+  });
+}
+
+export async function resetPassword(email: string, otp: string, newPassword: string): Promise<{ message?: string }> {
+  return apiFetch('/api/auth/reset-password', {
+    method: 'POST',
+    body: JSON.stringify({ email, otp, new_password: newPassword }),
+  });
+}
+
+export async function requestPasswordReset(email: string): Promise<{ message?: string }> {
+  return apiFetch('/api/auth/forgot-password', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
   });
 }
 
@@ -229,6 +260,12 @@ export async function connectApp(provider: string): Promise<{ oauth_url: string;
 
 export async function disconnectApp(provider: string): Promise<void> {
   await apiFetch(`/api/integrations/${provider}/disconnect`, { method: 'POST' });
+}
+
+export async function syncProviderInvoices(
+  provider: string
+): Promise<{ success: boolean; provider: string; synced: number; paid: number; invoices: Invoice[] }> {
+  return apiFetch(`/api/integrations/${provider}/sync`, { method: 'POST' });
 }
 
 // 6. PLANS, BILLING & SUBSCRIPTION

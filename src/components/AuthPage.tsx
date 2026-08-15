@@ -1,6 +1,14 @@
-import React, { useState } from 'react';
-import { ShieldCheck, Mail, Lock, Building2, ArrowRight, CheckCircle2, AlertCircle, ArrowLeft } from 'lucide-react';
-import { loginUser, signupUser, googleSignInUrl } from '../lib/storage';
+import React, { useEffect, useState } from 'react';
+import { ShieldCheck, Mail, Lock, Building2, ArrowRight, CheckCircle2, AlertCircle, ArrowLeft, KeyRound } from 'lucide-react';
+import {
+  loginUser,
+  signupUser,
+  googleSignInUrl,
+  requestOtp,
+  resetPassword,
+  requestPasswordReset,
+  OtpPurpose,
+} from '../lib/storage';
 import { UserProfile } from '../types';
 import { Footer } from './Footer';
 
@@ -10,14 +18,40 @@ interface AuthPageProps {
   onBackToHome: () => void;
 }
 
+const OTP_COOLDOWN_MS = 60 * 1000;
+
 export function AuthPage({ initialMode = 'signin', onSuccess, onBackToHome }: AuthPageProps) {
   const [mode, setMode] = useState<'signin' | 'signup' | 'forgot'>(initialMode);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [companyName, setCompanyName] = useState('');
+  const [otp, setOtp] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNew, setConfirmNew] = useState('');
+  const [awaitingOtp, setAwaitingOtp] = useState(false);
+  const [cooldownUntil, setCooldownUntil] = useState(0);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Reset the local form whenever the tab switches.
+  useEffect(() => {
+    setMessage(null);
+    setAwaitingOtp(false);
+    setOtp('');
+    setNewPassword('');
+    setConfirmNew('');
+    setCooldownUntil(0);
+  }, [mode]);
+
+  const cooldownSeconds = Math.max(0, Math.ceil((cooldownUntil - Date.now()) / 1000));
+
+  const sendOtp = async (purpose: OtpPurpose) => {
+    const res = await requestOtp(email, purpose);
+    setAwaitingOtp(true);
+    setCooldownUntil(Date.now() + OTP_COOLDOWN_MS);
+    setMessage({ type: 'success', text: res.message || 'Verification code sent to your email.' });
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,18 +67,26 @@ export function AuthPage({ initialMode = 'signin', onSuccess, onBackToHome }: Au
       } else if (mode === 'signup') {
         if (!companyName) throw new Error('Company / agency name is required.');
         if (!password || password.length < 8) throw new Error('Password must be at least 8 characters.');
-        const res = await signupUser(email, password, companyName);
-        setMessage({ type: 'success', text: res.message || 'Account created successfully!' });
-        setTimeout(() => onSuccess(res.user), 500);
+        if (!awaitingOtp) {
+          // Step 1: request the verification code.
+          await sendOtp('signup');
+        } else {
+          // Step 2: verify the code and create the account.
+          const res = await signupUser(email, password, companyName, otp);
+          setMessage({ type: 'success', text: res.message || 'Account created successfully!' });
+          setTimeout(() => onSuccess(res.user), 500);
+        }
       } else if (mode === 'forgot') {
-        const res = await fetch('/api/auth/forgot-password', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.message || 'Reset request failed.');
-        setMessage({ type: 'success', text: data.message || 'Reset link sent.' });
+        if (!awaitingOtp) {
+          await sendOtp('reset');
+        } else {
+          if (!newPassword || newPassword.length < 8) throw new Error('New password must be at least 8 characters.');
+          if (newPassword !== confirmNew) throw new Error('New passwords do not match.');
+          const res = await resetPassword(email, otp, newPassword);
+          setMessage({ type: 'success', text: res.message || 'Password updated. Please sign in.' });
+          setAwaitingOtp(false);
+          setTimeout(() => setMode('signin'), 1500);
+        }
       }
     } catch (err: any) {
       setMessage({ type: 'error', text: err.message || 'An error occurred. Please try again.' });
@@ -84,18 +126,18 @@ export function AuthPage({ initialMode = 'signin', onSuccess, onBackToHome }: Au
 
             <div>
               <h1 className="text-2xl sm:text-3xl font-extrabold text-ink dark:text-white tracking-tight">
-                {mode === 'signup' ? 'Create Your Agency Workspace' : 'Sign In to Eron'}
+                {mode === 'signup' ? 'Create Your Agency Workspace' : mode === 'forgot' ? 'Recover Your Account' : 'Sign In to Eron'}
               </h1>
             </div>
 
             <div className="space-y-3 pt-2">
               <div className="flex items-center gap-2.5 text-xs font-semibold text-ink dark:text-ink2">
                 <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-                <span>Real Stripe & QuickBooks data sync</span>
+                <span>Stripe, QuickBooks & Xero invoice sync</span>
               </div>
               <div className="flex items-center gap-2.5 text-xs font-semibold text-ink dark:text-ink2">
                 <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-                <span>Email, WhatsApp & AI drafts from real providers</span>
+                <span>Email, WhatsApp & SMS reminders from real providers</span>
               </div>
               <div className="flex items-center gap-2.5 text-xs font-semibold text-ink dark:text-ink2">
                 <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
@@ -103,7 +145,7 @@ export function AuthPage({ initialMode = 'signin', onSuccess, onBackToHome }: Au
               </div>
               <div className="flex items-center gap-2.5 text-xs font-semibold text-ink dark:text-ink2">
                 <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-                <span>Secure cookie sessions with expiry — no localStorage tokens</span>
+                <span>Signup, reset & password changes use one-time email verification codes — no magic links</span>
               </div>
             </div>
           </div>
@@ -111,30 +153,26 @@ export function AuthPage({ initialMode = 'signin', onSuccess, onBackToHome }: Au
           {/* Right Form Container */}
           <div className="lg:col-span-7 p-6 sm:p-8 rounded-3xl bg-white dark:bg-surface border border-line dark:border-line shadow-xl">
             {/* Mode Switcher Tabs */}
-            <div className="flex border-b border-line dark:border-line mb-6">
-              <button
-                onClick={() => {
-                  setMode('signin');
-                  setMessage(null);
-                }}
-                className={`flex-1 py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 -mb-px ${
-                  mode === 'signin' ? 'border-accent text-primary dark:text-secondary' : 'border-transparent text-ink3 hover:text-ink2'
-                }`}
-              >
-                Sign In
-              </button>
-              <button
-                onClick={() => {
-                  setMode('signup');
-                  setMessage(null);
-                }}
-                className={`flex-1 py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 -mb-px ${
-                  mode === 'signup' ? 'border-accent text-primary dark:text-secondary' : 'border-transparent text-ink3 hover:text-ink2'
-                }`}
-              >
-                Sign Up
-              </button>
-            </div>
+            {!awaitingOtp && (
+              <div className="flex border-b border-line dark:border-line mb-6">
+                <button
+                  onClick={() => setMode('signin')}
+                  className={`flex-1 py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 -mb-px ${
+                    mode === 'signin' ? 'border-accent text-primary dark:text-secondary' : 'border-transparent text-ink3 hover:text-ink2'
+                  }`}
+                >
+                  Sign In
+                </button>
+                <button
+                  onClick={() => setMode('signup')}
+                  className={`flex-1 py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 -mb-px ${
+                    mode === 'signup' ? 'border-accent text-primary dark:text-secondary' : 'border-transparent text-ink3 hover:text-ink2'
+                  }`}
+                >
+                  Sign Up
+                </button>
+              </div>
+            )}
 
             {/* Success / Error Banner */}
             {message && (
@@ -155,29 +193,33 @@ export function AuthPage({ initialMode = 'signin', onSuccess, onBackToHome }: Au
             )}
 
             {/* Real Google OAuth */}
-            <button
-              type="button"
-              onClick={handleGoogle}
-              disabled={googleLoading}
-              className="w-full py-3 px-4 rounded-xl border border-line dark:border-line bg-main dark:bg-surface2 hover:bg-surface2 dark:hover:bg-surface2 text-ink dark:text-white font-bold text-xs transition-all flex items-center justify-center gap-2.5 mb-4 disabled:opacity-60"
-            >
-              <svg className="w-4 h-4" viewBox="0 0 24 24">
-                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.27-4.74 3.27-8.1z" />
-                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                <path fill="#FBBC05" d="M5.84 14.1a7.06 7.06 0 0 1 0-4.2V7.06H2.18a11.5 11.5 0 0 0 0 9.88l3.66-2.84z" />
-                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
-              </svg>
-              <span>Continue with Google</span>
-            </button>
+            {!awaitingOtp && mode !== 'forgot' && (
+              <>
+                <button
+                  type="button"
+                  onClick={handleGoogle}
+                  disabled={googleLoading}
+                  className="w-full py-3 px-4 rounded-xl border border-line dark:border-line bg-main dark:bg-surface2 hover:bg-surface2 dark:hover:bg-surface2 text-ink dark:text-white font-bold text-xs transition-all flex items-center justify-center gap-2.5 mb-4 disabled:opacity-60"
+                >
+                  <svg className="w-4 h-4" viewBox="0 0 24 24">
+                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.27-4.74 3.27-8.1z" />
+                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                    <path fill="#FBBC05" d="M5.84 14.1a7.06 7.06 0 0 1 0-4.2V7.06H2.18a11.5 11.5 0 0 0 0 9.88l3.66-2.84z" />
+                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+                  </svg>
+                  <span>Continue with Google</span>
+                </button>
 
-            <div className="flex items-center gap-3 mb-5">
-              <div className="flex-1 h-px bg-line dark:bg-line" />
-              <span className="text-[10px] font-bold uppercase tracking-wider text-ink3">or continue with email</span>
-              <div className="flex-1 h-px bg-line dark:bg-line" />
-            </div>
+                <div className="flex items-center gap-3 mb-5">
+                  <div className="flex-1 h-px bg-line dark:bg-line" />
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-ink3">or continue with email</span>
+                  <div className="flex-1 h-px bg-line dark:bg-line" />
+                </div>
+              </>
+            )}
 
             <form onSubmit={handleSubmit} className="space-y-4">
-              {mode === 'signup' && (
+              {mode === 'signup' && !awaitingOtp && (
                 <div>
                   <label className="block text-xs font-semibold text-ink dark:text-ink2 mb-1">Company / Agency Name</label>
                   <div className="relative">
@@ -202,6 +244,7 @@ export function AuthPage({ initialMode = 'signin', onSuccess, onBackToHome }: Au
                     <input
                       type="email"
                       required
+                      disabled={awaitingOtp}
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       placeholder="you@youragency.com"
@@ -211,7 +254,7 @@ export function AuthPage({ initialMode = 'signin', onSuccess, onBackToHome }: Au
                 </div>
               )}
 
-              {(mode === 'signin' || mode === 'signup') && (
+              {(mode === 'signin' || (mode === 'signup' && !awaitingOtp)) && (
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <label className="block text-xs font-semibold text-ink dark:text-ink2">Password</label>
@@ -239,7 +282,7 @@ export function AuthPage({ initialMode = 'signin', onSuccess, onBackToHome }: Au
                 </div>
               )}
 
-              {mode === 'forgot' && (
+              {mode === 'forgot' && !awaitingOtp && (
                 <div>
                   <label className="block text-xs font-semibold text-ink dark:text-ink2 mb-1">Registered Email Address</label>
                   <div className="relative">
@@ -256,6 +299,74 @@ export function AuthPage({ initialMode = 'signin', onSuccess, onBackToHome }: Au
                 </div>
               )}
 
+              {awaitingOtp && (
+                <>
+                  <div>
+                    <label className="block text-xs font-semibold text-ink dark:text-ink2 mb-1">6-Digit Verification Code</label>
+                    <div className="relative">
+                      <KeyRound className="w-4 h-4 absolute left-3 top-3 text-ink3" />
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        required
+                        maxLength={6}
+                        value={otp}
+                        onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+                        placeholder="••••••"
+                        className={`${inputClass} text-center tracking-[0.5em] text-base font-bold`}
+                      />
+                    </div>
+                    <p className="mt-1.5 text-[10px] text-ink3">
+                      Sent to {email} — expires in 10 minutes, single use.
+                      {cooldownSeconds > 0 ? (
+                        <span className="text-ink2"> Resend in {cooldownSeconds}s.</span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => sendOtp(mode === 'forgot' ? 'reset' : 'signup')}
+                          className="ml-1 text-primary dark:text-secondary hover:underline font-semibold"
+                        >
+                          Resend code
+                        </button>
+                      )}
+                    </p>
+                  </div>
+
+                  {mode === 'forgot' && (
+                    <>
+                      <div>
+                        <label className="block text-xs font-semibold text-ink dark:text-ink2 mb-1">New Password</label>
+                        <div className="relative">
+                          <Lock className="w-4 h-4 absolute left-3 top-3 text-ink3" />
+                          <input
+                            type="password"
+                            required
+                            value={newPassword}
+                            onChange={(e) => setNewPassword(e.target.value)}
+                            placeholder="Min 8 characters"
+                            className={inputClass}
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-ink dark:text-ink2 mb-1">Confirm New Password</label>
+                        <div className="relative">
+                          <Lock className="w-4 h-4 absolute left-3 top-3 text-ink3" />
+                          <input
+                            type="password"
+                            required
+                            value={confirmNew}
+                            onChange={(e) => setConfirmNew(e.target.value)}
+                            placeholder="Repeat new password"
+                            className={inputClass}
+                          />
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
+
               <button
                 type="submit"
                 disabled={loading}
@@ -267,8 +378,8 @@ export function AuthPage({ initialMode = 'signin', onSuccess, onBackToHome }: Au
                   <>
                     <span>
                       {mode === 'signin' && 'Sign In to Dashboard'}
-                      {mode === 'signup' && 'Create Agency Account'}
-                      {mode === 'forgot' && 'Send Reset Magic Link'}
+                      {mode === 'signup' && (awaitingOtp ? 'Verify Code & Create Account' : 'Send Verification Code')}
+                      {mode === 'forgot' && (awaitingOtp ? 'Reset Password' : 'Send Verification Code')}
                     </span>
                     <ArrowRight className="w-4 h-4" />
                   </>

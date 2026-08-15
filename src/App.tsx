@@ -24,6 +24,7 @@ import {
   fetchAppConnectors,
   connectApp,
   disconnectApp,
+  syncProviderInvoices,
   logoutUser,
   fetchPortalInvoice,
   createPlanCheckout,
@@ -353,6 +354,14 @@ export default function App() {
     showToast(`${provider} disconnected.`);
   };
 
+  const handleSyncProvider = async (provider: string) => {
+    const result = await syncProviderInvoices(provider);
+    const updated = await fetchInvoices();
+    setInvoices(updated);
+    showToast(`${provider}: ${result.synced} invoice(s) refreshed from the ledger.`);
+    return result;
+  };
+
   // --- Public payment portal route ---
   if (route.name === 'pay') {
     return (
@@ -550,6 +559,12 @@ export default function App() {
                   if (!handleGateError(err)) showToast(err.message);
                 })
               }
+              onSync={(p) =>
+                handleSyncProvider(p).catch((err) => {
+                  if (!handleGateError(err)) showToast(err.message);
+                  throw err;
+                })
+              }
             />
           )}
 
@@ -588,7 +603,7 @@ export default function App() {
         </main>
       </div>
 
-      <ChangePasswordModal isOpen={changePassOpen} onClose={() => setChangePassOpen(false)} />
+      <ChangePasswordModal isOpen={changePassOpen} onClose={() => setChangePassOpen(false)} accountEmail={user?.email || ''} />
       <AiSequenceModal
         isOpen={aiModalOpen}
         onClose={() => setAiModalOpen(false)}

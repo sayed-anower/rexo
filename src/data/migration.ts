@@ -137,10 +137,30 @@ create table if not exists public.integrations (
   account_name text,
   access_token text,
   refresh_token text,
+  realm_id text,
+  webhook_url text,
+  webhook_configured boolean not null default false,
   last_synced_at timestamptz,
   updated_at timestamptz default now()
 );
 create index if not exists integrations_user_idx on public.integrations(user_id);
+alter table if exists public.integrations add column if not exists realm_id text;
+alter table if exists public.integrations add column if not exists webhook_url text;
+alter table if exists public.integrations add column if not exists webhook_configured boolean not null default false;
+
+-- One-time verification codes (signup, password reset, password change).
+-- Codes are stored scrypt-hashed with a short expiry and attempt cap.
+create table if not exists public.otp_codes (
+  id uuid primary key default gen_random_uuid(),
+  email text not null,
+  purpose text not null,
+  code_hash text not null,
+  expires_at timestamptz not null,
+  attempts integer not null default 0,
+  used boolean not null default false,
+  created_at timestamptz default now()
+);
+create index if not exists otp_codes_email_idx on public.otp_codes(email, purpose, created_at desc);
 
 create table if not exists public.scheduling (
   user_id uuid primary key references public.users(id) on delete cascade,

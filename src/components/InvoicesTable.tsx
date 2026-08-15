@@ -79,7 +79,10 @@ export function InvoicesTable({
   });
 
   const handleCopyLink = (inv: Invoice) => {
-    const fullUrl = `${window.location.origin}${inv.payment_link}`;
+    // payment_link may be a live Stripe checkout URL or a relative portal path.
+    const fullUrl = inv.payment_link.startsWith('http')
+      ? inv.payment_link
+      : `${window.location.origin}${inv.payment_link}`;
     navigator.clipboard.writeText(fullUrl);
     setCopiedId(inv.id);
     setTimeout(() => setCopiedId(null), 2000);

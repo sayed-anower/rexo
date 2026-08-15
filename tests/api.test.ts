@@ -153,3 +153,66 @@ test('Billing math: full-month charge equals price + tax + gateway fee', async (
   const expectedTotal = 29 + 29 * 0.05 + (29 * 0.029 + 0.3);
   assert.strictEqual(starter.fees.total, Math.round(expectedTotal * 100) / 100);
 });
+
+test('OTP request requires the database (503 NO_DB, no mocked codes)', async () => {
+  const { status, json } = await request('POST', '/api/auth/otp/request', {
+    email: 'agency@example.com',
+    purpose: 'signup',
+  });
+  assert.strictEqual(status, 503);
+  assert.strictEqual(json.error, 'NO_DB');
+});
+
+test('OTP verify requires the database (503 NO_DB)', async () => {
+  const { status, json } = await request('POST', '/api/auth/otp/verify', {
+    email: 'agency@example.com',
+    purpose: 'signup',
+    otp: '123456',
+  });
+  assert.strictEqual(status, 503);
+  assert.strictEqual(json.error, 'NO_DB');
+});
+
+test('Password reset via OTP requires the database (503 NO_DB)', async () => {
+  const { status, json } = await request('POST', '/api/auth/reset-password', {
+    email: 'agency@example.com',
+    otp: '123456',
+    new_password: 'password123',
+  });
+  assert.strictEqual(status, 503);
+  assert.strictEqual(json.error, 'NO_DB');
+});
+
+test('POST /api/webhooks/quickbooks rejects when the webhook token is missing (401)', async () => {
+  const { status, json } = await request('POST', '/api/webhooks/quickbooks', {
+    eventNotifications: [],
+  });
+  assert.strictEqual(status, 401);
+  assert.strictEqual(json.error, 'WEBHOOK_UNCONFIGURED');
+});
+
+test('POST /api/webhooks/xero rejects when the webhook key is missing (401)', async () => {
+  const { status, json } = await request('POST', '/api/webhooks/xero', {
+    events: [],
+  });
+  assert.strictEqual(status, 401);
+  assert.strictEqual(json.error, 'WEBHOOK_UNCONFIGURED');
+});
+
+test('GET /api/webhooks/quickbooks echoes the Intuit validation code', async () => {
+  const res = await fetch(`${baseUrl}/api/webhooks/quickbooks?code=eronsetup123`);
+  assert.strictEqual(res.status, 200);
+  const text = await res.text();
+  assert.strictEqual(text, 'eronsetup123');
+});
+
+test('OAuth callback rejects missing parameters (400)', async () => {
+  const res = await fetch(`${baseUrl}/api/oauth/callback`);
+  assert.strictEqual(res.status, 400);
+});
+
+test('Provider sync requires authentication (401)', async () => {
+  const { status, json } = await request('POST', '/api/integrations/quickbooks/sync');
+  assert.strictEqual(status, 401);
+  assert.strictEqual(json.error, 'UNAUTHENTICATED');
+});

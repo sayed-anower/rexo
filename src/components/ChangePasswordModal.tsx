@@ -1,20 +1,64 @@
-import React, { useState } from 'react';
-import { Lock, X, CheckCircle2, AlertCircle } from 'lucide-react';
-import { changePassword } from '../lib/storage';
+import React, { useEffect, useState } from 'react';
+import { Lock, X, CheckCircle2, AlertCircle, KeyRound } from 'lucide-react';
+import { changePassword, requestOtp } from '../lib/storage';
 
 interface ChangePasswordModalProps {
   isOpen: boolean;
   onClose: () => void;
+  accountEmail?: string;
 }
 
-export function ChangePasswordModal({ isOpen, onClose }: ChangePasswordModalProps) {
+const OTP_COOLDOWN_MS = 60 * 1000;
+
+export function ChangePasswordModal({ isOpen, onClose, accountEmail }: ChangePasswordModalProps) {
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [confirm, setConfirm] = useState('');
+  const [otp, setOtp] = useState('');
+  const [awaitingOtp, setAwaitingOtp] = useState(false);
+  const [cooldownUntil, setCooldownUntil] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [sending, setSending] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  // Reset the form every time the modal opens.
+  useEffect(() => {
+    if (isOpen) {
+      setCurrent('');
+      setNext('');
+      setConfirm('');
+      setOtp('');
+      setAwaitingOtp(false);
+      setCooldownUntil(0);
+      setMessage(null);
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
+
+  const cooldownSeconds = Math.max(0, Math.ceil((cooldownUntil - Date.now()) / 1000));
+
+  const sendCode = async () => {
+    if (!current) {
+      setMessage({ type: 'error', text: 'Enter your current password first.' });
+      return;
+    }
+    setSending(true);
+    setMessage(null);
+    try {
+      if (!accountEmail) throw new Error('Account email is unavailable. Refresh the page and try again.');
+      // Real OTP delivered to the account email — no magic links.
+      const res = await requestOtp(accountEmail, 'change');
+      void res;
+      setMessage({ type: 'success', text: `A 6-digit verification code was sent to ${accountEmail}.` });
+      setAwaitingOtp(true);
+      setCooldownUntil(Date.now() + OTP_COOLDOWN_MS);
+    } catch (err: any) {
+      setMessage({ type: 'error', text: err.message || 'Failed to send the verification code.' });
+    } finally {
+      setSending(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,9 +71,17 @@ export function ChangePasswordModal({ isOpen, onClose }: ChangePasswordModalProp
       setMessage({ type: 'error', text: 'New passwords do not match.' });
       return;
     }
+    if (!awaitingOtp) {
+      await sendCode();
+      return;
+    }
+    if (!otp || otp.length !== 6) {
+      setMessage({ type: 'error', text: 'Enter the 6-digit verification code from your email.' });
+      return;
+    }
     setLoading(true);
     try {
-      await changePassword(current, next);
+      await changePassword(current, next, otp);
       setMessage({ type: 'success', text: 'Password updated successfully.' });
       setTimeout(onClose, 1200);
     } catch (err: any) {
@@ -55,7 +107,7 @@ export function ChangePasswordModal({ isOpen, onClose }: ChangePasswordModalProp
           </div>
           <div>
             <h3 className="text-xl font-bold tracking-tight">Change Account Password</h3>
-            <p className="text-xs text-ink2 dark:text-ink2">Update your credentials</p>
+            <p className="text-xs text-ink2 dark:text-ink2">Verify with a one-time code sent to your email</p>
           </div>
         </div>
 
@@ -110,12 +162,52 @@ export function ChangePasswordModal({ isOpen, onClose }: ChangePasswordModalProp
               className="w-full px-3 py-2.5 rounded-xl border border-line dark:border-line bg-main dark:bg-surface2 text-xs text-ink dark:text-white outline-none focus:ring-2 focus:ring-accent"
             />
           </div>
+
+          {awaitingOtp && (
+            <div>
+              <label className="block text-xs font-semibold text-ink dark:text-ink2 mb-1">Verification Code</label>
+              <div className="relative">
+                <KeyRound className="w-4 h-4 absolute left-3 top-3 text-ink3" />
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  required
+                  maxLength={6}
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+                  placeholder="••••••"
+                  className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-line dark:border-line bg-main dark:bg-surface2 text-xs text-ink dark:text-white outline-none focus:ring-2 focus:ring-accent text-center tracking-[0.5em] text-base font-bold"
+                />
+              </div>
+              <p className="mt-1.5 text-[10px] text-ink3">
+                Sent to your account email — expires in 10 minutes, single use.
+                {cooldownSeconds > 0 ? (
+                  <span className="text-ink2"> Resend in {cooldownSeconds}s.</span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={sendCode}
+                    className="ml-1 text-primary dark:text-secondary hover:underline font-semibold"
+                  >
+                    Resend code
+                  </button>
+                )}
+              </p>
+            </div>
+          )}
+
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || sending}
             className="w-full py-3 px-4 rounded-xl bg-accent hover:bg-accent-hover text-white font-bold text-xs transition-all shadow-lg shadow-accent/30"
           >
-            {loading ? 'Updating...' : 'Update Password'}
+            {sending
+              ? 'Sending code...'
+              : loading
+              ? 'Updating...'
+              : awaitingOtp
+              ? 'Verify & Update Password'
+              : 'Send Verification Code'}
           </button>
         </form>
       </div>

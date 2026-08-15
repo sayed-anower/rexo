@@ -2,9 +2,10 @@ import React, { useEffect, useState } from 'react';
 import {
   PlugZap,
   CheckCircle2,
-  XCircle,
   ExternalLink,
-  ShieldCheck
+  ShieldCheck,
+  RefreshCw,
+  Link2
 } from 'lucide-react';
 import { AppConnectorInfo } from '../types';
 import { fetchAppConnectors } from '../lib/storage';
@@ -12,6 +13,7 @@ import { fetchAppConnectors } from '../lib/storage';
 interface ConnectorsProps {
   onConnect: (provider: string) => Promise<any>;
   onDisconnect: (provider: string) => Promise<any>;
+  onSync: (provider: string) => Promise<any>;
 }
 
 const CONNECTOR_ICONS: Record<string, string> = {
@@ -23,9 +25,20 @@ const CONNECTOR_ICONS: Record<string, string> = {
   slack: '💬',
 };
 
-export function Connectors({ onConnect, onDisconnect }: ConnectorsProps) {
+const WEBHOOK_PROVIDERS: Record<string, string> = {
+  quickbooks: '/api/webhooks/quickbooks',
+  xero: '/api/webhooks/xero',
+};
+
+export function Connectors({ onConnect, onDisconnect, onSync }: ConnectorsProps) {
   const [connectors, setConnectors] = useState<AppConnectorInfo[]>([]);
   const [working, setWorking] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState<string | null>(null);
+
+  const refresh = async () => {
+    const list = await fetchAppConnectors();
+    setConnectors(list as unknown as AppConnectorInfo[]);
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -46,10 +59,25 @@ export function Connectors({ onConnect, onDisconnect }: ConnectorsProps) {
       } else {
         await onConnect(c.provider);
       }
-      const list = await fetchAppConnectors();
-      setConnectors(list as unknown as AppConnectorInfo[]);
+      await refresh();
     } finally {
       setWorking(null);
+    }
+  };
+
+  const handleSync = async (c: AppConnectorInfo) => {
+    setSyncing(c.id);
+    try {
+      const res = await onSync(c.provider);
+      const message =
+        res?.synced != null
+          ? `${c.name}: ${res.synced} invoice(s) refreshed from the ledger (${res.paid} newly paid).`
+          : `${c.name} sync complete.`;
+      window.alert(message);
+    } catch (err: any) {
+      window.alert(err.message || `${c.name} sync failed.`);
+    } finally {
+      setSyncing(null);
     }
   };
 
@@ -65,10 +93,12 @@ export function Connectors({ onConnect, onDisconnect }: ConnectorsProps) {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {items.map((c) => {
             const isWorking = working === c.id;
+            const isSyncing = syncing === c.id;
+            const isAccounting = c.category === 'accounting';
             return (
               <div
                 key={c.id}
-                className="p-5 rounded-3xl bg-white dark:bg-surface border border-line dark:border-line shadow-sm flex items-start justify-between gap-4"
+                className="p-5 rounded-3xl bg-white dark:bg-surface border border-line dark:border-line shadow-sm flex flex-col justify-between gap-4"
               >
                 <div className="space-y-1 min-w-0">
                   <div className="flex items-center gap-2">
@@ -81,31 +111,50 @@ export function Connectors({ onConnect, onDisconnect }: ConnectorsProps) {
                       Connected: {c.account_name || c.provider}
                     </span>
                   )}
+                  {c.connected && isAccounting && WEBHOOK_PROVIDERS[c.provider] && (
+                    <span className="flex items-center gap-1.5 mt-1.5 text-[10px] font-mono text-ink2 truncate max-w-full">
+                      <Link2 className="w-3 h-3 shrink-0" />
+                      Webhook: {window.location.origin}{WEBHOOK_PROVIDERS[c.provider]}
+                    </span>
+                  )}
                 </div>
 
-                <button
-                  onClick={() => handleToggle(c)}
-                  disabled={isWorking}
-                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 disabled:opacity-50 ${
-                    c.connected
-                      ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 hover:bg-emerald-200 dark:hover:bg-emerald-900'
-                      : 'bg-accent hover:bg-accent-hover text-white shadow-sm'
-                  }`}
-                >
-                  {isWorking ? (
-                    <span>{c.connected ? 'Disconnecting...' : 'Connecting...'}</span>
-                  ) : c.connected ? (
-                    <>
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>Connected</span>
-                    </>
-                  ) : (
-                    <>
-                      <ExternalLink className="w-3.5 h-3.5" />
-                      <span>Connect</span>
-                    </>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleToggle(c)}
+                    disabled={isWorking || isSyncing}
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 disabled:opacity-50 ${
+                      c.connected
+                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 hover:bg-emerald-200 dark:hover:bg-emerald-900'
+                        : 'bg-accent hover:bg-accent-hover text-white shadow-sm'
+                    }`}
+                  >
+                    {isWorking ? (
+                      <span>{c.connected ? 'Disconnecting...' : 'Connecting...'}</span>
+                    ) : c.connected ? (
+                      <>
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>Connected</span>
+                      </>
+                    ) : (
+                      <>
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>Connect</span>
+                      </>
+                    )}
+                  </button>
+
+                  {c.connected && isAccounting && (
+                    <button
+                      onClick={() => handleSync(c)}
+                      disabled={isSyncing}
+                      className="px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-900 disabled:opacity-50 shrink-0"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                      <span>{isSyncing ? 'Syncing...' : 'Sync now'}</span>
+                    </button>
                   )}
-                </button>
+                </div>
               </div>
             );
           })}
@@ -154,9 +203,9 @@ export function Connectors({ onConnect, onDisconnect }: ConnectorsProps) {
         <div className="p-4 rounded-2xl bg-main dark:bg-surface2/60 border border-line dark:border-line text-xs text-ink2 dark:text-ink2 flex items-start gap-2">
           <ShieldCheck className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
           <p>
-            We only request read access for invoices and the ability to send the reminder
-            messages you configure. Your credentials are never shared and you can disconnect
-            any app at any time.
+            QuickBooks and Xero stay in sync through <strong>webhooks</strong> — they notify Eron only when
+            an invoice changes, so no polling is used. Invoices are cached in the database; the Sync now
+            button triggers a one-time batched pull of up to 100 invoices per API call.
           </p>
         </div>
       </div>

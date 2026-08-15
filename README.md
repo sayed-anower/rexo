@@ -21,6 +21,12 @@ Eron is a **real-API, production-ready Automated Payment Recovery & Invoice Remi
 | Money-back refund on mid-month cancel (usage + tax + fees deducted) | ✅ `billingMath()` in `server.ts`: refund = unused days × price − usage cost − tax − gateway fee. Preview + cancel UI in Settings → Plan & Usage |
 | All payment methods Stripe/LS allow | ✅ Card, bank/ACH, PayPal, Apple Pay, Google Pay (Stripe Payment Links / PaymentIntents; Lemon Squeezy hosted checkout) |
 | Real Google login/signup; homepage button redirects to Google, not signup page | ✅ `GET /api/auth/google` → real OAuth → callback → session cookie. Homepage & signup buttons do a full redirect (`window.location.href = '/api/auth/google'`), never the in-app signup page |
+| **Real QuickBooks & Xero integrations via `.env`** | ✅ Full OAuth (token exchange + auto-refresh) for QuickBooks Online and Xero, driven by `QUICKBOOKS_CLIENT_ID/SECRET` and `XERO_CLIENT_ID/SECRET`. Tokens + `realm_id`/`tenant_id` stored per user in `integrations` |
+| **Webhooks, not polling (QuickBooks & Xero)** | ✅ `POST /api/webhooks/quickbooks` (Intuit HMAC + validation-code echo) and `POST /api/webhooks/xero` (Xero base64-HMAC) push invoice changes to Eron. No background "are there new invoices?" loops |
+| **Batch fetching** | ✅ Sync pulls invoices in batches of 100 per API call (QuickBooks `MAXRESULTS`, Xero pages) and refreshes webhook changes 30–100 at a time via the batch/IDs endpoints |
+| **Smart caching** | ✅ The `invoices` table is the cache. Webhooks refetch only the changed invoices; `POST /api/integrations/:provider/sync` is a manual one-time batched pull |
+| **Direct payments: live Stripe links in email/SMS/WhatsApp** | ✅ Every invoice gets a real Stripe **Payment Link** (cached in `payment_link`) that pays straight into the agency's Stripe account. Reminders (email + WhatsApp + **Twilio SMS**) embed the live `checkout.stripe.com` link |
+| **OTP verification everywhere (no magic links)** | ✅ Signup, forgotten-password reset, and password changes are verified with a real 6-digit email OTP (`otp_codes` table, 10-min expiry, single-use, 5-attempt cap). The old reset link flow is gone |
 | Test mode `test = true/false` with real test keys (no fake mocks) | ✅ `POST /api/test-mode` + Settings → Test Mode panel: toggles real test keys (Stripe `sk_test_…`, Resend `re_…`, Lemon Squeezy, Whapi, Google, QStash), real test email send, real test PaymentIntent. `testOverrides` are server-side only |
 | Final details in README | ✅ This document |
 
@@ -90,8 +96,8 @@ After that every boot automatically applies schema changes (`initDb()` runs `exe
 ## 4. Authentication & Sessions
 
 - **Email/password signup & login**: server-side scrypt hashing (`scrypt$salt$hash`, timing-safe compare). Sessions are HMAC-signed tokens (`AUTH_COOKIE_SECRET`) stored in an **HttpOnly, SameSite=Lax** cookie named `rf_session` with **30-day expiry**; `Secure` flag is added in production.
+- **OTP verification (no magic links anywhere)**: signup, password reset and password changes are confirmed with a real 6-digit code sent via Resend. Codes live in the `otp_codes` table (scrypt-hashed, 10-minute expiry, single-use, max 5 attempts, 60s resend cooldown). Endpoints: `POST /api/auth/otp/request`, `POST /api/auth/otp/verify`, `POST /api/auth/reset-password`.
 - **Google Sign-In (real OAuth 2.0)**: `GET /api/auth/google` redirects to Google; the callback exchanges the code, verifies the ID token, creates/logs in the user, and sets the same secure cookie. Requires `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` and the redirect URI `${APP_URL}/api/auth/google/callback` registered in Google Cloud Console.
-- **Password reset**: real Resend email with a 1-hour token link.
 - **No localStorage tokens anywhere.**
 
 ---
@@ -144,20 +150,40 @@ Pricing constants in the same file: `GATEWAY_FEE_RATE 2.9%`, `GATEWAY_FEE_FLAT $
 
 - `POST /api/webhooks/lemon-squeezy` — HMAC-verified; applies subscription create/update/cancel.
 - `POST /api/webhooks/stripe` — signature-verified (raw body); `checkout.session.completed` applies prorated tier; `invoice.payment_succeeded` marks invoices paid and stops sequences.
-- `POST /api/cron/process-reminders` — QStash-signed (or valid session); dispatches real Resend/Whapi reminders, writes logs, increments usage, reschedules +24h.
+- `POST /api/webhooks/quickbooks` — Intuit-HMAC verified (raw body). Echoes the setup-validation `code` on `GET`/body. Refetches only changed invoices (30 per batch API call) and updates the cache. **Webhook-driven — no polling.**
+- `POST /api/webhooks/xero` — `x-xero-signature` (base64 HMAC) verified (raw body). Refetches the reported invoice (up to 100 IDs per call) and updates the cache. **Webhook-driven — no polling.**
+- `POST /api/cron/process-reminders` — QStash-signed (or valid session); dispatches real Resend/Whapi/Twilio reminders with live Stripe Payment Links, writes logs, increments usage, reschedules +24h.
 - `POST /api/ai/generate-sequence` & `/api/ai/generate-custom-email` — real Gemini, plan-gated, usage-metered.
 - `GET /api/billing/plans`, `POST /api/billing/checkout`, `POST /api/billing/prorate`, `POST /api/billing/cancel`, `GET /api/billing/refund-preview`, `GET /api/billing/events`.
 - `GET /api/health` — provider flags + `dbReady`/`dbReason` (so a broken DB is visible immediately).
 - `GET /api/db/migration` — the canonical SQL for one-time setup.
 - `POST /api/test-mode`, `POST /api/test/send-email`, `POST /api/test/payment-intent` — real test-mode tools.
-- `POST /api/auth/signup|login|logout`, `GET /api/auth/me`, `PUT /api/auth/profile`, `POST /api/auth/change-password`, `POST /api/auth/forgot-password`, `GET /api/auth/google[/callback]`.
-- Full REST for invoices, sequences, logs, usage, scheduling, integrations, custom email templates, and the public portal.
+- `POST /api/auth/otp/request|verify`, `POST /api/auth/signup|login|logout`, `POST /api/auth/reset-password`, `GET /api/auth/me`, `PUT /api/auth/profile`, `POST /api/auth/change-password`, `POST /api/auth/forgot-password` (sends an OTP), `GET /api/auth/google[/callback]`.
+- Full REST for invoices, sequences, logs, usage, scheduling, integrations (`POST /api/integrations/:provider/sync` triggers a batched pull), and the public portal.
+
+## 7b. QuickBooks & Xero Accounting Engine (webhooks, batches, caching)
+
+Connecting a ledger is a real OAuth flow (not a demo). `POST /api/integrations/:provider/connect` builds a signed URL with a CSRF state (and PKCE for Xero); `GET /api/oauth/callback` exchanges the code, auto-refreshes tokens (1-hour access / long-lived refresh), stores the `realm_id` (QuickBooks) or `tenant_id` (Xero), and primes the cache with a first batched pull.
+
+**The three tricks, implemented:**
+
+1. **Webhooks, not polling** — QuickBooks and Xero ping `POST /api/webhooks/quickbooks` / `POST /api/webhooks/xero` only when an invoice changes. Signatures are verified (`intuit-signature` HMAC-SHA256 / `x-xero-signature` base64-HMAC-SHA256). The cron worker never polls the ledgers; it reads the cached `invoices` table.
+2. **Batch fetching** — manual/initial sync pulls up to **100 invoices per API call** (QuickBooks `MAXRESULTS` pagination, Xero `page=` pagination), and webhook-triggered refreshes batch 30 (QuickBooks batch API) or 100 (Xero `IDs`) changed invoices per call. Customer email lookups are batched too.
+3. **Smart caching** — the `invoices` table is the source of truth for reminders. Webhooks refetch only the changed invoice(s); `POST /api/integrations/:provider/sync` (the "Sync now" button) is a one-time full batched pull. Already-paid invoices are never re-imported.
+
+## 7c. Direct Payments (live Stripe links)
+
+Each tracked invoice is given a real Stripe **Payment Link** (price = amount + 2.9% + $0.30 fee passthrough) created once and cached in `invoices.payment_link`. Reminders then embed the live `checkout.stripe.com` URL that pays **directly into the agency's Stripe account** — no hosted portal hop required.
+
+- Email reminders (Resend), WhatsApp reminders (Whapi.cloud) and **SMS reminders (Twilio)** all carry the live Stripe link.
+- If Stripe is not configured, `payment_link` falls back to the branded `/pay/[id]` portal (real PaymentIntent with the same methods).
+- Escalation channel logic in the cron: due/overdue → email; ≥7 days overdue → WhatsApp, falling back to SMS (Twilio) when WhatsApp isn't configured or no phone is set. SMS shares the WhatsApp per-month limit bucket.
 
 ---
 
 ## 8. Environment Variables
 
-See `.env.example`. Key ones: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `AUTH_COOKIE_SECRET`, `APP_URL`, `GEMINI_API_KEY`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `WHAPI_API_TOKEN`, `LEMON_SQUEEZY_API_KEY` + `LEMON_SQUEEZY_STORE_ID` + `LEMON_SQUEEZY_WEBHOOK_SECRET` + `LEMON_SQUEEZY_VARIANT_<TIER>`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_<TIER>`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `QSTASH_TOKEN`, `QSTASH_CURRENT_SIGNING_KEY`.
+See `.env.example`. Key ones: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `AUTH_COOKIE_SECRET`, `APP_URL`, `GEMINI_API_KEY`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `WHAPI_API_TOKEN`, `TWILIO_ACCOUNT_SID` + `TWILIO_AUTH_TOKEN` + `TWILIO_FROM_NUMBER`, `LEMON_SQUEEZY_API_KEY` + `LEMON_SQUEEZY_STORE_ID` + `LEMON_SQUEEZY_WEBHOOK_SECRET` + `LEMON_SQUEEZY_VARIANT_<TIER>`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_<TIER>`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `QSTASH_TOKEN`, `QSTASH_CURRENT_SIGNING_KEY`, `QUICKBOOKS_CLIENT_ID` + `QUICKBOOKS_CLIENT_SECRET` + `QUICKBOOKS_WEBHOOK_TOKEN`, `XERO_CLIENT_ID` + `XERO_CLIENT_SECRET` + `XERO_WEBHOOK_KEY`.
 
 ---
 
