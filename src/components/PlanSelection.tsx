@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Check, X, ShieldCheck, Sparkles, RefreshCw, ArrowRight, AlertCircle } from 'lucide-react';
+import { Check, X, ShieldCheck, Sparkles, RefreshCw, ArrowRight, AlertCircle, Loader2 } from 'lucide-react';
 import { PlanCard } from './PlanCard';
 import { fetchBillingPlanData, fetchProration, createPlanCheckout } from '../lib/storage';
 import { UserProfile, SubscriptionTier } from '../types';
@@ -19,6 +19,7 @@ export function PlanSelection({ user, onPlanChosen, onRefreshStatus }: PlanSelec
   const [proration, setProration] = useState<Record<string, any>>({});
   const [loadingTier, setLoadingTier] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [plansLoading, setPlansLoading] = useState(true);
 
   useEffect(() => {
     let mounted = true;
@@ -28,6 +29,8 @@ export function PlanSelection({ user, onPlanChosen, onRefreshStatus }: PlanSelec
         if (mounted) setPlans(data.plans);
       } catch (e: any) {
         if (mounted) setError(e.message);
+      } finally {
+        if (mounted) setPlansLoading(false);
       }
     })();
     return () => {
@@ -76,30 +79,37 @@ export function PlanSelection({ user, onPlanChosen, onRefreshStatus }: PlanSelec
         )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 max-w-5xl mx-auto">
-          {plans.map((plan) => (
-            <PlanCard
-              key={plan.id}
-              plan={plan}
-              isCurrent={false}
-              renderPrice={(price) => `$${price}`}
-              actionLabel={loadingTier === plan.id ? 'Opening secure checkout...' : `Choose ${plan.name}`}
-              actionDisabled={loadingTier !== null}
-              onAction={() => handleChoose(plan.id as SubscriptionTier)}
-              footer={
-                proration[plan.id] && !proration[plan.id].firstPurchase ? (
-                  <p className="text-[10px] text-ink3 mt-2 text-center">
-                    {proration[plan.id].delta > 0
-                      ? `Prorated charge today: $${proration[plan.id].dueNow.toFixed(2)} ($${proration[plan.id].delta.toFixed(2)} + tax & fees)`
-                      : `Downgrade credit: $${proration[plan.id].credit.toFixed(2)} applied to next payment`}
-                  </p>
-                ) : proration[plan.id]?.firstPurchase ? (
-                  <p className="text-[10px] text-ink3 mt-2 text-center">
-                    First month: ${proration[plan.id].total.toFixed(2)} incl. tax & gateway fees
-                  </p>
-                ) : null
-              }
-            />
-          ))}
+          {plansLoading ? (
+            <div className="col-span-full py-16 flex flex-col items-center gap-3 text-ink2 dark:text-ink2">
+              <Loader2 className="w-7 h-7 animate-spin text-primary dark:text-secondary" />
+              <p className="text-xs font-bold">Loading plan pricing...</p>
+            </div>
+          ) : (
+            plans.map((plan) => (
+              <PlanCard
+                key={plan.id}
+                plan={plan}
+                isCurrent={false}
+                renderPrice={(price) => `$${price}`}
+                actionLabel={loadingTier === plan.id ? 'Opening secure checkout...' : `Choose ${plan.name}`}
+                actionDisabled={loadingTier !== null}
+                onAction={() => handleChoose(plan.id as SubscriptionTier)}
+                footer={
+                  proration[plan.id] && !proration[plan.id].firstPurchase ? (
+                    <p className="text-[10px] text-ink3 mt-2 text-center">
+                      {proration[plan.id].delta > 0
+                        ? `Prorated charge today: $${proration[plan.id].dueNow.toFixed(2)} ($${proration[plan.id].delta.toFixed(2)} + tax & fees)`
+                        : `Downgrade credit: $${proration[plan.id].credit.toFixed(2)} applied to next payment`}
+                    </p>
+                  ) : proration[plan.id]?.firstPurchase ? (
+                    <p className="text-[10px] text-ink3 mt-2 text-center">
+                      First month: ${proration[plan.id].total.toFixed(2)} incl. tax & gateway fees
+                    </p>
+                  ) : null
+                }
+              />
+            ))
+          )}
         </div>
 
         <div className="flex justify-center gap-3 flex-wrap">

@@ -57,6 +57,8 @@ export interface Integration {
 
 export type InvoiceStatus = 'unpaid' | 'paid' | 'overdue' | 'cancelled';
 
+export type AutomationFrequency = 'once' | 'daily' | 'weekly' | 'monthly' | 'yearly';
+
 export interface Invoice {
   id: string;
   user_id: string;
@@ -75,6 +77,8 @@ export interface Invoice {
   last_reminder_sent_at?: string;
   next_reminder_due_at?: string;
   description?: string;
+  channels?: ChannelType[];
+  automation_frequency?: AutomationFrequency;
   created_at: string;
 }
 
@@ -154,6 +158,7 @@ export interface PlanLimits {
   team_seats: number;
   emails_per_month: number;
   whatsapp_per_month: number;
+  sms_per_month: number;
   ai_generations: number;
   custom_domain: boolean;
   white_label: boolean;
@@ -166,6 +171,40 @@ export interface SchedulingPrefs {
   time_of_day: string; // "09:00"
   timezone: string;
   auto_pause_paid: boolean;
+}
+
+export interface AutomationSchedule {
+  id: string;
+  user_id: string;
+  name: string;
+  frequency: 'daily' | 'weekly' | 'monthly' | 'yearly';
+  time_of_day: string; // "09:00"
+  timezone: string; // IANA timezone, e.g. "America/New_York"
+  sequence_id?: string;
+  template_id?: string;
+  channels: ChannelType[];
+  active: boolean;
+  created_at: string;
+}
+
+export interface TeamMember {
+  id: string;
+  owner_user_id: string;
+  member_user_id: string;
+  email: string;
+  role: string;
+  created_at: string;
+}
+
+export interface TeamInvite {
+  id: string;
+  owner_user_id: string;
+  email?: string;
+  token: string;
+  status: 'pending' | 'accepted' | 'expired' | 'revoked';
+  role: string;
+  expires_at: string;
+  created_at: string;
 }
 
 export interface AppConnectorInfo {

@@ -9,8 +9,11 @@ import {
   CustomEmailTemplate,
   UsageStats,
   SchedulingPrefs,
+  AutomationSchedule,
   AppConnectorInfo,
   BillingEvent,
+  TeamInvite,
+  TeamMember,
 } from '../types';
 import { PlanDefinition, PLANS } from '../data/plans';
 
@@ -73,22 +76,18 @@ export function renderPlaceholders(text: string, ctx: PlaceholderContext): strin
       ? (ctx.currency && ctx.currency !== 'USD' ? `${ctx.currency} ` : '') + formatMoney(ctx.amount_due)
       : '';
 
+  // Canonical variable format is [client_name] (lowercase snake case) — a
+  // fixed, finite set the user can reference in templates but cannot extend.
+  // All variables auto-fill with the invoice + agency data on send.
   return (text || '')
-    .replace(/\[Client Name\]/gi, ctx.client_name || '[Client Name]')
-    .replace(/\[Invoice Number\]/gi, ctx.external_invoice_id || '[Invoice Number]')
-    .replace(/\[Amount\]/gi, amount || '[Amount]')
-    .replace(/\[Currency\]/gi, ctx.currency || '[Currency]')
-    .replace(/\[Due Date\]/gi, ctx.due_date || '[Due Date]')
-    .replace(/\[Payment Link\]/gi, ctx.payment_link || '[Payment Link]')
-    .replace(/\[Company Name\]/gi, ctx.company_name || '[Company Name]')
-    .replace(/\[Your Name\]/gi, ctx.your_name || '[Your Name]')
-    .replace(/\{\{client_name\}\}/g, ctx.client_name || '')
-    .replace(/\{\{external_invoice_id\}\}/g, ctx.external_invoice_id || '')
-    .replace(/\{\{amount_due\}\}/g, amount)
-    .replace(/\{\{currency\}\}/g, ctx.currency || '')
-    .replace(/\{\{due_date\}\}/g, ctx.due_date || '')
-    .replace(/\{\{payment_link\}\}/g, ctx.payment_link || '')
-    .replace(/\{\{company_name\}\}/g, ctx.company_name || '');
+    .replace(/\[client_name\]/gi, ctx.client_name || '[client_name]')
+    .replace(/\[external_invoice_id\]/gi, ctx.external_invoice_id || '[external_invoice_id]')
+    .replace(/\[amount_due\]/gi, amount || '[amount_due]')
+    .replace(/\[currency\]/gi, ctx.currency || '[currency]')
+    .replace(/\[due_date\]/gi, ctx.due_date || '[due_date]')
+    .replace(/\[payment_link\]/gi, ctx.payment_link || '[payment_link]')
+    .replace(/\[company_name\]/gi, ctx.company_name || '[company_name]')
+    .replace(/\[your_name\]/gi, ctx.your_name || '[your_name]');
 }
 
 export function formatMoney(value: number): string {
@@ -233,6 +232,10 @@ export async function saveSequence(seqData: Sequence): Promise<Sequence> {
   return data.sequence;
 }
 
+export async function deleteSequence(id: string): Promise<{ success: boolean }> {
+  return apiFetch(`/api/sequences/${id}`, { method: 'DELETE' });
+}
+
 // 4. REMINDER LOGS
 export async function fetchReminderLogs(): Promise<ReminderLog[]> {
   const data = await apiFetch<{ logs: ReminderLog[] }>('/api/logs');
@@ -312,7 +315,8 @@ export function calculateOpExForUsers(activeUsers: number): OpExTierData {
   const invoicesPerUser = 25;
   const emailsPerUser = 60;
   const whatsappPerUser = 20;
-  const avgSubscriptionPrice = 59;
+  // Fair blended average of the plan mix ($49 Starter / $99 Pro / $249 Agency).
+  const avgSubscriptionPrice = 99;
 
   const totalInvoices = activeUsers * invoicesPerUser;
   const totalEmails = activeUsers * emailsPerUser;
@@ -425,6 +429,90 @@ export async function saveSchedulingPrefs(prefs: SchedulingPrefs): Promise<Sched
     body: JSON.stringify(prefs),
   });
   return data.prefs;
+}
+
+// 10b. AUTOMATION SCHEDULES (multiple per account)
+export async function fetchSchedules(): Promise<AutomationSchedule[]> {
+  const data = await apiFetch<{ schedules: AutomationSchedule[] }>('/api/schedules');
+  return data.schedules;
+}
+
+export async function createSchedule(schedule: Partial<AutomationSchedule>): Promise<AutomationSchedule> {
+  const data = await apiFetch<{ schedule: AutomationSchedule }>('/api/schedules', {
+    method: 'POST',
+    body: JSON.stringify(schedule),
+  });
+  return data.schedule;
+}
+
+export async function updateSchedule(id: string, schedule: Partial<AutomationSchedule>): Promise<AutomationSchedule> {
+  const data = await apiFetch<{ schedule: AutomationSchedule }>(`/api/schedules/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(schedule),
+  });
+  return data.schedule;
+}
+
+export async function deleteSchedule(id: string): Promise<{ success: boolean }> {
+  return apiFetch(`/api/schedules/${id}`, { method: 'DELETE' });
+}
+
+// 10c. TEAM INVITES & MULTI-ACCOUNT ACCESS
+export async function fetchTeamInvites(): Promise<TeamInvite[]> {
+  const data = await apiFetch<{ invites: TeamInvite[] }>('/api/team/invites');
+  return data.invites;
+}
+
+export async function createTeamInvite(email?: string): Promise<TeamInvite> {
+  const data = await apiFetch<{ invite: TeamInvite }>('/api/team/invites', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  });
+  return data.invite;
+}
+
+export async function revokeTeamInvite(id: string): Promise<{ success: boolean }> {
+  return apiFetch(`/api/team/invites/${id}`, { method: 'DELETE' });
+}
+
+export async function fetchTeamMembers(): Promise<TeamMember[]> {
+  const data = await apiFetch<{ members: TeamMember[] }>('/api/team/members');
+  return data.members;
+}
+
+export async function removeTeamMember(id: string): Promise<{ success: boolean }> {
+  return apiFetch(`/api/team/members/${id}`, { method: 'DELETE' });
+}
+
+export async function acceptTeamInvite(token: string): Promise<{ success: boolean; message?: string }> {
+  return apiFetch('/api/team/invites/accept', {
+    method: 'POST',
+    body: JSON.stringify({ token }),
+  });
+}
+
+export async function fetchWorkspaces(): Promise<{ owner_user_id: string; company_name: string; role: string }[]> {
+  const data = await apiFetch<{ workspaces: { owner_user_id: string; company_name: string; role: string }[] }>('/api/team/workspaces');
+  return data.workspaces;
+}
+
+export async function switchWorkspace(ownerUserId: string): Promise<{ success: boolean }> {
+  return apiFetch('/api/team/workspaces/switch', {
+    method: 'POST',
+    body: JSON.stringify({ owner_user_id: ownerUserId }),
+  });
+}
+
+// Upload a company logo; stores as a data-URL on the user profile so the
+// payment portal and emails render it over the web.
+export async function uploadCompanyLogo(file: File): Promise<UserProfile> {
+  const reader = new FileReader();
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error('Could not read the image file.'));
+    reader.readAsDataURL(file);
+  });
+  return updateUserProfile({ logo_url: dataUrl });
 }
 
 // 11. APP CONNECTORS (provider catalogue)

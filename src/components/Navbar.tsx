@@ -39,13 +39,23 @@ export function Navbar({
           onClick={onNavigateHome}
           className="flex items-center gap-2.5 text-left shrink-0 focus:outline-none"
         >
-          <img
-            src="/logo.svg"
-            alt="Eron"
-            className="h-9 sm:h-10"
-          />
+          {isLoggedIn && user.logo_url ? (
+            <img
+              src={user.logo_url}
+              alt={user.company_name || 'Eron'}
+              className="h-9 sm:h-10 w-9 sm:w-10 rounded-xl object-cover border border-line dark:border-line"
+            />
+          ) : (
+            <img
+              src="/logo.svg"
+              alt="Eron"
+              className="h-9 sm:h-10"
+            />
+          )}
           <div>
-            <span className="font-bold text-xl text-black dark:text-white block">Eron</span>
+            <span className="font-bold text-xl text-black dark:text-white block">
+              {isLoggedIn && user.logo_url ? user.company_name || 'Eron' : 'Eron'}
+            </span>
             <p className="text-[10px] text-ink2 dark:text-ink2 hidden md:block">
               Get paid faster. Stop chasing invoices.
             </p>

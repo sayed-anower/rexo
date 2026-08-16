@@ -5,6 +5,8 @@ export interface PlanCardPlan {
   id: string;
   name: string;
   price: number;
+  list_price?: number;
+  sell?: boolean;
   tagline?: string;
   invoice_limit: string;
   recommended?: boolean;
@@ -50,9 +52,19 @@ export function PlanCard({
       <div className="flex-1">
         <h4 className="text-lg font-bold text-ink dark:text-white">{plan.name}</h4>
         {plan.tagline && <p className="text-[11px] text-ink2 dark:text-ink2 mt-0.5">{plan.tagline}</p>}
-        <div className="my-3 flex items-baseline gap-1">
+        <div className="my-3 flex items-baseline gap-1.5 flex-wrap">
+          {plan.sell && plan.list_price != null && (
+            <span className="text-base font-bold text-ink3 line-through decoration-rose-500/70 decoration-2">
+              {renderPrice(plan.list_price)}
+            </span>
+          )}
           <span className="text-3xl font-black text-ink dark:text-white">{renderPrice(plan.price)}</span>
           <span className="text-xs text-ink3 font-medium">/ month</span>
+          {plan.sell && (
+            <span className="text-[9px] font-extrabold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+              Save ${((plan.list_price ?? plan.price) - plan.price).toFixed(0)}
+            </span>
+          )}
         </div>
         <p className="text-xs font-semibold text-primary dark:text-secondary mb-4">{plan.invoice_limit}</p>
 

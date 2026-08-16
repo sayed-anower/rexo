@@ -12,6 +12,7 @@ import {
   payInvoice,
   syncStripeInvoices,
   saveSequence,
+  deleteSequence,
   triggerManualReminder,
   saveCustomEmailTemplate,
   deleteCustomEmailTemplate,
@@ -30,7 +31,7 @@ import {
   createPlanCheckout,
   PlanGateError,
 } from './lib/storage';
-import { UserProfile, Invoice, Sequence, ReminderLog, Integration, CustomEmailTemplate, UsageStats, SchedulingPrefs, AppConnectorInfo } from './types';
+import { UserProfile, Invoice, Sequence, SequenceStep, ReminderLog, Integration, CustomEmailTemplate, UsageStats, SchedulingPrefs, AppConnectorInfo } from './types';
 import { Navbar } from './components/Navbar';
 import { Sidebar, NavigationTab } from './components/Sidebar';
 import { DashboardOverview } from './components/DashboardOverview';
@@ -46,8 +47,9 @@ import { ChangePasswordModal } from './components/ChangePasswordModal';
 import { AiSequenceModal } from './components/AiSequenceModal';
 import { HomePage } from './components/HomePage';
 import { AuthPage } from './components/AuthPage';
+import { InvitePage } from './components/InvitePage';
 import { PlanSelection } from './components/PlanSelection';
-import { CheckCircle2 } from 'lucide-react';
+import { CheckCircle2, RefreshCw } from 'lucide-react';
 
 const TAB_TO_PATH: Record<NavigationTab, string> = {
   dashboard: '/app/overview',
@@ -75,10 +77,15 @@ type Route =
   | { name: 'home' }
   | { name: 'signin' }
   | { name: 'signup' }
+  | { name: 'invite'; token: string }
   | { name: 'app'; tab: NavigationTab }
   | { name: 'pay'; invoiceId: string };
 
 function routeFromPath(path: string): Route {
+  if (path.startsWith('/invite/')) {
+    const token = path.replace(/^\/invite\//, '');
+    if (token) return { name: 'invite', token: decodeURIComponent(token) };
+  }
   if (path.startsWith('/pay/')) {
     const id = path.replace(/^\/pay\//, '');
     if (id) return { name: 'pay', invoiceId: decodeURIComponent(id) };
@@ -116,9 +123,12 @@ export default function App() {
   const [connectors, setConnectors] = useState<AppConnectorInfo[]>([]);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
+  const [dataLoading, setDataLoading] = useState(true);
 
   const [changePassOpen, setChangePassOpen] = useState(false);
   const [aiModalOpen, setAiModalOpen] = useState(false);
+  const [aiDraft, setAiDraft] = useState<{ name: string; steps: SequenceStep[] } | null>(null);
+  const [portalLoading, setPortalLoading] = useState(true);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const showToast = useCallback((msg: string) => {
@@ -154,6 +164,8 @@ export default function App() {
     if (route.name !== 'pay') return;
     let cancelled = false;
     setPortalInvoice(null);
+    setPortalAgency(null);
+    setPortalLoading(true);
     (async () => {
       try {
         const data = await fetchPortalInvoice(route.invoiceId);
@@ -163,6 +175,8 @@ export default function App() {
         setPortalTestMode(data.testMode);
       } catch {
         if (!cancelled) showToast('Invoice not found.');
+      } finally {
+        if (!cancelled) setPortalLoading(false);
       }
     })();
     return () => {
@@ -175,6 +189,7 @@ export default function App() {
     if (route.name === 'pay') return;
     let cancelled = false;
     (async () => {
+      setDataLoading(true);
       const profile = await fetchUserProfile();
       if (cancelled) return;
       if (!profile) {
@@ -182,6 +197,7 @@ export default function App() {
         setIsLoggedIn(false);
         setUser(null);
         setInvoices([]);
+        setDataLoading(false);
         return;
       }
       setUser(profile);
@@ -213,6 +229,7 @@ export default function App() {
           else console.error('Data loading error:', err);
         }
       }
+      if (!cancelled) setDataLoading(false);
     })();
     return () => {
       cancelled = true;
@@ -284,6 +301,33 @@ export default function App() {
     }
   };
 
+  // Reload all workspace data (used after switching accounts).
+  const handleRefreshWorkspaceData = useCallback(async () => {
+    if (!user?.subscription_tier || user.subscription_status !== 'active') return;
+    try {
+      const [invs, seqs, lgs, ints, tmpls, usg, sch, conns] = await Promise.all([
+        fetchInvoices(),
+        fetchSequences(),
+        fetchReminderLogs(),
+        fetchIntegrations(),
+        fetchCustomEmailTemplates(),
+        fetchUsage(),
+        fetchSchedulingPrefs(),
+        fetchAppConnectors(),
+      ]);
+      setInvoices(invs);
+      setSequences(seqs);
+      setLogs(lgs);
+      setIntegrations(ints);
+      setCustomTemplates(tmpls);
+      setUsage(usg);
+      setScheduling(sch);
+      setConnectors(conns);
+    } catch (e: any) {
+      if (!handleGateError(e)) console.error('Workspace refresh error:', e);
+    }
+  }, [user?.subscription_tier, user?.subscription_status, handleGateError]);
+
   const handlePaymentComplete = async (invoiceId: string) => {
     const paid = await payInvoice(invoiceId);
     const updatedUsage = await fetchUsage();
@@ -331,12 +375,13 @@ export default function App() {
     return await generateAiCustomEmail(prompt, tone, senderName, senderEmail);
   };
 
-  const handleApplyAiSteps = (newSteps: any[]) => {
-    if (sequences.length > 0) {
-      handleSaveSequence({ ...sequences[0], steps: newSteps });
-      showToast('AI-generated sequence applied to your recovery flow!');
-    }
-  };
+const handleApplyAiSteps = (newSteps: any[]) => {
+  // Load the AI result into the builder as an UNSAVED draft. Nothing is
+  // written to the DB until the user reviews it and clicks Save Sequence.
+  setAiDraft({ name: 'AI Recovery Flow', steps: newSteps });
+  navigate('/app/sequences');
+  showToast('AI draft loaded into the builder — review, edit, then click Save Sequence.');
+};
 
   const handleConnectApp = async (provider: string) => {
     const result = await connectApp(provider);
@@ -367,6 +412,7 @@ export default function App() {
     return (
       <PublicPaymentPortal
         invoice={portalInvoice}
+        loading={portalLoading}
         agencyProfile={
           portalAgency
             ? { company_name: portalAgency.company_name, logo_url: portalAgency.logo_url, brand_color: portalAgency.brand_color }
@@ -376,6 +422,40 @@ export default function App() {
         invoiceId={route.invoiceId}
         onBackToApp={() => navigate('/')}
       />
+    );
+  }
+
+  // --- Team invite route ---
+  if (route.name === 'invite') {
+    return (
+      <div className="min-h-screen bg-main dark:bg-main text-ink dark:text-ink flex flex-col font-sans transition-colors">
+        {toastMessage && <Toast message={toastMessage} />}
+        <Navbar
+          user={user}
+          isLoggedIn={isLoggedIn}
+          onOpenAuth={(mode) => navigate(mode === 'signup' ? '/signup' : '/signin')}
+          onLogout={handleLogout}
+          onNavigateToBilling={() => navigate('/app/settings')}
+          onNavigateHome={() => navigate('/app/overview')}
+        />
+        <InvitePage
+          token={route.token}
+          user={user}
+          isLoggedIn={isLoggedIn}
+          onOpenAuth={(mode) => navigate(mode === 'signup' ? '/signup' : '/signin')}
+          onAccepted={async () => {
+            // The server now points our session at the joined workspace, so the
+            // next /api/auth/me returns the owner's profile + plan.
+            const profile = await fetchUserProfile();
+            if (profile) {
+              setUser(profile);
+              setIsLoggedIn(true);
+            }
+            navigate('/app/settings');
+          }}
+          onToast={showToast}
+        />
+      </div>
     );
   }
 
@@ -475,10 +555,21 @@ export default function App() {
           onTabChange={(tab) => navigate(TAB_TO_PATH[tab])}
           unpaidCount={unpaidCount}
           user={user}
+          onRefreshData={handleRefreshWorkspaceData}
+          onToast={showToast}
         />
 
         <main className="flex-1 p-4 sm:p-6 lg:p-8 min-w-0">
-          {activeTab === 'dashboard' && (
+          {dataLoading ? (
+            <div className="flex flex-col items-center justify-center py-24">
+              <div className="w-10 h-10 rounded-2xl bg-accent/20 dark:bg-accent/20 border border-accent/40 flex items-center justify-center">
+                <RefreshCw className="w-5 h-5 text-accent animate-spin" />
+              </div>
+              <p className="mt-4 text-sm font-bold text-ink dark:text-white">Loading your workspace…</p>
+              <p className="mt-1 text-xs text-ink3">Fetching invoices, sequences, usage and integrations.</p>
+            </div>
+          ) : null}
+          {!dataLoading && activeTab === 'dashboard' && (
             <DashboardOverview
               invoices={invoices}
               sequences={sequences}
@@ -495,7 +586,7 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'invoices' && (
+          {!dataLoading && activeTab === 'invoices' && (
             <InvoicesTable
               invoices={invoices}
               sequences={sequences}
@@ -522,15 +613,24 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'sequence' && (
+          {!dataLoading && activeTab === 'sequence' && (
             <SequenceBuilder
               sequences={sequences}
+              customTemplates={customTemplates}
               onSaveSequence={handleSaveSequence}
+              onDeleteSequence={async (id) => {
+                await deleteSequence(id);
+                const updated = await fetchSequences();
+                setSequences(updated);
+                showToast('Recovery flow deleted.');
+              }}
               onOpenAiModal={() => setAiModalOpen(true)}
+              aiDraft={aiDraft}
+              onClearAiDraft={() => setAiDraft(null)}
             />
           )}
 
-          {activeTab === 'templates' && (
+          {!dataLoading && activeTab === 'templates' && (
             <CustomEmailTemplates
               templates={customTemplates}
               invoices={invoices}
@@ -545,9 +645,9 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'activity' && <ReminderLogs logs={logs} />}
+          {!dataLoading && activeTab === 'activity' && <ReminderLogs logs={logs} />}
 
-          {activeTab === 'connectors' && (
+          {!dataLoading && activeTab === 'connectors' && (
             <Connectors
               onConnect={(p) =>
                 handleConnectApp(p).catch((err) => {
@@ -568,13 +668,15 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'help' && <HelpPage user={user} />}
+          {!dataLoading && activeTab === 'help' && <HelpPage user={user} />}
 
-          {activeTab === 'settings' && (
+          {!dataLoading && activeTab === 'settings' && (
             <SettingsBilling
               user={user}
               usage={usage}
               scheduling={scheduling}
+              sequences={sequences}
+              templates={customTemplates}
               onUpdateProfile={async (updates) => {
                 const u = await updateUserProfile(updates);
                 setUser(u);

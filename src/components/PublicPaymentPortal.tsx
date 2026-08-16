@@ -30,6 +30,7 @@ interface PublicPaymentPortalProps {
   agencyProfile: PortalAgency;
   testMode: boolean;
   invoiceId: string;
+  loading?: boolean;
   onBackToApp?: () => void;
 }
 
@@ -41,6 +42,7 @@ export function PublicPaymentPortal({
   agencyProfile,
   testMode,
   invoiceId,
+  loading = false,
   onBackToApp
 }: PublicPaymentPortalProps) {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('card');
@@ -51,6 +53,19 @@ export function PublicPaymentPortal({
   const [showTestCards, setShowTestCards] = useState(testMode);
 
   const isPaid = paid || invoice?.status === 'paid';
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-main dark:bg-main text-ink dark:text-ink flex items-center justify-center p-6">
+        <div className="text-center space-y-3">
+          <div className="w-12 h-12 rounded-2xl bg-accent mx-auto flex items-center justify-center text-white animate-pulse">
+            <CreditCard className="w-6 h-6" />
+          </div>
+          <p className="text-sm font-bold">Loading payment portal...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!invoice) {
     return (

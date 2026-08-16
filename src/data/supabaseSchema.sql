@@ -59,6 +59,8 @@ create table if not exists public.invoices (
   last_reminder_sent_at timestamptz,
   next_reminder_due_at timestamptz,
   description text,
+  channels text[] not null default '{email}',
+  automation_frequency text default 'once',
   created_at timestamptz default now()
 );
 create index if not exists invoices_user_id_idx on public.invoices(user_id);
@@ -159,6 +161,44 @@ create table if not exists public.scheduling (
   auto_pause_paid boolean not null default true,
   updated_at timestamptz default now()
 );
+
+create table if not exists public.schedules (
+  id text primary key,
+  user_id uuid not null references public.users(id) on delete cascade,
+  name text not null default 'Automation Schedule',
+  frequency text not null default 'daily',
+  time_of_day text not null default '09:00',
+  timezone text not null default 'UTC',
+  sequence_id text,
+  template_id text,
+  channels text[] not null default '{email}',
+  active boolean not null default true,
+  created_at timestamptz default now()
+);
+create index if not exists schedules_user_idx on public.schedules(user_id);
+
+create table if not exists public.team_invites (
+  id uuid primary key default gen_random_uuid(),
+  owner_user_id uuid not null references public.users(id) on delete cascade,
+  email text,
+  token text not null unique,
+  status text not null default 'pending',
+  role text not null default 'member',
+  created_at timestamptz default now(),
+  expires_at timestamptz not null
+);
+create index if not exists team_invites_owner_idx on public.team_invites(owner_user_id, status);
+
+create table if not exists public.team_members (
+  id uuid primary key default gen_random_uuid(),
+  owner_user_id uuid not null references public.users(id) on delete cascade,
+  member_user_id uuid not null references public.users(id) on delete cascade,
+  role text not null default 'member',
+  created_at timestamptz default now(),
+  unique (owner_user_id, member_user_id)
+);
+create index if not exists team_members_owner_idx on public.team_members(owner_user_id);
+create index if not exists team_members_member_idx on public.team_members(member_user_id);
 
 create table if not exists public.billing_events (
   id uuid primary key default gen_random_uuid(),

@@ -82,8 +82,8 @@ export function CustomEmailTemplates({
       title: '',
       sender_name: 'Your Billing Team',
       sender_email: 'billing@yourcompany.com',
-      subject: 'Invoice Notice: Invoice [Invoice Number]',
-      body: 'Hi [Client Name],\n\nHere is your payment link for Invoice [Invoice Number] ([Amount] [Currency]):\n[Payment Link]\n\nThank you!',
+      subject: 'Invoice Notice: Invoice [external_invoice_id]',
+      body: 'Hi [client_name],\n\nHere is your payment link for Invoice [external_invoice_id] ([amount_due] [currency]):\n[payment_link]\n\nThank you!',
       category: 'custom',
     });
     setIsEditorOpen(true);
@@ -114,8 +114,8 @@ export function CustomEmailTemplates({
         title: generated.title || `AI: ${aiPrompt.substring(0, 20)}`,
         sender_name: generated.sender_name || aiSenderName,
         sender_email: generated.sender_email || aiSenderEmail,
-        subject: generated.subject || 'Notice regarding Invoice [Invoice Number]',
-        body: generated.body || 'Hi [Client Name],\n\nPayment link: [Payment Link]',
+        subject: generated.subject || 'Notice regarding Invoice [external_invoice_id]',
+        body: generated.body || 'Hi [client_name],\n\nPayment link: [payment_link]',
         category: 'custom',
       });
       setIsAiModalOpen(false);
@@ -444,14 +444,14 @@ export function CustomEmailTemplates({
                 </label>
                 <div className="flex flex-wrap gap-1.5">
                   {[
-                    '[Client Name]',
-                    '[Invoice Number]',
-                    '[Amount]',
-                    '[Currency]',
-                    '[Due Date]',
-                    '[Payment Link]',
-                    '[Company Name]',
-                    '[Your Name]',
+                    '[client_name]',
+                    '[external_invoice_id]',
+                    '[amount_due]',
+                    '[currency]',
+                    '[due_date]',
+                    '[payment_link]',
+                    '[company_name]',
+                    '[your_name]',
                   ].map((v) => (
                     <button
                       key={v}
@@ -474,7 +474,7 @@ export function CustomEmailTemplates({
                   type="text"
                   required
                   onFocus={() => setActiveField('subject')}
-                  placeholder="e.g. Urgent Notice: Invoice [Invoice Number] is past due"
+                  placeholder="e.g. Urgent Notice: Invoice [external_invoice_id] is past due"
                   value={editingTemplate.subject || ''}
                   onChange={(e) => setEditingTemplate({ ...editingTemplate, subject: e.target.value })}
                   className="w-full px-3.5 py-2.5 rounded-xl bg-main dark:bg-surface2 border border-line dark:border-line text-xs font-semibold text-ink dark:text-white focus:outline-none focus:border-accent"

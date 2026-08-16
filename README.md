@@ -28,6 +28,16 @@ Eron is a **real-API, production-ready Automated Payment Recovery & Invoice Remi
 | **Direct payments: live Stripe links in email/SMS/WhatsApp** | ✅ Every invoice gets a real Stripe **Payment Link** (cached in `payment_link`) that pays straight into the agency's Stripe account. Reminders (email + WhatsApp + **Twilio SMS**) embed the live `checkout.stripe.com` link |
 | **OTP verification everywhere (no magic links)** | ✅ Signup, forgotten-password reset, and password changes are verified with a real 6-digit email OTP (`otp_codes` table, 10-min expiry, single-use, 5-attempt cap). The old reset link flow is gone |
 | Test mode `test = true/false` with real test keys (no fake mocks) | ✅ `POST /api/test-mode` + Settings → Test Mode panel: toggles real test keys (Stripe `sk_test_…`, Resend `re_…`, Lemon Squeezy, Whapi, Google, QStash), real test email send, real test PaymentIntent. `testOverrides` are server-side only |
+| **Multi-channel invoice reminders (Email + WhatsApp + SMS)** | ✅ New-invoice modal multi-selects email/WhatsApp/SMS. SMS costs **$0.02/msg** in `UNIT_COSTS`, is included in plan limits (Pro 200/mo, Agency 2,000/mo), and the app warns when a plan limit is reached |
+| **Per-invoice automation frequency** | ✅ "New Invoice" automation triggers once / daily / weekly / monthly / yearly (`frequency` stored per invoice, honored by the cron) |
+| **Multiple automation schedules** | ✅ Settings → Automation: create many schedules, each with its own frequency, time-of-day, country timezone (IANA), and a custom email template or recovery sequence |
+| **Branding: logo upload, accent color removed** | ✅ Settings → Branding: upload a company logo (`PUT /api/auth/logo`, stored in `users.logo_url`) shown as the agency logo on the public payment page and in the dashboard navbar. The old "Brand Primary Accent Color" picker is gone (the portal uses `brand_color` only as a legacy fallback for the avatar placeholder) |
+| **Multi-account / team invites** | ✅ Owner invites via link (`/invite/[token]`); the member signs up/signs in with a one-time email code and joins instantly. Accepting auto-switches the member's session into the owner's workspace (owner's data + plan). Plan seat limits live in the `PlanLimits` object in `src/data/plans.ts` (`team_seats`), enforced server-side on accept |
+| **Template variables: fixed canonical set `[client_name]` etc.** | ✅ The finite variable set is `[client_name] [external_invoice_id] [amount_due] [currency] [due_date] [payment_link] [company_name] [your_name]`. Users can reference them anywhere but cannot create new variables; every variable **auto-fills** on send. All legacy `{{client_name}}` / `[Client Name]` forms were removed from `renderPlaceholders` and the server render chain |
+| **Times stored UTC, displayed with local offset** | ✅ Reminders, logs, billing events and schedules are stored as UTC ISO strings; activity/history views render them in the viewer's local timezone with the `+/-offset` shown |
+| **AI Write Email & AI Sequence Builder (draft → save on click)** | ✅ AI results are never auto-saved: "Apply to Builder" loads the generated sequence into the builder as an **unsaved draft** (amber banner), each preview step is editable/deletable in the modal, and only the user's **Save Sequence** click persists it. New Sequence button, per-sequence/per-template delete icons, template-or-custom-mail step selection, and applying a sequence in the automation schedule all work |
+| **Loading states on DB-backed views** | ✅ App-level full-screen loader, portal "Loading payment portal…", plans grid loader, "Loading schedules…", "Loading billing history…" |
+| **Fair plan pricing with `sell` flag** | ✅ `sell: true` + `list_price` per plan in `src/data/plans.ts` → every plan card (PlanSelection, Settings) shows the crossed-out list price ($69/$129/$349) with a "Save $X" badge; descriptions are derived from the real limits (emails/invoices/SMS/WhatsApp allowed per plan) |
 | Final details in README | ✅ This document |
 
 ---
@@ -113,13 +123,16 @@ Edit **`src/data/plans.ts`** — that's it. `PLANS` drives:
 
 Pricing constants in the same file: `GATEWAY_FEE_RATE 2.9%`, `GATEWAY_FEE_FLAT $0.30`, `PLATFORM_TAX_RATE 5%` (merchant-of-record tax), `BILLING_PERIOD_DAYS 30`, `UNIT_COSTS` (per-email, per-WhatsApp, per-AI-draft, per-invoice).
 
-**Current plans** (Starter $29 / Pro $59 ⭐ Most Popular / Agency $119):
+**Current plans** (Starter ~~$69~~ **$49** / Pro ~~$129~~ **$99** ⭐ Most Popular / Agency ~~$349~~ **$249**):
+
+Every plan carries a `sell` + `list_price` flag in `src/data/plans.ts` — when `sell` is true, the UI renders the crossed-out `list_price` next to the real price with a "Save $X" badge. Set `sell: false` (or drop `list_price`) to show only the real price.
 
 | Feature | Starter | Pro | Agency |
 | --- | :---: | :---: | :---: |
 | Tracked invoices / mo | 100 | 500 | Unlimited |
 | Emails / mo | 300 | 2,000 | 10,000 |
 | WhatsApp reminders | ❌ | 300/mo | 2,000/mo |
+| SMS reminders (Twilio) | ❌ | 200/mo | 2,000/mo |
 | AI drafts | 50 | 200 | 1,000 |
 | Custom payment domain | ❌ | ✅ | ✅ |
 | White-label portal | ❌ | ❌ | ✅ |
@@ -203,12 +216,14 @@ npm run build && npm start   # production build + server
 
 ## 10. Financial & Operating Expense (OpEx) Model
 
+The model assumes a fair blended average subscription of **$99/mo** across the plan mix ($49 / $99 / $249).
+
 | Users | Total OpEx | Gross MRR | Net Profit | Margin |
 | :--- | :--- | :--- | :--- | :--- |
 | 0 | $0 | $0 | $0 | 0% |
-| 10 | $130 | $590 | $461 | 78.1% |
-| 100 | $440 | $5,900 | $5,460 | 92.5% |
-| 250 | $998 | $14,750 | $13,753 | 93.2% |
-| 1,000 | $3,905 | $59,000 | $55,095 | 93.4% |
+| 10 | $150 | $990 | $841 | 84.9% |
+| 100 | $640 | $9,900 | $9,260 | 93.5% |
+| 250 | $1,498 | $24,750 | $23,253 | 93.9% |
+| 1,000 | $5,905 | $99,000 | $93,095 | 94.0% |
 
 Interactive calculator in Help → View Cost Model; math in `calculateOpExForUsers()` (`src/lib/storage.ts`), covered by `tests/opex.test.ts`.

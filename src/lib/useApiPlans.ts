@@ -5,6 +5,8 @@ export interface ApiPlan {
   id: string;
   name: string;
   price: number;
+  list_price?: number;
+  sell?: boolean;
   tagline?: string;
   invoice_limit: string;
   recommended?: boolean;

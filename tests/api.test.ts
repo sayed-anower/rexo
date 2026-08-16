@@ -98,7 +98,12 @@ test('GET /api/billing/plans returns 3 plans with included/excluded features and
   assert.deepStrictEqual(ids, ['agency', 'pro', 'starter']);
   const pro = json.plans.find((p: any) => p.id === 'pro');
   assert.strictEqual(pro.recommended, true);
-  assert.strictEqual(pro.price, 59);
+  assert.strictEqual(pro.price, 99);
+  assert.strictEqual(pro.sell, true);
+  assert.strictEqual(pro.list_price, 129);
+  assert.strictEqual(json.plans.find((p: any) => p.id === 'starter').sell, true);
+  assert.strictEqual(json.plans.find((p: any) => p.id === 'starter').list_price, 69);
+  assert.strictEqual(json.plans.find((p: any) => p.id === 'agency').list_price, 349);
   // Every feature must carry an `included` flag (green check / red cross).
   assert.ok(pro.features.length > 0);
   assert.ok(pro.features.every((f: any) => typeof f.included === 'boolean'));
@@ -149,8 +154,8 @@ test('Provider endpoints return PROVIDER_NOT_CONFIGURED instead of fake data', a
 test('Billing math: full-month charge equals price + tax + gateway fee', async () => {
   const { json } = await request('GET', '/api/billing/plans');
   const starter = json.plans.find((p: any) => p.id === 'starter');
-  assert.strictEqual(starter.price, 29);
-  const expectedTotal = 29 + 29 * 0.05 + (29 * 0.029 + 0.3);
+  assert.strictEqual(starter.price, 49);
+  const expectedTotal = 49 + 49 * 0.05 + (49 * 0.029 + 0.3);
   assert.strictEqual(starter.fees.total, Math.round(expectedTotal * 100) / 100);
 });
 

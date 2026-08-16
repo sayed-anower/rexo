@@ -19,7 +19,7 @@ import {
   Sparkles,
   CheckCircle2
 } from 'lucide-react';
-import { Invoice, Sequence, CustomEmailTemplate, UserProfile } from '../types';
+import { Invoice, Sequence, CustomEmailTemplate, UserProfile, ChannelType, AutomationFrequency } from '../types';
 import { renderPlaceholders } from '../lib/storage';
 
 interface InvoicesTableProps {
@@ -67,6 +67,18 @@ export function InvoicesTable({
   const [newAmount, setNewAmount] = useState('');
   const [newDueDate, setNewDueDate] = useState('');
   const [newDesc, setNewDesc] = useState('');
+  const [newChannels, setNewChannels] = useState<ChannelType[]>(['email']);
+  const [newAutomation, setNewAutomation] = useState<AutomationFrequency>('once');
+
+  const toggleChannel = (ch: ChannelType) => {
+    setNewChannels((prev) => {
+      if (prev.includes(ch)) {
+        if (prev.length === 1) return prev; // keep at least one channel
+        return prev.filter((c) => c !== ch);
+      }
+      return [...prev, ch];
+    });
+  };
 
   const filteredInvoices = invoices.filter((inv) => {
     const matchesSearch =
@@ -99,12 +111,16 @@ export function InvoicesTable({
       description: newDesc || 'Digital Agency Retainer',
       status: 'unpaid',
       currency: 'USD',
+      channels: newChannels,
+      automation_frequency: newAutomation,
     });
     setIsCreateModalOpen(false);
     setNewClientName('');
     setNewClientEmail('');
     setNewAmount('');
     setNewDesc('');
+    setNewChannels(['email']);
+    setNewAutomation('once');
   };
 
   const handleOpenSendModal = (inv: Invoice) => {
@@ -632,6 +648,63 @@ export function InvoicesTable({
                     className="w-full px-3 py-2 rounded-xl border border-line dark:border-line bg-main dark:bg-surface2 text-xs text-ink dark:text-white outline-none focus:ring-2 focus:ring-accent"
                   />
                 </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-ink dark:text-ink2 mb-1">
+                    Client Phone
+                  </label>
+                  <input
+                    type="tel"
+                    value={newClientPhone}
+                    onChange={(e) => setNewClientPhone(e.target.value)}
+                    placeholder="+15551234567"
+                    className="w-full px-3 py-2 rounded-xl border border-line dark:border-line bg-main dark:bg-surface2 text-xs text-ink dark:text-white outline-none focus:ring-2 focus:ring-accent"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-ink dark:text-ink2 mb-1">
+                    Automation
+                  </label>
+                  <select
+                    value={newAutomation}
+                    onChange={(e) => setNewAutomation(e.target.value as AutomationFrequency)}
+                    className="w-full px-3 py-2 rounded-xl border border-line dark:border-line bg-main dark:bg-surface2 text-xs text-ink dark:text-white outline-none focus:ring-2 focus:ring-accent"
+                  >
+                    <option value="once">Once</option>
+                    <option value="daily">Every Day</option>
+                    <option value="weekly">Every Week</option>
+                    <option value="monthly">Every Month</option>
+                    <option value="yearly">Every Year</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-ink dark:text-ink2 mb-2">
+                  Reminder Channels
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(['email', 'whatsapp', 'sms'] as ChannelType[]).map((ch) => (
+                    <button
+                      key={ch}
+                      type="button"
+                      onClick={() => toggleChannel(ch)}
+                      className={`px-2 py-2 rounded-xl border text-[11px] font-bold capitalize transition-all ${
+                        newChannels.includes(ch)
+                          ? 'bg-primary-soft dark:bg-surface2 border-accent dark:border-accent text-primary dark:text-secondary'
+                          : 'bg-main dark:bg-surface2/40 border-line dark:border-line text-ink2 dark:text-ink2'
+                      }`}
+                    >
+                      {ch}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[10px] text-ink3 mt-1.5">
+                  SMS costs $0.02 per message and is included in your plan. Automations resend on the schedule above.
+                </p>
               </div>
 
               <div>

@@ -434,6 +434,30 @@ async function requireUser(
     res.status(401).json({ error: 'UNAUTHENTICATED', message: 'Account not found. Please sign in again.' });
     return null;
   }
+
+  // Multi-account workspaces: a team member who switched to another account's
+  // workspace operates on the owner's data. The rf_workspace cookie is set only
+  // after the owner/member relationship is verified.
+  const rawCookie = req.headers.cookie || '';
+  const wsMatch = rawCookie.split(';').map((c) => c.trim()).find((c) => c.startsWith('rf_workspace='));
+  const workspaceId = wsMatch ? wsMatch.slice('rf_workspace='.length) : null;
+  if (workspaceId && workspaceId !== user.profile.id) {
+    const sb = getSupabase();
+    if (sb) {
+      const { data: membership } = await sb
+        .from('team_members')
+        .select('owner_user_id')
+        .eq('owner_user_id', workspaceId)
+        .eq('member_user_id', user.profile.id)
+        .maybeSingle();
+      if (membership) {
+        const owner = await loadUser(workspaceId);
+        if (owner) return owner;
+      }
+    }
+    // Invalid/expired membership — clear the workspace cookie and fall back.
+    res.clearCookie('rf_workspace', { path: '/', httpOnly: true, sameSite: 'lax' });
+  }
   return user;
 }
 
@@ -503,8 +527,9 @@ function assertPlanActive(user: { profile: UserProfile }): { ok: boolean; code?:
 async function assertLimit(
   uid: string,
   tier: SubscriptionTier,
-  kind: LimitKind
-): Promise<{ ok: boolean; code?: string; message?: string; used?: number; limit?: number }> {
+  kind: LimitKind,
+  opts?: { soft?: boolean }
+): Promise<{ ok: boolean; code?: string; message?: string; used?: number; limit?: number; limitReached?: boolean }> {
   const plan = PLAN_BY_ID[tier];
   if (!plan) return { ok: false, code: 'PLAN_REQUIRED', message: 'Choose a plan to continue.' };
   const usage = await getUsage(uid, new Date().toISOString().slice(0, 7));
@@ -525,9 +550,8 @@ async function assertLimit(
     used = usage.whatsapp_sent;
     limit = plan.limits.whatsapp_per_month;
   } else if (kind === 'sms') {
-    // SMS shares the premium messaging bucket with WhatsApp reminders.
     used = usage.sms_sent;
-    limit = plan.limits.whatsapp_per_month;
+    limit = plan.limits.sms_per_month;
   } else {
     used = usage.ai_generations;
     limit = plan.limits.ai_generations;
@@ -535,6 +559,17 @@ async function assertLimit(
 
   if (limit === -1) return { ok: true, used, limit };
   if (used >= limit) {
+    // Soft limits (SMS) never hard-block: the user is simply reminded that the
+    // monthly SMS quota is spent. Hard limits stop the action and gate on upgrade.
+    if (opts?.soft) {
+      return {
+        ok: true,
+        used,
+        limit,
+        limitReached: true,
+        message: `You've reached the ${tier} plan SMS limit of ${limit.toLocaleString()} this month. You'll be reminded again when the quota resets.`,
+      };
+    }
     return {
       ok: false,
       code: 'PLAN_LIMIT',
@@ -1484,6 +1519,8 @@ app.post('/api/invoices', async (req, res) => {
     sequence_paused: Boolean(inv.sequence_paused),
     current_step_index: inv.current_step_index || 0,
     description: inv.description || '',
+    channels: Array.isArray(inv.channels) && inv.channels.length ? inv.channels : ['email'],
+    automation_frequency: inv.automation_frequency || 'once',
   };
 
   const { data, error } = await sb.from('invoices').upsert(row).select('*').single();
@@ -1638,6 +1675,15 @@ app.post('/api/sequences', async (req, res) => {
   res.json({ success: true, sequence: { ...data, steps: data.steps } });
 });
 
+app.delete('/api/sequences/:id', async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const sb = getSupabase();
+  if (!sb) return dbError(res);
+  await sb.from('sequences').delete().eq('id', req.params.id).eq('user_id', user.profile.id);
+  res.json({ success: true });
+});
+
 app.get('/api/logs', async (req, res) => {
   const user = await requireUser(req, res);
   if (!user) return;
@@ -1694,6 +1740,283 @@ app.post('/api/scheduling', async (req, res) => {
   });
   const { data } = await sb.from('scheduling').select('*').eq('user_id', user.profile.id).maybeSingle();
   res.json({ prefs: data });
+});
+
+// ==========================================
+// MULTIPLE AUTOMATION SCHEDULES (per-account)
+// Each schedule can carry a timezone, an optional linked sequence or custom
+// email template, and its own channel set. `once` frequency is handled at the
+// invoice level; schedules use daily/weekly/monthly/yearly.
+// ==========================================
+function normalizeSchedule(r: any) {
+  return {
+    id: r.id,
+    user_id: r.user_id,
+    name: r.name || 'Automation Schedule',
+    frequency: r.frequency || 'daily',
+    time_of_day: r.time_of_day || '09:00',
+    timezone: r.timezone || 'UTC',
+    sequence_id: r.sequence_id || undefined,
+    template_id: r.template_id || undefined,
+    channels: Array.isArray(r.channels) && r.channels.length ? r.channels : ['email'],
+    active: Boolean(r.active),
+    created_at: r.created_at,
+  };
+}
+
+app.get('/api/schedules', async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const sb = getSupabase();
+  if (!sb) return dbError(res);
+  const { data } = await sb.from('schedules').select('*').eq('user_id', user.profile.id).order('created_at', { ascending: true });
+  res.json({ schedules: (data || []).map(normalizeSchedule) });
+});
+
+app.post('/api/schedules', async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const sb = getSupabase();
+  if (!sb) return dbError(res);
+  const s = req.body || {};
+  const id = s.id || `sched_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  const { data, error } = await sb
+    .from('schedules')
+    .upsert({
+      id,
+      user_id: user.profile.id,
+      name: s.name || 'Automation Schedule',
+      frequency: s.frequency || 'daily',
+      time_of_day: s.time_of_day || '09:00',
+      timezone: s.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+      sequence_id: s.sequence_id || null,
+      template_id: s.template_id || null,
+      channels: Array.isArray(s.channels) && s.channels.length ? s.channels : ['email'],
+      active: s.active !== false,
+    })
+    .select('*')
+    .single();
+  if (error) return res.status(500).json({ error: 'SCHEDULE_SAVE_FAILED', message: error.message });
+  res.json({ success: true, schedule: normalizeSchedule(data) });
+});
+
+app.put('/api/schedules/:id', async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const sb = getSupabase();
+  if (!sb) return dbError(res);
+  const s = req.body || {};
+  const { data, error } = await sb
+    .from('schedules')
+    .update({
+      name: s.name,
+      frequency: s.frequency,
+      time_of_day: s.time_of_day,
+      timezone: s.timezone,
+      sequence_id: s.sequence_id ?? null,
+      template_id: s.template_id ?? null,
+      channels: Array.isArray(s.channels) && s.channels.length ? s.channels : ['email'],
+      active: s.active,
+    })
+    .eq('id', req.params.id)
+    .eq('user_id', user.profile.id)
+    .select('*')
+    .single();
+  if (error) return res.status(500).json({ error: 'SCHEDULE_SAVE_FAILED', message: error.message });
+  res.json({ success: true, schedule: normalizeSchedule(data) });
+});
+
+app.delete('/api/schedules/:id', async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const sb = getSupabase();
+  if (!sb) return dbError(res);
+  await sb.from('schedules').delete().eq('id', req.params.id).eq('user_id', user.profile.id);
+  res.json({ success: true });
+});
+
+// ==========================================
+// TEAM INVITES & MEMBERS (multi-account access)
+// Owner shares a link; the recipient signs up/signs in (verified via a
+// one-time email code) and joins the owner's workspace. Seats are enforced
+// from the plan's team_seats limit.
+// ==========================================
+function normalizeInvite(r: any) {
+  return {
+    id: r.id,
+    owner_user_id: r.owner_user_id,
+    email: r.email || undefined,
+    token: r.token,
+    status: r.status,
+    role: r.role || 'member',
+    expires_at: r.expires_at,
+    created_at: r.created_at,
+  };
+}
+
+app.get('/api/team/invites', async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const sb = getSupabase();
+  if (!sb) return dbError(res);
+  const { data } = await sb.from('team_invites').select('*').eq('owner_user_id', user.profile.id).order('created_at', { ascending: false });
+  res.json({ invites: (data || []).map(normalizeInvite) });
+});
+
+app.post('/api/team/invites', async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const active = assertPlanActive(user);
+  if (!active.ok) return res.status(402).json(active);
+
+  const sb = getSupabase();
+  if (!sb) return dbError(res);
+
+  const { data: members } = await sb.from('team_members').select('id').eq('owner_user_id', user.profile.id);
+  const { data: pending } = await sb.from('team_invites').select('id').eq('owner_user_id', user.profile.id).eq('status', 'pending');
+  const seats = PLAN_BY_ID[user.profile.subscription_tier!]?.limits?.team_seats ?? 1;
+  if ((members?.length || 0) + (pending?.length || 0) >= seats) {
+    return res.status(402).json({
+      ok: false,
+      code: 'PLAN_LIMIT',
+      message: `Your ${user.profile.subscription_tier} plan includes ${seats} team seat${seats === 1 ? '' : 's'} total. Upgrade to invite more teammates.`,
+      used: (members?.length || 0) + (pending?.length || 0),
+      limit: seats,
+    });
+  }
+
+  const email = (req.body?.email || '').toString().trim().toLowerCase();
+  const token = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+  const expires = new Date(Date.now() + 7 * 86400000).toISOString();
+  const { data, error } = await sb
+    .from('team_invites')
+    .insert({ owner_user_id: user.profile.id, email: email || null, token, role: 'member', status: 'pending', expires_at: expires })
+    .select('*')
+    .single();
+  if (error) return res.status(500).json({ error: 'INVITE_FAILED', message: error.message });
+  res.json({ success: true, invite: normalizeInvite(data) });
+});
+
+app.delete('/api/team/invites/:id', async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const sb = getSupabase();
+  if (!sb) return dbError(res);
+  await sb.from('team_invites').update({ status: 'revoked' }).eq('id', req.params.id).eq('owner_user_id', user.profile.id);
+  res.json({ success: true });
+});
+
+app.get('/api/team/members', async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const sb = getSupabase();
+  if (!sb) return dbError(res);
+  const { data } = await sb.from('team_members').select('*').eq('owner_user_id', user.profile.id).order('created_at', { ascending: true });
+  const rows = data || [];
+  const members = [];
+  for (const m of rows) {
+    const { data: memberUser } = await sb.from('users').select('email, company_name').eq('id', m.member_user_id).maybeSingle();
+    members.push({
+      id: m.id,
+      owner_user_id: m.owner_user_id,
+      member_user_id: m.member_user_id,
+      email: (memberUser as any)?.email || 'unknown@member',
+      company_name: (memberUser as any)?.company_name || '',
+      role: m.role || 'member',
+      created_at: m.created_at,
+    });
+  }
+  res.json({ members });
+});
+
+app.delete('/api/team/members/:id', async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const sb = getSupabase();
+  if (!sb) return dbError(res);
+  await sb.from('team_members').delete().eq('id', req.params.id).eq('owner_user_id', user.profile.id);
+  res.json({ success: true });
+});
+
+// Accept an invite: the recipient must be signed in (signup/signin verified by
+// a one-time email code). Validates the token, expiry and pending status.
+app.post('/api/team/invites/accept', async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const sb = getSupabase();
+  if (!sb) return dbError(res);
+  const { token } = req.body || {};
+  if (!token) return res.status(400).json({ error: 'MISSING_TOKEN', message: 'Invite token is required.' });
+
+  const { data: invite } = await sb.from('team_invites').select('*').eq('token', token).maybeSingle();
+  if (!invite) return res.status(404).json({ error: 'INVITE_NOT_FOUND', message: 'This invite link is invalid or has expired.' });
+  if (invite.status !== 'pending') return res.status(400).json({ error: 'INVITE_USED', message: 'This invite has already been used.' });
+  if (new Date(invite.expires_at) < new Date()) {
+    await sb.from('team_invites').update({ status: 'expired' }).eq('id', invite.id);
+    return res.status(400).json({ error: 'INVITE_EXPIRED', message: 'This invite link has expired.' });
+  }
+
+  const owner = (invite as any).owner_user_id;
+  if (owner === user.profile.id) {
+    return res.status(400).json({ error: 'SELF_JOIN', message: 'You cannot join your own workspace.' });
+  }
+
+  const { data: ownerUser } = await sb.from('users').select('subscription_tier').eq('id', owner).maybeSingle();
+  const seats = (ownerUser as any)?.subscription_tier ? PLAN_BY_ID[(ownerUser as any).subscription_tier]?.limits?.team_seats ?? 1 : 1;
+  const { count: memberCount } = await sb.from('team_members').select('id', { count: 'exact', head: true }).eq('owner_user_id', owner);
+  if ((memberCount || 0) >= seats) {
+    return res.status(402).json({ ok: false, code: 'PLAN_LIMIT', message: `The workspace owner's plan allows ${seats} team seat${seats === 1 ? '' : 's'} and they are full.` });
+  }
+
+  const { error } = await sb.from('team_members').upsert(
+    { owner_user_id: owner, member_user_id: user.profile.id, role: 'member' },
+    { onConflict: 'owner_user_id,member_user_id' }
+  );
+  if (error) return res.status(500).json({ error: 'JOIN_FAILED', message: error.message });
+  await sb.from('team_invites').update({ status: 'accepted' }).eq('id', invite.id);
+  // Jump the member straight into the joined workspace so their dashboard is
+  // the owner's data (and the owner's plan) instead of their own empty one.
+  res.cookie('rf_workspace', owner, { path: '/', httpOnly: true, sameSite: 'lax' });
+  res.json({ success: true, message: 'You joined the workspace.', owner_user_id: owner });
+});
+
+// Workspaces the current user can operate on: owned + joined memberships.
+app.get('/api/team/workspaces', async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const sb = getSupabase();
+  if (!sb) return dbError(res);
+  const workspaces = [{ owner_user_id: user.profile.id, company_name: user.profile.company_name, role: 'owner' }];
+  const { data: memberships } = await sb.from('team_members').select('owner_user_id').eq('member_user_id', user.profile.id);
+  for (const m of memberships || []) {
+    const { data: owner } = await sb.from('users').select('email, company_name').eq('id', m.owner_user_id).maybeSingle();
+    if (owner) workspaces.push({ owner_user_id: m.owner_user_id, company_name: (owner as any).company_name || (owner as any).email, role: 'member' });
+  }
+  res.json({ workspaces });
+});
+
+// Switch the active workspace: the session remains the user's, but API data is
+// scoped to the selected workspace owner via an httpOnly cookie + membership check.
+app.post('/api/team/workspaces/switch', async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const sb = getSupabase();
+  if (!sb) return dbError(res);
+  const { owner_user_id } = req.body || {};
+  if (!owner_user_id) return res.status(400).json({ error: 'MISSING_OWNER', message: 'owner_user_id is required.' });
+  if (owner_user_id === user.profile.id) {
+    res.clearCookie('rf_workspace', { path: '/', httpOnly: true, sameSite: 'lax' });
+    return res.json({ success: true, owner_user_id: user.profile.id });
+  }
+  const { data: membership } = await sb
+    .from('team_members')
+    .select('*')
+    .eq('owner_user_id', owner_user_id)
+    .eq('member_user_id', user.profile.id)
+    .maybeSingle();
+  if (!membership) return res.status(403).json({ error: 'NOT_A_MEMBER', message: 'You are not a member of that workspace.' });
+  res.cookie('rf_workspace', owner_user_id, { path: '/', httpOnly: true, sameSite: 'lax' });
+  res.json({ success: true, owner_user_id });
 });
 
 app.get('/api/integrations', async (req, res) => {
@@ -2456,8 +2779,8 @@ app.post('/api/custom-emails', async (req, res) => {
       title: t.title || 'New Template',
       sender_name: t.sender_name || 'Your Billing Team',
       sender_email: t.sender_email || 'billing@yourcompany.com',
-      subject: t.subject || 'Notice about Invoice [Invoice Number]',
-      body: t.body || 'Hi [Client Name],\n\n[Payment Link]',
+      subject: t.subject || 'Notice about Invoice [external_invoice_id]',
+      body: t.body || 'Hi [client_name],\n\n[payment_link]',
       category: t.category || 'custom',
       is_default: Boolean(t.is_default),
     })
@@ -2493,22 +2816,21 @@ app.post('/api/custom-emails/send', async (req, res) => {
   if (!tmpl || !inv) return res.status(404).json({ error: 'NOT_FOUND', message: 'Template or invoice not found.' });
 
   try {
+    // Canonical variable syntax is [client_name] — the fixed, finite variable
+    // set. Every variable auto-fills with the invoice + agency data on send.
+    const amount =
+      (inv.currency && inv.currency !== 'USD' ? `${inv.currency} ` : '') +
+      new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(Number(inv.amount_due));
     const render = (s: string) =>
       String(s)
-        .replace(/\{\{client_name\}\}/g, inv.client_name)
-        .replace(/\{\{external_invoice_id\}\}/g, inv.external_invoice_id)
-        .replace(/\{\{amount_due\}\}/g, `$${Number(inv.amount_due).toFixed(2)}`)
-        .replace(/\{\{currency\}\}/g, inv.currency)
-        .replace(/\{\{due_date\}\}/g, inv.due_date)
-        .replace(/\{\{payment_link\}\}/g, inv.payment_link)
-        .replace(/\{\{company_name\}\}/g, user.profile.company_name)
-        .replace(/\[Invoice Number\]/gi, inv.external_invoice_id)
-        .replace(/\[Client Name\]/gi, inv.client_name)
-        .replace(/\[Amount\]/gi, `$${Number(inv.amount_due).toFixed(2)}`)
-        .replace(/\[Currency\]/gi, inv.currency)
-        .replace(/\[Due Date\]/gi, inv.due_date)
-        .replace(/\[Payment Link\]/gi, inv.payment_link)
-        .replace(/\[Company Name\]/gi, user.profile.company_name);
+        .replace(/\[client_name\]/gi, inv.client_name)
+        .replace(/\[external_invoice_id\]/gi, inv.external_invoice_id)
+        .replace(/\[amount_due\]/gi, amount)
+        .replace(/\[currency\]/gi, inv.currency)
+        .replace(/\[due_date\]/gi, inv.due_date)
+        .replace(/\[payment_link\]/gi, inv.payment_link)
+        .replace(/\[company_name\]/gi, user.profile.company_name)
+        .replace(/\[your_name\]/gi, user.profile.company_name);
 
     const dispatch = await sendEmailViaResend({
       from: `${tmpl.sender_name} <${tmpl.sender_email}>`,
@@ -2555,7 +2877,7 @@ app.post('/api/ai/generate-sequence', async (req, res) => {
   const { agencyName, tone, clientType, amount } = req.body || {};
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-flash-latest',
       contents: `You are an expert B2B Payment Recovery Copywriter for digital agencies. Generate a JSON 3-step sequence for:
 Agency: ${agencyName || 'Digital Agency'}
 Tone: ${tone || 'firm and professional'}
@@ -2611,22 +2933,22 @@ app.post('/api/ai/generate-custom-email', async (req, res) => {
   const { prompt, tone, senderName, senderEmail } = req.body || {};
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-flash-latest',
       contents: `You are an expert agency payment communications specialist. Write a custom B2B email template based on:
 User Prompt: "${prompt}"
 Tone: "${tone || 'Firm & Professional'}"
 Sender Name: "${senderName || 'Your Billing Team'}"
 Sender Email: "${senderEmail || 'billing@yourcompany.com'}"
 
-Use available placeholder variables where appropriate: {{client_name}}, {{external_invoice_id}}, {{amount_due}}, {{currency}}, {{due_date}}, {{payment_link}}, {{company_name}}.
+Use available placeholder variables where appropriate: [client_name], [external_invoice_id], [amount_due], [currency], [due_date], [payment_link], [company_name].
 
 Return strictly valid JSON with this exact format:
 {
   "title": "Short descriptive template title",
   "sender_name": "${senderName || 'Your Billing Team'}",
   "sender_email": "${senderEmail || 'billing@yourcompany.com'}",
-  "subject": "Compelling subject line with {{external_invoice_id}}",
-  "body": "Clear email body content using {{client_name}}, {{amount_due}}, {{due_date}}, and {{payment_link}}",
+  "subject": "Compelling subject line with [external_invoice_id]",
+  "body": "Clear email body content using [client_name], [amount_due], [due_date], and [payment_link]",
   "category": "custom"
 }`,
     });
@@ -2650,6 +2972,8 @@ app.get('/api/billing/plans', (req, res) => {
       id: p.id,
       name: p.name,
       price: p.price,
+      list_price: p.list_price,
+      sell: p.sell,
       tagline: p.tagline,
       invoice_limit: p.invoice_limit,
       recommended: p.recommended,
@@ -3091,88 +3415,120 @@ app.post('/api/cron/process-reminders', async (req, res) => {
       if (inv.status === 'paid' || inv.status === 'cancelled' || inv.sequence_paused) continue;
       if (!inv.client_email && !inv.client_phone) continue;
 
+      // Invoice-level channels. Default to email when none are set (legacy rows).
+      const channels: ('email' | 'whatsapp' | 'sms')[] =
+        Array.isArray(inv.channels) && inv.channels.length
+          ? (inv.channels as ('email' | 'whatsapp' | 'sms')[])
+          : ['email'];
+
+      // Automation frequency (invoice-level): once → a single reminder, otherwise
+      // the cron cadence is capped so recurring invoices don't spam daily.
+      const freq = inv.automation_frequency || 'once';
+      if (freq === 'once' && inv.last_reminder_sent_at) continue;
+      const rescheduleSecs =
+        freq === 'daily' ? 86400 : freq === 'weekly' ? 604800 : freq === 'monthly' ? 2629800 : freq === 'yearly' ? 31557600 : 86400;
+
       const dueDate = new Date(inv.due_date + 'T00:00:00');
       const diffDays = Math.floor((now.getTime() - dueDate.getTime()) / 86400000);
-      // Channel escalation: overdue ≥7 days → WhatsApp (or SMS as fallback),
-      // otherwise email. Never poll — the DB cache is updated by webhooks.
-      let channel: 'email' | 'whatsapp' | 'sms' = diffDays >= 7 ? 'whatsapp' : 'email';
-      if (channel === 'whatsapp' && !effectiveKey('WHAPI_API_TOKEN')) {
-        channel = effectiveKey('TWILIO_ACCOUNT_SID') && inv.client_phone ? 'sms' : 'email';
-      }
-      if (channel === 'whatsapp' && !inv.client_phone) channel = 'email';
-
-      const limit = await assertLimit(uid, tier, channel === 'whatsapp' ? 'whatsapp' : channel === 'sms' ? 'sms' : 'emails');
-      if (!limit.ok) continue; // plan limit reached — skip silently, webhook/user fixed by upgrade
-
       const stepTitle =
         diffDays >= 7
           ? 'WhatsApp / SMS Escalation + Late Fee Notice'
           : diffDays > 0
-          ? 'Overdue Firm Reminder Email'
+          ? 'Overdue Firm Reminder'
           : 'Upcoming Invoice Notice';
 
-      try {
-        // Direct payment: ensure (and cache) a live Stripe Payment Link first.
-        const payLink = await ensureStripePaymentLink(inv).catch(() => inv.payment_link || `/pay/${inv.id}`);
-        let dispatch: { provider: string; id: string };
-        if (channel === 'whatsapp') {
-          dispatch = await sendWhatsAppViaWhapi({
-            to: inv.client_phone,
-            message: `Hello ${inv.client_name}, invoice ${inv.external_invoice_id} for $${Number(inv.amount_due).toFixed(2)} is overdue. Pay securely here: ${payLink}`,
-          });
-        } else if (channel === 'sms') {
-          dispatch = await sendSmsViaTwilio({
-            to: inv.client_phone,
-            body: `Hi ${inv.client_name}, invoice ${inv.external_invoice_id} for $${Number(inv.amount_due).toFixed(2)} is overdue. Pay securely here: ${payLink}`,
-          });
-        } else {
-          dispatch = await sendEmailViaResend({
-            from: keyFor('RESEND_FROM_EMAIL') || 'Reminders <reminders@youragency.com>',
-            to: inv.client_email,
-            subject: `Payment reminder: Invoice ${inv.external_invoice_id}`,
-            html: `<p>Hi ${inv.client_name},</p><p>Invoice ${inv.external_invoice_id} for $${Number(inv.amount_due).toFixed(2)} ${inv.currency} is ${diffDays > 0 ? `${diffDays} day(s) overdue` : 'due'}. Pay securely here:</p><p><a href="${payLink}">Pay now with card, bank, PayPal or wallet</a></p>`,
+      for (const channel of channels) {
+        // Channel availability: email needs an address; whatsapp/sms need a phone.
+        if (channel === 'whatsapp' && (!inv.client_phone || !effectiveKey('WHAPI_API_TOKEN'))) continue;
+        if (channel === 'sms' && (!inv.client_phone || !effectiveKey('TWILIO_ACCOUNT_SID'))) continue;
+        if (channel === 'email' && !inv.client_email) continue;
+
+        // SMS is a soft limit: it never blocks the send, it just reminds the user
+        // that the monthly quota is spent. WhatsApp/email hard-gate on upgrade.
+        const limit = channel === 'sms'
+          ? await assertLimit(uid, tier, 'sms', { soft: true })
+          : await assertLimit(uid, tier, channel === 'whatsapp' ? 'whatsapp' : 'emails');
+        if (!limit.ok) continue; // plan limit reached — skip silently, user fixed by upgrade
+        if (limit.limitReached) {
+          // Just remind: the send proceeds, but surface the quota note in the log.
+          await sb.from('reminder_logs').insert({
+            id: `log_remind_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+            user_id: uid,
+            invoice_id: inv.id,
+            invoice_number: inv.external_invoice_id,
+            client_name: inv.client_name,
+            client_email: inv.client_email,
+            sequence_step_title: 'SMS quota reminder',
+            channel: 'sms',
+            status: 'sent',
+            sent_at: new Date().toISOString(),
+            payload_preview: limit.message || 'SMS monthly quota reached.',
           });
         }
 
-        const newLog = {
-          id: `log_cron_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-          user_id: uid,
-          invoice_id: inv.id,
-          invoice_number: inv.external_invoice_id,
-          client_name: inv.client_name,
-          client_email: inv.client_email,
-          sequence_step_title: stepTitle,
-          channel,
-          status: 'sent',
-          sent_at: new Date().toISOString(),
-          payload_preview: `${dispatch.provider.toUpperCase()} dispatch ${dispatch.id} sent via ${channel}${diffDays > 0 ? ` (overdue ${diffDays}d)` : ''}.`,
-        };
-        await sb.from('reminder_logs').insert(newLog);
-        await sb
-          .from('invoices')
-          .update({ last_reminder_sent_at: new Date().toISOString() })
-          .eq('id', inv.id);
-        await addUsage(uid, {
-          reminders_delivered: 1,
-          ...(channel === 'whatsapp' ? { whatsapp_sent: 1 } : channel === 'sms' ? { sms_sent: 1 } : { emails_sent: 1 }),
-        });
-        await scheduleQStashReminder({ invoice_id: inv.id }, 86400).catch(() => {});
-        results.push(newLog);
-      } catch (err: any) {
-        console.error(`[Cron] dispatch failed for ${inv.external_invoice_id}:`, err.message);
-        await sb.from('reminder_logs').insert({
-          id: `log_failed_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-          user_id: uid,
-          invoice_id: inv.id,
-          invoice_number: inv.external_invoice_id,
-          client_name: inv.client_name,
-          client_email: inv.client_email,
-          sequence_step_title: stepTitle,
-          channel,
-          status: 'failed',
-          error_message: err.message,
-          sent_at: new Date().toISOString(),
-        });
+        try {
+          // Direct payment: ensure (and cache) a live Stripe Payment Link first.
+          const payLink = await ensureStripePaymentLink(inv).catch(() => inv.payment_link || `/pay/${inv.id}`);
+          let dispatch: { provider: string; id: string };
+          if (channel === 'whatsapp') {
+            dispatch = await sendWhatsAppViaWhapi({
+              to: inv.client_phone,
+              message: `Hello ${inv.client_name}, invoice ${inv.external_invoice_id} for $${Number(inv.amount_due).toFixed(2)} is overdue. Pay securely here: ${payLink}`,
+            });
+          } else if (channel === 'sms') {
+            dispatch = await sendSmsViaTwilio({
+              to: inv.client_phone,
+              body: `Hi ${inv.client_name}, invoice ${inv.external_invoice_id} for $${Number(inv.amount_due).toFixed(2)} is overdue. Pay securely here: ${payLink}`,
+            });
+          } else {
+            dispatch = await sendEmailViaResend({
+              from: keyFor('RESEND_FROM_EMAIL') || 'Reminders <reminders@youragency.com>',
+              to: inv.client_email,
+              subject: `Payment reminder: Invoice ${inv.external_invoice_id}`,
+              html: `<p>Hi ${inv.client_name},</p><p>Invoice ${inv.external_invoice_id} for $${Number(inv.amount_due).toFixed(2)} ${inv.currency} is ${diffDays > 0 ? `${diffDays} day(s) overdue` : 'due'}. Pay securely here:</p><p><a href="${payLink}">Pay now with card, bank, PayPal or wallet</a></p>`,
+            });
+          }
+
+          const newLog = {
+            id: `log_cron_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+            user_id: uid,
+            invoice_id: inv.id,
+            invoice_number: inv.external_invoice_id,
+            client_name: inv.client_name,
+            client_email: inv.client_email,
+            sequence_step_title: stepTitle,
+            channel,
+            status: 'sent',
+            sent_at: new Date().toISOString(),
+            payload_preview: `${dispatch.provider.toUpperCase()} dispatch ${dispatch.id} sent via ${channel}${diffDays > 0 ? ` (overdue ${diffDays}d)` : ''}.`,
+          };
+          await sb.from('reminder_logs').insert(newLog);
+          await sb
+            .from('invoices')
+            .update({ last_reminder_sent_at: new Date().toISOString() })
+            .eq('id', inv.id);
+          await addUsage(uid, {
+            reminders_delivered: 1,
+            ...(channel === 'whatsapp' ? { whatsapp_sent: 1 } : channel === 'sms' ? { sms_sent: 1 } : { emails_sent: 1 }),
+          });
+          await scheduleQStashReminder({ invoice_id: inv.id }, rescheduleSecs).catch(() => {});
+          results.push(newLog);
+        } catch (err: any) {
+          console.error(`[Cron] dispatch failed for ${inv.external_invoice_id}:`, err.message);
+          await sb.from('reminder_logs').insert({
+            id: `log_failed_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+            user_id: uid,
+            invoice_id: inv.id,
+            invoice_number: inv.external_invoice_id,
+            client_name: inv.client_name,
+            client_email: inv.client_email,
+            sequence_step_title: stepTitle,
+            channel,
+            status: 'failed',
+            error_message: err.message,
+            sent_at: new Date().toISOString(),
+          });
+        }
       }
     }
   }

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   LayoutDashboard,
   Receipt,
@@ -12,9 +12,13 @@ import {
   Menu,
   X,
   ChevronDown,
-  ArrowUpRight
+  ArrowUpRight,
+  Building2,
+  Check,
+  RefreshCw
 } from 'lucide-react';
 import { UserProfile } from '../types';
+import { fetchWorkspaces, switchWorkspace } from '../lib/storage';
 
 export type NavigationTab =
   | 'dashboard'
@@ -31,10 +35,15 @@ interface SidebarProps {
   onTabChange: (tab: NavigationTab) => void;
   unpaidCount: number;
   user: UserProfile;
+  onRefreshData?: () => Promise<void>;
+  onToast?: (msg: string) => void;
 }
 
-export function Sidebar({ activeTab, onTabChange, unpaidCount, user }: SidebarProps) {
+export function Sidebar({ activeTab, onTabChange, unpaidCount, user, onRefreshData, onToast }: SidebarProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [workspaces, setWorkspaces] = useState<{ owner_user_id: string; company_name: string; role: string }[]>([]);
+  const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  const [switching, setSwitching] = useState<string | null>(null);
 
   const menuItems = [
     {
@@ -94,6 +103,32 @@ export function Sidebar({ activeTab, onTabChange, unpaidCount, user }: SidebarPr
   const handleSelectTab = (tabId: NavigationTab) => {
     onTabChange(tabId);
     setMobileMenuOpen(false);
+  };
+
+  useEffect(() => {
+    let mounted = true;
+    fetchWorkspaces()
+      .then((ws) => {
+        if (mounted) setWorkspaces(ws);
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, [user.id]);
+
+  const handleSwitchWorkspace = async (ownerUserId: string) => {
+    setSwitching(ownerUserId);
+    try {
+      await switchWorkspace(ownerUserId);
+      onToast?.(ownerUserId === user.id ? 'Switched to your own workspace.' : 'Switched workspace.');
+      setWorkspaceOpen(false);
+      if (onRefreshData) await onRefreshData();
+    } catch (e: any) {
+      onToast?.(e.message || 'Could not switch workspace.');
+    } finally {
+      setSwitching(null);
+    }
   };
 
   return (
@@ -160,6 +195,49 @@ export function Sidebar({ activeTab, onTabChange, unpaidCount, user }: SidebarPr
             );
           })}
         </div>
+
+        {/* Workspace switcher (multi-account access) */}
+        {workspaces.length > 1 && (
+          <div className="mt-6">
+            <div className="relative">
+              <button
+                onClick={() => setWorkspaceOpen((v) => !v)}
+                className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl bg-main dark:bg-surface2/80 border border-line dark:border-line text-xs font-bold text-ink dark:text-white"
+              >
+                <span className="flex items-center gap-2 truncate">
+                  <Building2 className="w-4 h-4 text-primary dark:text-secondary shrink-0" />
+                  <span className="truncate">
+                    {workspaces.find((w) => w.owner_user_id === user.id)?.company_name || 'Workspace'}
+                  </span>
+                </span>
+                <ChevronDown className={`w-4 h-4 text-ink3 transition-transform ${workspaceOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {workspaceOpen && (
+                <div className="absolute left-0 right-0 z-20 mt-1 p-1.5 rounded-xl bg-white dark:bg-surface border border-line dark:border-line shadow-2xl">
+                  {workspaces.map((ws) => (
+                    <button
+                      key={ws.owner_user_id}
+                      onClick={() => handleSwitchWorkspace(ws.owner_user_id)}
+                      disabled={switching === ws.owner_user_id}
+                      className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-left text-xs font-bold text-ink dark:text-white hover:bg-surface2 dark:hover:bg-surface2 disabled:opacity-50"
+                    >
+                      <span className="truncate">
+                        {ws.company_name}
+                        <span className="block text-[10px] font-normal text-ink3 uppercase tracking-wider">{ws.role}</span>
+                      </span>
+                      {ws.owner_user_id === user.id ? (
+                        <Check className="w-4 h-4 text-emerald-500 shrink-0" />
+                      ) : switching === ws.owner_user_id ? (
+                        <RefreshCw className="w-4 h-4 animate-spin text-primary shrink-0" />
+                      ) : null}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Current Plan Summary Callout */}
         <div className="mt-6 p-4 rounded-2xl bg-gradient-to-br from-primary via-primary-strong to-primary-strong text-white border border-line shadow-lg hidden sm:block">

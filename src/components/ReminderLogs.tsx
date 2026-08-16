@@ -1,14 +1,25 @@
 import React, { useState } from 'react';
-import { History, Search, Filter, Mail, MessageSquare, CheckCircle2, Clock, AlertCircle, Eye, X } from 'lucide-react';
+import { History, Search, Filter, Mail, MessageSquare, CheckCircle2, Clock, AlertCircle, Eye, X, Smartphone } from 'lucide-react';
 import { ReminderLog } from '../types';
 
 interface ReminderLogsProps {
   logs: ReminderLog[];
 }
 
+// Render a UTC ISO timestamp as local time + UTC offset, e.g. "Aug 15, 2026, 3:14 PM (+02:00)".
+function formatLocalWithOffset(iso: string): { local: string; offset: string } {
+  const d = new Date(iso);
+  const local = d.toLocaleString();
+  const offsetMin = -d.getTimezoneOffset();
+  const sign = offsetMin >= 0 ? '+' : '-';
+  const abs = Math.abs(offsetMin);
+  const offset = `${sign}${String(Math.floor(abs / 60)).padStart(2, '0')}:${String(abs % 60).padStart(2, '0')}`;
+  return { local, offset };
+}
+
 export function ReminderLogs({ logs }: ReminderLogsProps) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [channelFilter, setChannelFilter] = useState<'all' | 'email' | 'whatsapp'>('all');
+  const [channelFilter, setChannelFilter] = useState<'all' | 'email' | 'whatsapp' | 'sms'>('all');
   const [selectedLog, setSelectedLog] = useState<ReminderLog | null>(null);
 
   const filteredLogs = logs.filter((log) => {
@@ -56,7 +67,7 @@ export function ReminderLogs({ logs }: ReminderLogsProps) {
         </div>
 
         <div className="flex items-center gap-1.5">
-          {(['all', 'email', 'whatsapp'] as const).map((ch) => (
+          {(['all', 'email', 'whatsapp', 'sms'] as const).map((ch) => (
             <button
               key={ch}
               onClick={() => setChannelFilter(ch)}
@@ -97,7 +108,15 @@ export function ReminderLogs({ logs }: ReminderLogsProps) {
                 filteredLogs.map((log) => (
                   <tr key={log.id} className="hover:bg-main/80 dark:hover:bg-surface2/40 transition-colors">
                     <td className="p-4 pl-6 text-ink3 font-mono text-[11px]">
-                      {new Date(log.sent_at).toLocaleString()}
+                      {(() => {
+                        const { local, offset } = formatLocalWithOffset(log.sent_at);
+                        return (
+                          <div>
+                            <span>{local}</span>
+                            <span className="block text-[10px] text-ink3/80">UTC{offset}</span>
+                          </div>
+                        );
+                      })()}
                     </td>
 
                     <td className="p-4 font-bold text-ink dark:text-white">
@@ -122,10 +141,18 @@ export function ReminderLogs({ logs }: ReminderLogsProps) {
                         className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase ${
                           log.channel === 'whatsapp'
                             ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                            : log.channel === 'sms'
+                            ? 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300'
                             : 'bg-primary-soft text-primary dark:bg-surface2 dark:text-secondary'
                         }`}
                       >
-                        {log.channel === 'whatsapp' ? <MessageSquare className="w-3 h-3" /> : <Mail className="w-3 h-3" />}
+                        {log.channel === 'whatsapp' ? (
+                          <MessageSquare className="w-3 h-3" />
+                        ) : log.channel === 'sms' ? (
+                          <Smartphone className="w-3 h-3" />
+                        ) : (
+                          <Mail className="w-3 h-3" />
+                        )}
                         <span>{log.channel}</span>
                       </span>
                     </td>
@@ -168,7 +195,7 @@ export function ReminderLogs({ logs }: ReminderLogsProps) {
               <div><span className="font-bold">log_id:</span> {selectedLog.id}</div>
               <div><span className="font-bold">client:</span> {selectedLog.client_name} &lt;{selectedLog.client_email}&gt;</div>
               <div><span className="font-bold">step:</span> {selectedLog.sequence_step_title}</div>
-              <div><span className="font-bold">timestamp:</span> {selectedLog.sent_at}</div>
+              <div><span className="font-bold">timestamp:</span> {selectedLog.sent_at} (UTC — shown in your local timezone above)</div>
               <div><span className="font-bold">preview:</span> {selectedLog.payload_preview}</div>
             </div>
           </div>
