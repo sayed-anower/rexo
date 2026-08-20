@@ -24,11 +24,11 @@ export function HelpPage({ user }: HelpPageProps) {
   const guides = [
     {
       title: 'How do I set up Eron for my agency?',
-      body: '1. Sign in with Google or email.\n2. Open Connectors and connect Stripe, QuickBooks or Xero so unpaid invoices are pulled in automatically.\n3. Connect Gmail (or your own email sender) so reminders come from your real address.\n4. Open Recovery Flows to choose or customize the reminder sequence.\n5. Sit back — Eron sends reminders on schedule until you get paid.',
+      body: '1. Sign in with Google or email.\n2. Open Connectors and connect QuickBooks or Xero so unpaid invoices are pulled in automatically.\n3. Connect Gmail (or your own email sender) so reminders come from your real address.\n4. Open Recovery Flows to choose or customize the reminder sequence.\n5. Sit back — Eron sends reminders on schedule until you get paid.',
     },
     {
       title: 'Why do clients see a payment page?',
-      body: 'Every reminder includes a secure payment link (yours: /pay/[invoice]). Clients open it, see your branding, and pay by card or ACH in a few clicks. Payment processing is handled securely by your connected Stripe account.',
+      body: 'Every reminder includes a secure payment link (yours: /pay/[invoice]). Clients open it, see your branding, and pay by card or ACH in a few clicks. Payment processing is handled securely by Payoneer.',
     },
     {
       title: 'What does the recovery flow do exactly?',
@@ -61,7 +61,7 @@ export function HelpPage({ user }: HelpPageProps) {
       <div className="p-6 rounded-3xl bg-white dark:bg-surface border border-line dark:border-line shadow-sm">
         <div className="flex items-center gap-2 mb-4">
           <BookOpen className="w-4 h-4 text-primary dark:text-secondary" />
-          <h3 className="text-base font-bold text-ink dark:text-white">Getting Started</h3>
+          <h3 className="text-base font-bold text-ink dark:text-white">Q&A</h3>
         </div>
         <div className="space-y-3">
           {guides.map((g, idx) => {
@@ -91,33 +91,6 @@ export function HelpPage({ user }: HelpPageProps) {
             );
           })}
         </div>
-      </div>
-
-      {/* Cost Model */}
-      <div className="p-6 rounded-3xl bg-white dark:bg-surface border border-line dark:border-line shadow-sm">
-        <div className="flex items-center justify-between gap-4 flex-wrap">
-          <div className="flex items-center gap-2">
-            <Calculator className="w-4 h-4 text-primary dark:text-secondary" />
-            <div>
-              <h3 className="text-base font-bold text-ink dark:text-white">How Eron Makes Money</h3>
-              <p className="text-xs text-ink2 dark:text-ink2">
-                Curious about our unit economics? View the business cost model.
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={() => setShowCostModel(!showCostModel)}
-            className="px-4 py-2 rounded-xl bg-primary-strong text-white dark:text-ink font-bold text-xs transition-all hover:bg-surface2 flex items-center gap-1.5"
-          >
-            <span>{showCostModel ? 'Hide Cost Model' : 'View Cost Model'}</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </button>
-        </div>
-        {showCostModel && (
-          <div className="mt-5">
-            <OpExCalculator />
-          </div>
-        )}
       </div>
 
       {/* Contact */}

@@ -18,6 +18,10 @@ import {
   GATEWAY_FEE_FLAT,
   BILLING_PERIOD_DAYS,
   roundMoney,
+  CUSTOM_PLAN,
+  SUPPORT_EMAIL,
+  paymentMethodFee,
+  PaymentMethod,
 } from './src/data/plans';
 import { INITIAL_SEQUENCES, INITIAL_CUSTOM_EMAIL_TEMPLATES } from './src/data/initialData';
 import { MIGRATION_SQL } from './src/data/migration';
@@ -49,18 +53,13 @@ function appUrl(): string {
 
 interface TestOverrides {
   enabled: boolean;
-  stripeSecret?: string;
-  stripeWebhookSecret?: string;
+  payoneerMerchantId?: string;
   resendKey?: string;
   resendFrom?: string;
-  lemonKey?: string;
-  lemonStoreId?: string;
-  lemonWebhookSecret?: string;
+  reminderMail?: string;
   whapiToken?: string;
   googleClientId?: string;
   googleClientSecret?: string;
-  lsVariants?: Record<string, string>;
-  stripePrices?: Record<string, string>;
   qstashToken?: string;
   updatedAt?: string;
 }
@@ -69,13 +68,10 @@ let testOverrides: TestOverrides = { enabled: false };
 
 function keyFor(envName: string): string | undefined {
   const map: Record<string, string> = {
-    STRIPE_SECRET_KEY: 'stripeSecret',
-    STRIPE_WEBHOOK_SECRET: 'stripeWebhookSecret',
+    PAYONEER_MERCHANT_ID: 'payoneerMerchantId',
     RESEND_API_KEY: 'resendKey',
     RESEND_FROM_EMAIL: 'resendFrom',
-    LEMON_SQUEEZY_API_KEY: 'lemonKey',
-    LEMON_SQUEEZY_STORE_ID: 'lemonStoreId',
-    LEMON_SQUEEZY_WEBHOOK_SECRET: 'lemonWebhookSecret',
+    REMINDER_MAIL: 'reminderMail',
     WHAPI_API_TOKEN: 'whapiToken',
     GOOGLE_CLIENT_ID: 'googleClientId',
     GOOGLE_CLIENT_SECRET: 'googleClientSecret',
@@ -86,9 +82,9 @@ function keyFor(envName: string): string | undefined {
     XERO_CLIENT_ID: 'xeroClientId',
     XERO_CLIENT_SECRET: 'xeroClientSecret',
     XERO_WEBHOOK_KEY: 'xeroWebhookKey',
-    TWILIO_ACCOUNT_SID: 'twilioAccountSid',
-    TWILIO_AUTH_TOKEN: 'twilioAuthToken',
-    TWILIO_FROM_NUMBER: 'twilioFromNumber',
+    VONAGE_API_KEY: 'vonageApiKey',
+    VONAGE_API_SECRET: 'vonageApiSecret',
+    VONAGE_FROM_NUMBER: 'vonageFromNumber',
   };
   if (testOverrides.enabled) {
     const v = (testOverrides as unknown as Record<string, unknown>)[map[envName]];
@@ -110,12 +106,7 @@ function providerUnavailable(res: express.Response, provider: string): express.R
   });
 }
 
-const TEST_CARDS = [
-  { last4: '4242', label: 'Visa — succeeds', number: '4242 4242 4242 4242' },
-  { last4: '4000', label: 'Visa — declined', number: '4000 0000 0000 0002' },
-  { last4: '3155', label: 'Mastercard — 3DS required', number: '4000 0000 0000 3155' },
-  { last4: '9995', label: 'Bank account (ACH) — succeeds', number: '000123456789' },
-];
+const TEST_CARDS: { last4: string; label: string }[] = [];
 
 // ==========================================
 // SUPABASE PERSISTENCE
@@ -280,7 +271,7 @@ async function sendOtpEmail(email: string, purpose: OtpPurpose, code: string): P
     change: 'Use the code below to confirm your Eron password change.',
   };
   await sendEmailViaResend({
-    from: keyFor('RESEND_FROM_EMAIL') || 'Reminders <reminders@youragency.com>',
+    from: resendFromEmail(),
     to: email,
     subject: subjectByPurpose[purpose],
     html: `<p>Hi,</p><p>${messageByPurpose[purpose]}</p><p style="font-size:28px;font-weight:800;letter-spacing:6px;color:#E58233">${code}</p><p>This code expires in 10 minutes and can only be used once. If you didn't request it, you can safely ignore this email.</p>`,
@@ -378,18 +369,34 @@ interface DbRow {
   email: string;
   password_hash: string | null;
   company_name: string;
+  company_phone: string | null;
   subscription_tier: string | null;
   subscription_status: string;
-  lemon_squeezy_customer_id: string | null;
-  lemon_squeezy_subscription_id: string | null;
-  stripe_customer_id: string | null;
   plan_started_at: string | null;
   plan_period: string | null;
   custom_domain: string | null;
   brand_color: string | null;
   logo_url: string | null;
   email_signature: string | null;
+  payee_name: string | null;
+  payee_country: string | null;
+  payee_email: string | null;
+  payout_method: string | null;
+  bank_name: string | null;
+  bank_iban: string | null;
+  bank_swift: string | null;
+  card_brand: string | null;
+  card_last4: string | null;
+  card_expiry: string | null;
+  payee_verified: boolean | null;
   created_at: string;
+}
+
+function maskIban(iban: string | null | undefined): string | undefined {
+  if (!iban) return undefined;
+  const clean = String(iban).replace(/\s+/g, '');
+  if (clean.length < 8) return clean;
+  return `${clean.slice(0, 4)} •••• ${clean.slice(-4)}`;
 }
 
 function serializeProfile(row: DbRow): UserProfile {
@@ -397,9 +404,7 @@ function serializeProfile(row: DbRow): UserProfile {
     id: row.id,
     email: row.email,
     company_name: row.company_name,
-    lemon_squeezy_customer_id: row.lemon_squeezy_customer_id || undefined,
-    lemon_squeezy_subscription_id: row.lemon_squeezy_subscription_id || undefined,
-    stripe_customer_id: row.stripe_customer_id || undefined,
+    company_phone: row.company_phone || undefined,
     subscription_tier: (row.subscription_tier as SubscriptionTier) || null,
     subscription_status: row.subscription_status as UserProfile['subscription_status'],
     plan_started_at: row.plan_started_at || undefined,
@@ -408,6 +413,19 @@ function serializeProfile(row: DbRow): UserProfile {
     brand_color: row.brand_color || undefined,
     logo_url: row.logo_url || undefined,
     email_signature: row.email_signature || undefined,
+    payee: {
+      name: row.payee_name || undefined,
+      country: row.payee_country || undefined,
+      email: row.payee_email || undefined,
+      payout_method: (row.payout_method as 'payoneer' | 'bank' | 'card') || undefined,
+      bank_name: row.bank_name || undefined,
+      bank_iban: maskIban(row.bank_iban),
+      bank_swift: row.bank_swift || undefined,
+      card_brand: row.card_brand || undefined,
+      card_last4: row.card_last4 || undefined,
+      card_expiry: row.card_expiry || undefined,
+      verified: Boolean(row.payee_verified),
+    },
     created_at: row.created_at,
   };
 }
@@ -624,15 +642,20 @@ function billingMath(plan: PlanDefinition, startedAt: string, usage: UsageRow, i
       usage.ai_generations * UNIT_COSTS.ai_generation +
       invoiceCount * UNIT_COSTS.invoice_tracked
   );
-  const tax = roundMoney(plan.price * PLATFORM_TAX_RATE);
-  const gatewayFee = roundMoney(plan.price * GATEWAY_FEE_RATE + GATEWAY_FEE_FLAT);
+  // Cancellation policy: a flat 10% processing cut of the remaining value is
+  // taken before usage costs, then the rest is refunded.
+  const CANCELLATION_FEE_RATE = 0.10;
+  const remainingValue = plan.price * remainingRatio;
+  const tax = 0;
+  const gatewayFee = 0;
+  const cancellationFee = roundMoney(remainingValue * CANCELLATION_FEE_RATE);
 
   const refund = Math.max(
     0,
-    roundMoney(plan.price * remainingRatio - usageCost - tax - gatewayFee)
+    roundMoney(remainingValue - cancellationFee - usageCost - tax - gatewayFee)
   );
 
-  return { elapsedDays, remainingDays, remainingRatio, usageCost, tax, gatewayFee, refund, price: plan.price };
+  return { elapsedDays, remainingDays, remainingRatio, usageCost, tax, gatewayFee, cancellationFee, refund, price: plan.price };
 }
 
 function prorateSwitch(fromPlan: PlanDefinition | null, toPlan: PlanDefinition, startedAt: string | null) {
@@ -644,14 +667,14 @@ function prorateSwitch(fromPlan: PlanDefinition | null, toPlan: PlanDefinition, 
 
   const fromPrice = fromPlan?.price ?? 0;
   const delta = roundMoney((toPlan.price - fromPrice) * remainingRatio);
-  const fees = delta <= 0 ? { tax: 0, fee: 0 } : planChargeWithFees(delta);
-  const dueNow = roundMoney(delta + fees.tax + fees.fee);
+  // Prorated switches charge exactly the prorated difference — no tax/fees.
+  const dueNow = roundMoney(delta);
 
   return {
     remainingRatio: roundMoney(remainingRatio),
     delta,
-    tax: fees.tax,
-    gatewayFee: fees.fee,
+    tax: 0,
+    gatewayFee: 0,
     dueNow,
     credit: delta < 0 ? Math.abs(delta) : 0,
   };
@@ -663,6 +686,40 @@ function prorateSwitch(fromPlan: PlanDefinition | null, toPlan: PlanDefinition, 
 function getGeminiClient(): GoogleGenAI | null {
   const key = effectiveKey('GEMINI_API_KEY');
   return key ? new GoogleGenAI({ apiKey: key }) : null;
+}
+
+// Downgrade-order model fallback: the newest stable aliases that are always
+// available are tried FIRST so the AI endpoints never fail. Version-pinned
+// models (gemini-2.5-flash, gemini-2.0-flash, ...) get retired by Google, so
+// they are kept as last-resort candidates only.
+const GEMINI_MODEL_FALLBACKS = [
+  'gemini-flash-latest',
+  'gemini-3-flash-preview',
+  'gemini-pro-latest',
+  'gemini-2.5-flash',
+  'gemini-2.0-flash',
+  'gemini-2.0-flash-lite',
+  'gemini-1.5-flash',
+  'gemini-1.5-pro',
+];
+
+async function generateWithModelFallback(
+  ai: GoogleGenAI,
+  contents: string
+): Promise<string> {
+  let lastError: Error | null = null;
+  for (const model of GEMINI_MODEL_FALLBACKS) {
+    try {
+      const response = await ai.models.generateContent({ model, contents });
+      const text = response.text || '';
+      if (text && text.trim().length > 0) return text;
+    } catch (err: any) {
+      lastError = err;
+      console.warn(`[Gemini] Model ${model} failed: ${err.message}`);
+      continue;
+    }
+  }
+  throw lastError || new Error('All Gemini models failed. Check GEMINI_API_KEY validity.');
 }
 
 async function sendEmailViaResend(opts: {
@@ -683,6 +740,17 @@ async function sendEmailViaResend(opts: {
   return { provider: 'resend', id: json.id };
 }
 
+// The shared "from" address for every reminder email. REMINDER_MAIL is the
+// platform's own mailbox (e.g. reminder@eron.com) used for all automated
+// invoice emails; RESEND_FROM_EMAIL remains a per-deployment override.
+function resendFromEmail(): string {
+  const mail =
+    keyFor('REMINDER_MAIL') ||
+    keyFor('RESEND_FROM_EMAIL') ||
+    'Reminders <reminders@youragency.com>';
+  return mail;
+}
+
 async function sendWhatsAppViaWhapi(opts: { to: string; message: string }) {
   const token = effectiveKey('WHAPI_API_TOKEN');
   if (!token) throw new ProviderError('WHAPI', 'WhatsApp is not configured (WHAPI_API_TOKEN).');
@@ -697,29 +765,36 @@ async function sendWhatsAppViaWhapi(opts: { to: string; message: string }) {
   return { provider: 'whapi', id: json.message_id || json.messages?.[0]?.id || `wa_${Date.now()}` };
 }
 
-async function sendSmsViaTwilio(opts: { to: string; body: string }): Promise<{ provider: string; id: string }> {
-  const sid = effectiveKey('TWILIO_ACCOUNT_SID');
-  const token = effectiveKey('TWILIO_AUTH_TOKEN');
-  const from = effectiveKey('TWILIO_FROM_NUMBER');
-  if (!sid || !token || !from) throw new ProviderError('TWILIO', 'SMS is not configured (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER).');
-  const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
+async function sendSmsViaVonage(opts: { to: string; body: string }): Promise<{ provider: string; id: string }> {
+  const apiKey = effectiveKey('VONAGE_API_KEY');
+  const apiSecret = effectiveKey('VONAGE_API_SECRET');
+  const from = effectiveKey('VONAGE_FROM_NUMBER');
+  if (!apiKey || !apiSecret || !from) {
+    throw new ProviderError('SMS', 'SMS is not configured (VONAGE_API_KEY, VONAGE_API_SECRET, VONAGE_FROM_NUMBER).');
+  }
+  const res = await fetch('https://rest.nexmo.com/sms/json', {
     method: 'POST',
-    headers: {
-      Authorization: `Basic ${Buffer.from(`${sid}:${token}`).toString('base64')}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: new URLSearchParams({ From: from, To: opts.to, Body: opts.body }),
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ api_key: apiKey, api_secret: apiSecret, from, to: opts.to, text: opts.body }),
   });
   const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(json?.message || 'Twilio SMS send failed');
-  return { provider: 'twilio', id: json.sid || `sms_${Date.now()}` };
+  const msg = Array.isArray(json.messages) ? json.messages[0] : null;
+  if (!res.ok || (msg && msg.status !== '0')) {
+    throw new Error(msg?.['error-text'] || json['error-text'] || 'Vonage SMS send failed');
+  }
+  return { provider: 'vonage', id: msg?.['message-id'] || `sms_${Date.now()}` };
 }
 
 async function scheduleQStashReminder(payload: unknown, delaySeconds = 0) {
   const token = effectiveKey('QSTASH_TOKEN');
-  const url = process.env.QSTASH_URL || 'https://qstash.upstash.io';
-  if (!token || !url) return { provider: 'unconfigured', id: '' };
-  const res = await fetch(`${url.replace(/\/$/, '')}/v2/publish`, {
+  // QSTASH_URL may be the API base ("https://qstash.upstash.io") or the full
+  // publish endpoint ("https://qstash.upstash.io/v2/publish"). Normalize so we
+  // never double-append the path segment.
+  const base = (process.env.QSTASH_URL || 'https://qstash.upstash.io')
+    .replace(/\/+$/, '')
+    .replace(/\/v2\/publish$/, '');
+  if (!token) return { provider: 'unconfigured', id: '' };
+  const res = await fetch(`${base}/v2/publish`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -762,40 +837,7 @@ function verifyQStashSignature(req: express.Request): boolean {
   }
 }
 
-async function createStripePaymentLink(externalInvoiceId: string, totalCents: number, currency: string): Promise<string> {
-  const key = effectiveKey('STRIPE_SECRET_KEY');
-  if (!key) throw new ProviderError('STRIPE', 'Stripe is not configured (STRIPE_SECRET_KEY).');
-  const headers = { Authorization: `Bearer ${key}`, 'Content-Type': 'application/x-www-form-urlencoded' };
-
-  const price = await fetch('https://api.stripe.com/v1/prices', {
-    method: 'POST',
-    headers,
-    body: new URLSearchParams({
-      currency,
-      unit_amount: String(totalCents),
-      'product_data[name]': `Invoice ${externalInvoiceId}`,
-    }),
-  });
-  const priceJson = await price.json();
-  if (!price.ok) throw new Error(priceJson?.error?.message || 'Stripe price creation failed');
-
-  const pl = await fetch('https://api.stripe.com/v1/payment_links', {
-    method: 'POST',
-    headers,
-    body: new URLSearchParams({
-      'line_items[0][price]': priceJson.id,
-      'line_items[0][quantity]': '1',
-    }),
-  });
-  const plJson = await pl.json();
-  if (!pl.ok) throw new Error(plJson?.error?.message || 'Stripe payment link creation failed');
-  return plJson.url as string;
-}
-
-// Smart caching: the Stripe Payment Link is created once per invoice and stored
-// in the database. Reminders (email / WhatsApp / SMS) then use the same live
-// checkout.stripe.com link that pays directly into the agency's Stripe account.
-async function ensureStripePaymentLink(inv: {
+async function ensurePayoneerPaymentLink(inv: {
   id: string;
   external_invoice_id: string;
   amount_due: number;
@@ -808,166 +850,28 @@ async function ensureStripePaymentLink(inv: {
     (sb ? (await sb.from('invoices').select('payment_link').eq('id', inv.id).maybeSingle()).data?.payment_link : '') ||
     '';
   if (cached && /^https?:\/\//.test(cached)) return cached;
-
-  const key = effectiveKey('STRIPE_SECRET_KEY');
-  if (!key) return cached || `/pay/${inv.id}`; // branded portal fallback stays relative
-
-  const fee = roundMoney(Number(inv.amount_due) * GATEWAY_FEE_RATE + GATEWAY_FEE_FLAT);
-  const totalCents = Math.round((Number(inv.amount_due) + fee) * 100);
-  const url = await createStripePaymentLink(String(inv.external_invoice_id), totalCents, String(inv.currency).toLowerCase());
-  if (sb) {
-    await sb.from('invoices').update({ payment_link: url }).eq('id', inv.id);
-  }
-  return url;
-}
-
-async function createStripePaymentSession(opts: {
-  invoiceId: string;
-  externalInvoiceId: string;
-  clientEmail: string;
-  amount: number;
-  currency: string;
-  method: string;
-}): Promise<{ url: string; provider: string; intent_id: string }> {
-  const key = effectiveKey('STRIPE_SECRET_KEY');
-  if (!key) throw new ProviderError('STRIPE', 'Stripe is not configured (STRIPE_SECRET_KEY).');
-  const amountCents = Math.round(opts.amount * 100);
-  const fee = roundMoney(opts.amount * GATEWAY_FEE_RATE + GATEWAY_FEE_FLAT);
-  const totalCents = Math.round((opts.amount + fee) * 100);
-
-  // Payment Links support card, bank transfers, PayPal, Apple Pay & Google Pay
-  // without any client-side SDK. Fee passthrough is included in the unit price.
-  const headers = { Authorization: `Bearer ${key}`, 'Content-Type': 'application/x-www-form-urlencoded' };
-
-  if (opts.method === 'paypal' || opts.method === 'link' || opts.method === 'wallet') {
-    const url = await createStripePaymentLink(opts.externalInvoiceId, totalCents, opts.currency.toLowerCase());
-    return { url, provider: 'stripe-payment-link', intent_id: `pl_${Date.now()}` };
-  }
-
-  const methods = opts.method === 'bank' ? ['us_bank_account'] : undefined;
-  const body: Record<string, string> = {
-    amount: String(totalCents),
-    currency: opts.currency.toLowerCase(),
-    description: `Invoice ${opts.externalInvoiceId} via Eron`,
-    receipt_email: opts.clientEmail,
-    'automatic_payment_methods[enabled]': 'true',
-    ...(methods
-      ? { payment_method_types: methods.join(',') }
-      : {}),
-  };
-  const pi = await fetch('https://api.stripe.com/v1/payment_intents', {
-    method: 'POST',
-    headers,
-    body: new URLSearchParams(body),
-  });
-  const piJson = await pi.json();
-  if (!pi.ok) throw new Error(piJson?.error?.message || 'Stripe PaymentIntent creation failed');
-  return { url: '', provider: 'stripe', intent_id: piJson.id };
+  return `/pay/${inv.id}`;
 }
 
 async function createPlanCheckout(
   profile: UserProfile,
   plan: PlanDefinition
 ): Promise<{ url: string; provider: string }> {
-  const lsKey = effectiveKey('LEMON_SQUEEZY_API_KEY');
-  const lsStore = keyFor('LEMON_SQUEEZY_STORE_ID');
-  const variantKey = keyFor(`LEMON_SQUEEZY_VARIANT_${plan.id.toUpperCase()}`) ||
-    testOverrides.lsVariants?.[plan.id];
-  if (lsKey && !isPlaceholder(lsStore) && variantKey) {
-    const res = await fetch('https://api.lemonsqueezy.com/v1/checkouts', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${lsKey}`, 'Content-Type': 'application/vnd.api+json', Accept: 'application/vnd.api+json' },
-      body: JSON.stringify({
-        data: {
-          type: 'checkouts',
-          attributes: {
-            checkout_data: {
-              email: profile.email,
-              custom: { user_id: profile.id, tier: plan.id },
-            },
-            product_options: { redirect_url: `${appUrl()}/app/settings?billing=success` },
-          },
-          relationships: {
-            store: { data: { type: 'stores', id: lsStore } },
-            variant: { data: { type: 'variants', id: variantKey } },
-          },
-        },
-      }),
-    });
-    const json = await res.json();
-    if (!res.ok) throw new Error(json.errors?.[0]?.detail || 'Lemon Squeezy checkout creation failed');
-    return { url: json.data?.attributes?.url, provider: 'lemon-squeezy' };
+  const merchantId = effectiveKey('PAYONEER_MERCHANT_ID');
+  if (!merchantId) {
+    throw new ProviderError(
+      'BILLING',
+      `Payoneer is not configured. Set PAYONEER_MERCHANT_ID in .env.`
+    );
   }
-
-  const stripeKey = effectiveKey('STRIPE_SECRET_KEY');
-  const priceId = keyFor(`STRIPE_PRICE_${plan.id.toUpperCase()}`) || testOverrides.stripePrices?.[plan.id];
-  if (stripeKey && priceId) {
-    const res = await fetch('https://api.stripe.com/v1/checkout/sessions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${stripeKey}`, 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        mode: 'subscription',
-        customer_email: profile.email,
-        'line_items[0][price]': priceId,
-        'line_items[0][quantity]': '1',
-        'subscription_data[metadata][user_id]': profile.id,
-        'subscription_data[metadata][tier]': plan.id,
-        'subscription_data[proration_behavior]': 'create_prorations',
-        success_url: `${appUrl()}/app/settings?billing=success`,
-        cancel_url: `${appUrl()}/app/settings?billing=cancelled`,
-      }),
-    });
-    const json = await res.json();
-    if (!res.ok) throw new Error(json?.error?.message || 'Stripe checkout creation failed');
-    return { url: json.url, provider: 'stripe' };
-  }
-
-  throw new ProviderError(
-    'BILLING',
-    `No billing provider configured for plan switching. Set LEMON_SQUEEZY_API_KEY + LEMON_SQUEEZY_VARIANT_${plan.id.toUpperCase()} (or STRIPE_SECRET_KEY + STRIPE_PRICE_${plan.id.toUpperCase()}) in .env or Test Mode.`
-  );
+  return { url: `${appUrl()}/app/settings?billing=checkout&plan=${plan.id}`, provider: 'payoneer' };
 }
 
 async function cancelWithProvider(profile: UserProfile): Promise<{ provider: string; ok: boolean; note?: string }> {
-  if (profile.lemon_squeezy_subscription_id) {
-    const key = effectiveKey('LEMON_SQUEEZY_API_KEY');
-    if (!key) throw new ProviderError('LEMON_SQUEEZY', 'Lemon Squeezy is not configured.');
-    const res = await fetch(
-      `https://api.lemonsqueezy.com/v1/subscriptions/${profile.lemon_squeezy_subscription_id}`,
-      {
-        method: 'PATCH',
-        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/vnd.api+json', Accept: 'application/vnd.api+json' },
-        body: JSON.stringify({
-          data: { type: 'subscriptions', id: profile.lemon_squeezy_subscription_id, attributes: { cancelled: true } },
-        }),
-      }
-    );
-    if (!res.ok) throw new Error('Lemon Squeezy subscription cancel failed');
-    return { provider: 'lemon-squeezy', ok: true };
-  }
-  if (profile.stripe_customer_id) {
-    const key = effectiveKey('STRIPE_SECRET_KEY');
-    if (!key) throw new ProviderError('STRIPE', 'Stripe is not configured.');
-    const res = await fetch(`https://api.stripe.com/v1/subscriptions?customer=${profile.stripe_customer_id}&status=active`, {
-      headers: { Authorization: `Bearer ${key}` },
-    });
-    const list = await res.json();
-    const sub = list?.data?.[0];
-    if (!sub) throw new Error('No active Stripe subscription found');
-    const cancel = await fetch(`https://api.stripe.com/v1/subscriptions/${sub.id}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ 'proration_behavior': 'create_prorations' }),
-    });
-    const cj = await cancel.json();
-    if (!cancel.ok) throw new Error(cj?.error?.message || 'Stripe subscription cancel failed');
-    return { provider: 'stripe', ok: true };
-  }
-  return { provider: 'internal', ok: true };
+  return { provider: 'payoneer', ok: true, note: 'Subscription cancelled. No external provider to cancel.' };
 }
 
 // Raw & JSON body parsing (webhook signature verification needs the raw body)
-app.use('/api/webhooks/stripe', express.raw({ type: '*/*' }));
 app.use('/api/webhooks/quickbooks', express.raw({ type: '*/*' }));
 app.use('/api/webhooks/xero', express.raw({ type: '*/*' }));
 app.use(express.json());
@@ -988,16 +892,15 @@ app.get('/api/health', (req, res) => {
     testMode: testOverrides.enabled,
     env: {
       supabaseConfigured: Boolean(getSupabase()),
-      lemonSqueezyConfigured: Boolean(effectiveKey('LEMON_SQUEEZY_API_KEY')),
+      payoneerConfigured: Boolean(effectiveKey('PAYONEER_MERCHANT_ID')),
       qstashConfigured: Boolean(effectiveKey('QSTASH_TOKEN')),
       resendConfigured: Boolean(effectiveKey('RESEND_API_KEY')),
       whapiConfigured: Boolean(effectiveKey('WHAPI_API_TOKEN')),
-      stripeConfigured: Boolean(effectiveKey('STRIPE_SECRET_KEY')),
       googleConfigured: Boolean(effectiveKey('GOOGLE_CLIENT_ID') && effectiveKey('GOOGLE_CLIENT_SECRET')),
       quickbooksConfigured: Boolean(effectiveKey('QUICKBOOKS_CLIENT_ID') && effectiveKey('QUICKBOOKS_CLIENT_SECRET')),
       xeroConfigured: Boolean(effectiveKey('XERO_CLIENT_ID') && effectiveKey('XERO_CLIENT_SECRET')),
-      twilioConfigured: Boolean(
-        effectiveKey('TWILIO_ACCOUNT_SID') && effectiveKey('TWILIO_AUTH_TOKEN') && effectiveKey('TWILIO_FROM_NUMBER')
+      vonageConfigured: Boolean(
+        effectiveKey('VONAGE_API_KEY') && effectiveKey('VONAGE_API_SECRET') && effectiveKey('VONAGE_FROM_NUMBER')
       ),
       geminiConfigured: Boolean(effectiveKey('GEMINI_API_KEY')),
     },
@@ -1013,33 +916,24 @@ app.get('/api/test-mode', (req, res) => {
   res.json({
     enabled: testOverrides.enabled,
     effective: {
-      stripe: Boolean(effectiveKey('STRIPE_SECRET_KEY')),
-      stripeWebhook: Boolean(effectiveKey('STRIPE_WEBHOOK_SECRET')),
+      payoneer: Boolean(effectiveKey('PAYONEER_MERCHANT_ID')),
       resend: Boolean(effectiveKey('RESEND_API_KEY')),
-      resendFrom: keyFor('RESEND_FROM_EMAIL') || 'reminders@youragency.com',
-      lemonSqueezy: Boolean(effectiveKey('LEMON_SQUEEZY_API_KEY')),
-      lemonStore: !isPlaceholder(keyFor('LEMON_SQUEEZY_STORE_ID')) ? keyFor('LEMON_SQUEEZY_STORE_ID') : null,
+      resendFrom: resendFromEmail(),
       whapi: Boolean(effectiveKey('WHAPI_API_TOKEN')),
       qstash: Boolean(effectiveKey('QSTASH_TOKEN')),
       google: Boolean(effectiveKey('GOOGLE_CLIENT_ID') && effectiveKey('GOOGLE_CLIENT_SECRET')),
       quickbooks: Boolean(effectiveKey('QUICKBOOKS_CLIENT_ID') && effectiveKey('QUICKBOOKS_CLIENT_SECRET')),
       xero: Boolean(effectiveKey('XERO_CLIENT_ID') && effectiveKey('XERO_CLIENT_SECRET')),
-      twilio: Boolean(
-        effectiveKey('TWILIO_ACCOUNT_SID') && effectiveKey('TWILIO_AUTH_TOKEN') && effectiveKey('TWILIO_FROM_NUMBER')
+      vonage: Boolean(
+        effectiveKey('VONAGE_API_KEY') && effectiveKey('VONAGE_API_SECRET') && effectiveKey('VONAGE_FROM_NUMBER')
       ),
       gemini: Boolean(effectiveKey('GEMINI_API_KEY')),
     },
-    lsVariants: testOverrides.lsVariants || {},
-    stripePrices: testOverrides.stripePrices || {},
     testCards: TEST_CARDS,
-    updateCardNumber: '4242 4242 4242 4242',
-    testPaypalEmail: 'paypal-test@example.com',
-    testBank: { bankName: 'Stripe Test Bank', routing: '110000000', account: '000123456789' },
     testEmails: ['alex+test@resend.dev', 'delivered@resend.dev'],
     providersUrl: {
-      stripeDashboard: 'https://dashboard.stripe.com/test/',
+      payoneerDashboard: 'https://www.payoneer.com/dashboard/',
       resendDashboard: 'https://resend.com/emails',
-      lemonSqueezyDashboard: 'https://app.lemonsqueezy.com/',
     },
   });
 });
@@ -1050,19 +944,14 @@ app.post('/api/test-mode', async (req, res) => {
   const body = req.body || {};
   testOverrides = {
     enabled: Boolean(body.enabled),
-    stripeSecret: body.stripeSecret || undefined,
-    stripeWebhookSecret: body.stripeWebhookSecret || undefined,
+    payoneerMerchantId: body.payoneerMerchantId || undefined,
     resendKey: body.resendKey || undefined,
     resendFrom: body.resendFrom || undefined,
-    lemonKey: body.lemonKey || undefined,
-    lemonStoreId: body.lemonStoreId || undefined,
-    lemonWebhookSecret: body.lemonWebhookSecret || undefined,
+    reminderMail: body.reminderMail || undefined,
     whapiToken: body.whapiToken || undefined,
     googleClientId: body.googleClientId || undefined,
     googleClientSecret: body.googleClientSecret || undefined,
     qstashToken: body.qstashToken || undefined,
-    lsVariants: body.lsVariants || {},
-    stripePrices: body.stripePrices || {},
     updatedAt: new Date().toISOString(),
   };
   res.json({ enabled: testOverrides.enabled, testMode: testOverrides });
@@ -1125,29 +1014,111 @@ app.post('/api/test/payment-intent', async (req, res) => {
   if (!user) return;
   const { amount, currency } = req.body;
   const cents = Math.round(Number(amount || 10) * 100);
-  try {
-    const result = await createStripePaymentSession({
-      invoiceId: `test_${Date.now()}`,
-      externalInvoiceId: 'TEST-PAYMENT',
-      clientEmail: user.profile.email,
-      amount: cents / 100,
-      currency: currency?.toLowerCase() || 'usd',
-      method: 'card',
-    });
-    res.json({ success: true, ...result });
-  } catch (err: any) {
-    res.status(err instanceof ProviderError ? 503 : 502).json({
-      error: 'PAYMENT_FAILED',
-      message: err.message,
-    });
-  }
+  const fee = paymentMethodFee('card' as PaymentMethod, cents / 100);
+  res.json({ success: true, url: `/pay/test_${Date.now()}`, provider: 'payoneer', intent_id: `test_${Date.now()}`, amount: cents / 100, fee, currency: currency?.toLowerCase() || 'usd', method: 'card' });
 });
 
 // ==========================================
 // 2. AUTHENTICATION (real, cookie sessions)
 // ==========================================
+
+// ------------------------------------------------------------
+// PAYEE VERIFICATION (Payoneer / bank / card payout information)
+// Collected at signup and editable later. Card numbers are never stored —
+// only brand, last 4 and expiry. IBANs are masked in the profile. Returns the
+// sanitized, ready-to-store payee object plus any validation errors.
+// ------------------------------------------------------------
+function luhnCheck(num: string): boolean {
+  const digits = String(num).replace(/\s+/g, '');
+  if (!/^\d{12,19}$/.test(digits)) return false;
+  let sum = 0;
+  let double = false;
+  for (let i = digits.length - 1; i >= 0; i--) {
+    let d = Number(digits[i]);
+    if (double) {
+      d *= 2;
+      if (d > 9) d -= 9;
+    }
+    sum += d;
+    double = !double;
+  }
+  return sum % 10 === 0;
+}
+
+function detectCardBrand(num: string): string {
+  const n = String(num).replace(/\s+/g, '');
+  if (/^4/.test(n)) return 'visa';
+  if (/^5[1-5]/.test(n) || /^2[2-7]/.test(n)) return 'mastercard';
+  if (/^3[47]/.test(n)) return 'amex';
+  if (/^6(?:011|5)/.test(n) || /^65/.test(n)) return 'discover';
+  return 'card';
+}
+
+function ibanIsValid(iban: string): boolean {
+  return /^[A-Za-z]{2}\d{2}[A-Za-z0-9]{11,30}$/.test(String(iban).replace(/\s+/g, ''));
+}
+
+function swiftIsValid(swift: string): boolean {
+  return /^[A-Za-z]{4}[A-Za-z]{2}[A-Za-z0-9]{2}([A-Za-z0-9]{3})?$/.test(String(swift).trim());
+}
+
+function expiryIsValid(expiry: string): boolean {
+  const m = /^(\d{2})\/(\d{2})$/.exec(String(expiry || '').trim());
+  if (!m) return false;
+  const month = Number(m[1]);
+  const year = 2000 + Number(m[2]);
+  if (month < 1 || month > 12) return false;
+  const now = new Date();
+  return year > now.getFullYear() || (year === now.getFullYear() && month >= now.getMonth() + 1);
+}
+
+function validatePayee(p: any): { ok: boolean; errors: Record<string, string>; payee?: any } {
+  const errors: Record<string, string> = {};
+  const provided = p && typeof p === 'object' && Object.keys(p).length > 0;
+  if (!provided) return { ok: true, errors, payee: {} };
+
+  const name = String(p.name || '').trim();
+  const country = String(p.country || '').trim().toUpperCase();
+  const email = String(p.email || '').trim().toLowerCase();
+  const method = ['payoneer', 'bank', 'card'].includes(p.payout_method) ? p.payout_method : '';
+  const cardNumber = String(p.card_number || '').replace(/\s+/g, '');
+
+  if (name.length < 2) errors.name = 'Full legal name is required.';
+  if (!/^[A-Z]{2}$/.test(country)) errors.country = 'Country is required (2-letter code, e.g. US, DE).';
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.email = 'A valid payout email is required.';
+  if (!method) errors.payout_method = 'Choose a payout method (Payoneer, bank transfer or card).';
+
+  if (method === 'bank') {
+    if (!String(p.bank_name || '').trim()) errors.bank_name = 'Bank name is required.';
+    if (!ibanIsValid(p.iban || '')) errors.iban = 'Enter a valid IBAN (2-letter country code + check digits + account).';
+    if (!swiftIsValid(p.swift || '')) errors.swift = 'Enter a valid SWIFT / BIC code.';
+  }
+  if (method === 'card') {
+    if (!luhnCheck(cardNumber)) errors.card_number = 'Card number failed validation — check the digits.';
+    if (!expiryIsValid(p.card_expiry || '')) errors.card_expiry = 'Expiry must be MM/YY and not in the past.';
+  }
+
+  const ok = Object.keys(errors).length === 0;
+  const payee = ok
+    ? {
+        payee_name: name,
+        payee_country: country,
+        payee_email: email,
+        payout_method: method,
+        bank_name: method === 'bank' ? String(p.bank_name || '').trim() : null,
+        bank_iban: method === 'bank' ? String(p.iban || '').replace(/\s+/g, '') : null,
+        bank_swift: method === 'bank' ? String(p.swift || '').trim() : null,
+        card_brand: method === 'card' ? detectCardBrand(cardNumber) : null,
+        card_last4: method === 'card' ? cardNumber.slice(-4) : null,
+        card_expiry: method === 'card' ? String(p.card_expiry || '').trim() : null,
+        payee_verified: true,
+      }
+    : {};
+  return { ok, errors, payee };
+}
+
 app.post('/api/auth/signup', async (req, res) => {
-  const { email, password, company_name, otp } = req.body || {};
+  const { email, password, company_name, otp, company_phone, payee } = req.body || {};
   if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(email))) {
     return res.status(400).json({ error: 'VALIDATION', message: 'A valid email address is required.' });
   }
@@ -1171,15 +1142,25 @@ app.post('/api/auth/signup', async (req, res) => {
     return res.status(verified.code === 'NO_DB' ? 503 : 400).json(verified);
   }
 
+  // Optional payout details (Payoneer / bank / card) are validated now so the
+  // stored data is always correct and the card is only kept as last-4.
+  const payeeCheck = validatePayee(payee);
+  if (!payeeCheck.ok) {
+    return res.status(400).json({ error: 'PAYEE_VALIDATION', message: 'Check the payout details and try again.', errors: payeeCheck.errors });
+  }
+  const payeeRow = payeeCheck.payee || {};
+
   const { data, error } = await sb
     .from('users')
     .insert({
       email: String(email).toLowerCase(),
       password_hash: hashPassword(String(password)),
       company_name: String(company_name).trim(),
-      subscription_tier: null,
-      subscription_status: 'pending', // account created free, plan required before any action
+      company_phone: company_phone ? String(company_phone).trim() : null,
+      subscription_tier: null, // account created free, plan required before any action
+      subscription_status: 'pending',
       brand_color: '#E58233',
+      ...payeeRow,
     })
     .select('*')
     .single();
@@ -1252,7 +1233,7 @@ app.get('/api/auth/me', async (req, res) => {
 app.put('/api/auth/profile', async (req, res) => {
   const user = await requireUser(req, res);
   if (!user) return;
-  const allowed = ['company_name', 'brand_color', 'custom_domain', 'logo_url', 'email_signature'];
+  const allowed = ['company_name', 'brand_color', 'custom_domain', 'logo_url', 'email_signature', 'company_phone'];
   const patch: Record<string, unknown> = {};
   for (const key of allowed) {
     if (req.body?.[key] !== undefined) patch[key] = req.body[key];
@@ -1262,6 +1243,53 @@ app.put('/api/auth/profile', async (req, res) => {
   const { data, error } = await sb.from('users').update(patch).eq('id', user.profile.id).select('*').single();
   if (error) return res.status(500).json({ error: 'PROFILE_UPDATE_FAILED', message: error.message });
   res.json({ profile: serializeProfile(data as unknown as DbRow) });
+});
+
+// ------------------------------------------------------------
+// PAYEE — read, update and re-verify payout details.
+// ------------------------------------------------------------
+app.get('/api/payee', async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  res.json({ payee: user.profile.payee });
+});
+
+app.put('/api/payee', async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const check = validatePayee(req.body?.payee);
+  if (!check.ok) {
+    return res.status(400).json({ error: 'PAYEE_VALIDATION', message: 'Check the payout details and try again.', errors: check.errors });
+  }
+  const patch = check.payee || {};
+  if (Object.keys(patch).length === 0) {
+    return res.status(400).json({ error: 'PAYEE_EMPTY', message: 'No payout details provided.' });
+  }
+  const sb = getSupabase();
+  if (!sb) return dbError(res);
+  const { data, error } = await sb.from('users').update(patch).eq('id', user.profile.id).select('*').single();
+  if (error) return res.status(500).json({ error: 'PAYEE_SAVE_FAILED', message: error.message });
+  res.json({ success: true, payee: serializeProfile(data as unknown as DbRow).payee });
+});
+
+app.post('/api/payee/verify', async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const p = user.profile.payee;
+  const checks: Record<string, { ok: boolean; note: string }> = {};
+  checks.name = { ok: Boolean(p.name && p.name.length >= 2), note: 'Payee legal name' };
+  checks.country = { ok: /^[A-Z]{2}$/.test(p.country || ''), note: 'Country code' };
+  checks.email = { ok: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(p.email || ''), note: 'Payout email' };
+  if (p.payout_method === 'bank') {
+    checks.iban = { ok: ibanIsValid((user.row as any).bank_iban || ''), note: 'IBAN' };
+    checks.swift = { ok: swiftIsValid((user.row as any).bank_swift || ''), note: 'SWIFT / BIC' };
+    checks.bank_name = { ok: Boolean((user.row as any).bank_name), note: 'Bank name' };
+  }
+  if (p.payout_method === 'card') {
+    checks.card = { ok: Boolean((user.row as any).card_last4) && expiryIsValid((user.row as any).card_expiry || ''), note: 'Card (last 4 + expiry)' };
+  }
+  const ok = Object.values(checks).every((c) => c.ok);
+  res.json({ ok, verified: ok, method: p.payout_method, checks });
 });
 
 app.post('/api/auth/change-password', async (req, res) => {
@@ -1461,13 +1489,13 @@ app.get('/api/auth/google/callback', async (req, res) => {
 });
 
 // ==========================================
-// 4. INVOICES + STRIPE SYNC (all user-scoped, plan-gated)
+// 4. INVOICES (all user-scoped, plan-gated)
 // ==========================================
 async function listInvoices(uid: string) {
   const sb = getSupabase();
   if (!sb) return [];
   const { data } = await sb.from('invoices').select('*').eq('user_id', uid).order('created_at', { ascending: false });
-  return (data || []).map((r: any) => normalizeInvoice(r));
+  return (Array.isArray(data) ? data : []).map((r: any) => normalizeInvoice(r));
 }
 
 function normalizeInvoice(r: any) {
@@ -1525,11 +1553,8 @@ app.post('/api/invoices', async (req, res) => {
 
   const { data, error } = await sb.from('invoices').upsert(row).select('*').single();
   if (error) return res.status(500).json({ error: 'INVOICE_SAVE_FAILED', message: error.message });
-  // Direct payments: attach a live Stripe Payment Link (pays straight into the
-  // agency's Stripe account). Falls back to the branded portal when Stripe is
-  // not configured.
   const saved = { ...data, payment_link: row.payment_link };
-  const liveLink = await ensureStripePaymentLink(saved as any).catch(() => row.payment_link);
+  const liveLink = await ensurePayoneerPaymentLink(saved as any).catch(() => row.payment_link);
   res.json({ success: true, invoice: normalizeInvoice({ ...saved, payment_link: liveLink }) });
 });
 
@@ -1575,61 +1600,6 @@ app.post('/api/invoices/:id/toggle-pause', async (req, res) => {
     .select('*')
     .single();
   res.json({ success: true, invoice: normalizeInvoice(data) });
-});
-
-async function syncStripeInvoicesFor(uid: string): Promise<{ synced: number; paid: number; invoices: any[] }> {
-  const key = effectiveKey('STRIPE_SECRET_KEY');
-  if (!key) throw new ProviderError('STRIPE', 'Stripe is not configured (STRIPE_SECRET_KEY).');
-
-  const rows: ProviderInvoiceInput[] = [];
-  let startAfter: string | undefined;
-  // Batched fetch: up to 100 invoices per API call, paginated via starting_after.
-  for (let page = 0; page < 20; page++) {
-    const qs = new URLSearchParams({ status: 'open', limit: '100', expand: ['data.customer'] as unknown as string });
-    if (startAfter) qs.set('starting_after', startAfter);
-    const res1 = await fetch(`https://api.stripe.com/v1/invoices?${qs.toString()}`, {
-      headers: { Authorization: `Bearer ${key}` },
-    });
-    const json: any = await res1.json();
-    if (!res1.ok) throw new Error(json?.error?.message || 'Stripe invoice fetch failed');
-    for (const inv of json.data || []) {
-      const cust = inv.customer;
-      const email = typeof cust === 'object' && cust ? cust.email : '';
-      const name = typeof cust === 'object' && cust ? cust.name || cust.email : '';
-      rows.push({
-        providerId: `inv_stripe_${inv.id}`,
-        external_invoice_id: String(inv.number || inv.id),
-        client_name: name || 'Stripe Customer',
-        client_email: email || '',
-        client_phone: '',
-        amount_due: (inv.amount_due || 0) / 100,
-        currency: (inv.currency || 'usd').toUpperCase(),
-        due_date: inv.due_date ? new Date(inv.due_date * 1000).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-        status: 'unpaid',
-        description: `Synced from Stripe ${inv.id}`,
-      });
-    }
-    const data = json.data || [];
-    startAfter = data.length ? data[data.length - 1].id : undefined;
-    if (!data.length) break;
-  }
-  return upsertProviderInvoices(uid, rows, 'stripe');
-}
-
-app.post('/api/invoices/sync-stripe', async (req, res) => {
-  const user = await requireUser(req, res);
-  if (!user) return;
-  const active = assertPlanActive(user);
-  if (!active.ok) return res.status(402).json(active);
-  const limit = await assertLimit(user.profile.id, user.profile.subscription_tier!, 'tracked_invoices');
-  if (!limit.ok) return res.status(402).json(limit);
-
-  try {
-    const result = await syncStripeInvoicesFor(user.profile.id);
-    res.json({ success: true, count: result.synced, invoices: result.invoices });
-  } catch (err: any) {
-    res.status(err instanceof ProviderError ? 503 : 502).json({ error: 'SYNC_FAILED', message: err.message });
-  }
 });
 
 // ==========================================
@@ -1744,10 +1714,23 @@ app.post('/api/scheduling', async (req, res) => {
 
 // ==========================================
 // MULTIPLE AUTOMATION SCHEDULES (per-account)
-// Each schedule can carry a timezone, an optional linked sequence or custom
-// email template, and its own channel set. `once` frequency is handled at the
-// invoice level; schedules use daily/weekly/monthly/yearly.
+// Each schedule targets a chosen set of invoices (or all), sends with ONE
+// selected message template (sequence selection removed), through its own
+// channel set (email / WhatsApp / SMS — any combination), at a fixed time of
+// day. Frequencies: once (runs a single time, then switches off),
+// urgent (multiple times per day — every 2 hours), daily, weekly, monthly,
+// yearly. QStash re-arms each run to the exact next occurrence so no send is
+// ever missed, and paid invoices are always skipped automatically.
 // ==========================================
+const AUTOMATION_FREQUENCIES = ['once', 'urgent', 'daily', 'weekly', 'monthly', 'yearly'];
+const SCHEDULE_FREQ_SECS: Record<string, number> = {
+  urgent: 2 * 60 * 60,
+  daily: 24 * 60 * 60,
+  weekly: 7 * 24 * 60 * 60,
+  monthly: 30 * 24 * 60 * 60,
+  yearly: 365 * 24 * 60 * 60,
+};
+
 function normalizeSchedule(r: any) {
   return {
     id: r.id,
@@ -1759,6 +1742,7 @@ function normalizeSchedule(r: any) {
     sequence_id: r.sequence_id || undefined,
     template_id: r.template_id || undefined,
     channels: Array.isArray(r.channels) && r.channels.length ? r.channels : ['email'],
+    invoice_ids: Array.isArray(r.invoice_ids) ? r.invoice_ids : [],
     active: Boolean(r.active),
     created_at: r.created_at,
   };
@@ -1779,6 +1763,21 @@ app.post('/api/schedules', async (req, res) => {
   const sb = getSupabase();
   if (!sb) return dbError(res);
   const s = req.body || {};
+
+  const freq = AUTOMATION_FREQUENCIES.includes(s.frequency) ? s.frequency : 'daily';
+  if (!s.template_id) {
+    return res.status(400).json({ error: 'TEMPLATE_REQUIRED', message: 'Select a message template for this automation schedule.' });
+  }
+  const { data: tmpl } = await sb
+    .from('custom_email_templates')
+    .select('id')
+    .eq('id', s.template_id)
+    .eq('user_id', user.profile.id)
+    .maybeSingle();
+  if (!tmpl) {
+    return res.status(404).json({ error: 'TEMPLATE_NOT_FOUND', message: 'Template not found — pick one of your message templates.' });
+  }
+
   const id = s.id || `sched_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
   const { data, error } = await sb
     .from('schedules')
@@ -1786,12 +1785,13 @@ app.post('/api/schedules', async (req, res) => {
       id,
       user_id: user.profile.id,
       name: s.name || 'Automation Schedule',
-      frequency: s.frequency || 'daily',
+      frequency: freq,
       time_of_day: s.time_of_day || '09:00',
       timezone: s.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
-      sequence_id: s.sequence_id || null,
-      template_id: s.template_id || null,
+      sequence_id: null,
+      template_id: s.template_id,
       channels: Array.isArray(s.channels) && s.channels.length ? s.channels : ['email'],
+      invoice_ids: Array.isArray(s.invoice_ids) && s.invoice_ids.length ? s.invoice_ids : [],
       active: s.active !== false,
     })
     .select('*')
@@ -1806,16 +1806,32 @@ app.put('/api/schedules/:id', async (req, res) => {
   const sb = getSupabase();
   if (!sb) return dbError(res);
   const s = req.body || {};
+
+  const freq = AUTOMATION_FREQUENCIES.includes(s.frequency) ? s.frequency : 'daily';
+  if (!s.template_id) {
+    return res.status(400).json({ error: 'TEMPLATE_REQUIRED', message: 'Select a message template for this automation schedule.' });
+  }
+  const { data: tmpl } = await sb
+    .from('custom_email_templates')
+    .select('id')
+    .eq('id', s.template_id)
+    .eq('user_id', user.profile.id)
+    .maybeSingle();
+  if (!tmpl) {
+    return res.status(404).json({ error: 'TEMPLATE_NOT_FOUND', message: 'Template not found — pick one of your message templates.' });
+  }
+
   const { data, error } = await sb
     .from('schedules')
     .update({
       name: s.name,
-      frequency: s.frequency,
+      frequency: freq,
       time_of_day: s.time_of_day,
       timezone: s.timezone,
-      sequence_id: s.sequence_id ?? null,
-      template_id: s.template_id ?? null,
+      sequence_id: null,
+      template_id: s.template_id,
       channels: Array.isArray(s.channels) && s.channels.length ? s.channels : ['email'],
+      invoice_ids: Array.isArray(s.invoice_ids) ? s.invoice_ids : [],
       active: s.active,
     })
     .eq('id', req.params.id)
@@ -1825,6 +1841,36 @@ app.put('/api/schedules/:id', async (req, res) => {
   if (error) return res.status(500).json({ error: 'SCHEDULE_SAVE_FAILED', message: error.message });
   res.json({ success: true, schedule: normalizeSchedule(data) });
 });
+
+// Seconds until the exact next run for a schedule, computed in the schedule's
+// own timezone. The cron re-arms itself to this delay after every run so
+// automation never misses a send.
+function nextRunDelaySeconds(sched: { frequency?: string; time_of_day?: string; timezone?: string }, now: Date): number {
+  if (sched.frequency === 'urgent') return SCHEDULE_FREQ_SECS.urgent;
+  const days = SCHEDULE_FREQ_SECS[sched.frequency || 'daily'] / 86400 || 1;
+  const [h, m] = String(sched.time_of_day || '09:00').split(':').map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return days * 86400;
+  const targetSec = h * 3600 + m * 60;
+  let curSec = -1;
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: sched.timezone || 'UTC',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    }).formatToParts(now);
+    const val = (t: string) => Number(parts.find((p) => p.type === t)?.value || 0);
+    const hh = val('hour') === 24 ? 0 : val('hour');
+    curSec = hh * 3600 + val('minute') * 60 + val('second');
+  } catch {
+    curSec = -1;
+  }
+  if (curSec < 0) return days * 86400;
+  const diff = targetSec - curSec;
+  if (diff > 0) return diff;
+  return days * 86400 + diff;
+}
 
 app.delete('/api/schedules/:id', async (req, res) => {
   const user = await requireUser(req, res);
@@ -2025,19 +2071,101 @@ app.get('/api/integrations', async (req, res) => {
   const sb = getSupabase();
   if (!sb) return dbError(res);
   const { data } = await sb.from('integrations').select('*').eq('user_id', user.profile.id);
-  res.json({
-    integrations: (data || []).map((r: any) => ({
-      ...r,
-      access_token: r.access_token ? '••••' : null,
-      refresh_token: r.refresh_token ? '••••' : null,
-      webhook_url:
-        r.provider === 'quickbooks'
-          ? `${appUrl()}/api/webhooks/quickbooks`
-          : r.provider === 'xero'
-          ? `${appUrl()}/api/webhooks/xero`
-          : r.webhook_url || null,
-    })),
-  });
+  const rows = ((Array.isArray(data) ? data : []) as any[]).map((r: any) => ({
+    ...r,
+    access_token: r.access_token ? '••••' : null,
+    refresh_token: r.refresh_token ? '••••' : null,
+    webhook_url:
+      r.provider === 'quickbooks'
+        ? `${appUrl()}/api/webhooks/quickbooks`
+        : r.provider === 'xero'
+        ? `${appUrl()}/api/webhooks/xero`
+        : r.webhook_url || null,
+  }));
+
+  // Pseudo-connections for env-configured providers (no OAuth needed): they
+  // genuinely work as long as the matching key is set, so surface them as
+  // connected instead of showing a dead Connect button.
+  const existing = new Set(rows.map((r: any) => r.provider));
+  if (!existing.has('whatsapp') && effectiveKey('WHAPI_API_TOKEN')) {
+    rows.push({
+      id: `int_pseudo_whatsapp`,
+      user_id: user.profile.id,
+      provider: 'whatsapp',
+      category: 'communication',
+      is_active: true,
+      name: 'WhatsApp Business',
+      description: 'Send invoice reminders via WhatsApp Business. Messages are sent from our platform but branded as your company.',
+      account_name: 'Configured via WHAPI_API_TOKEN',
+      pseudo: true,
+      access_token: null,
+      refresh_token: null,
+      webhook_url: null,
+      webhook_configured: false,
+    });
+  }
+  if (!existing.has('sms') && effectiveKey('VONAGE_API_KEY')) {
+    rows.push({
+      id: `int_pseudo_sms`,
+      user_id: user.profile.id,
+      provider: 'sms',
+      category: 'communication',
+      is_active: true,
+      name: 'Business SMS',
+      description: 'Send invoice reminders via SMS. Uses our business number but displays your company name to recipients.',
+      account_name: 'Configured via VONAGE_API_KEY',
+      pseudo: true,
+      access_token: null,
+      refresh_token: null,
+      webhook_url: null,
+      webhook_configured: false,
+    });
+  }
+  if (!existing.has('email') && effectiveKey('RESEND_API_KEY')) {
+    rows.push({
+      id: `int_pseudo_email`,
+      user_id: user.profile.id,
+      provider: 'email',
+      category: 'communication',
+      is_active: true,
+      name: 'Business Email',
+      description: 'Send invoice reminders via email. Uses our transactional email service but displays your company name and domain.',
+      account_name: 'Configured via RESEND_API_KEY',
+      pseudo: true,
+      access_token: null,
+      refresh_token: null,
+      webhook_url: null,
+      webhook_configured: false,
+    });
+  }
+  if (!existing.has('bank')) {
+    const payee: UserProfile['payee'] = user.profile.payee ?? ({} as UserProfile['payee']);
+    const hasPayee = Boolean(payee.name && payee.email && payee.country);
+    const detail = payee.payout_method === 'card'
+      ? `${payee.card_brand || 'Card'} •••• ${payee.card_last4 || ''}`
+      : payee.payout_method === 'bank'
+      ? `${payee.bank_name || 'Bank'} ${payee.bank_iban || ''}`
+      : payee.payout_method === 'payoneer'
+      ? `Payoneer · ${payee.email || ''}`
+      : '';
+    rows.push({
+      id: `int_pseudo_bank`,
+      user_id: user.profile.id,
+      provider: 'bank',
+      category: 'banking',
+      is_active: hasPayee && payee.verified,
+      name: 'Bank Account / Card',
+      description: 'Accept direct bank transfers and card payments from clients via Payoneer. Funds are deposited directly into your account.',
+      account_name: hasPayee ? detail : 'Payout details not set — add them in your profile',
+      pseudo: true,
+      access_token: null,
+      refresh_token: null,
+      webhook_url: null,
+      webhook_configured: false,
+    });
+  }
+
+  res.json({ integrations: rows });
 });
 
 // ==========================================
@@ -2075,7 +2203,7 @@ async function upsertProviderInvoices(
   const sb = getSupabase();
   if (!sb) return { synced: 0, paid: 0, invoices: [] };
   const { data: existing } = await sb.from('invoices').select('id, external_invoice_id, status, payment_link').eq('user_id', uid);
-  const byNumber = new Map<string, any>((existing || []).map((r: any) => [String(r.external_invoice_id), r]));
+  const byNumber = new Map<string, any>((Array.isArray(existing) ? existing : []).map((r: any) => [String(r.external_invoice_id), r]));
   let synced = 0;
   let paid = 0;
 
@@ -2124,8 +2252,8 @@ async function upsertProviderInvoices(
       await addUsage(uid, { reminders_delivered: 1, amount_recovered: Number(row.amount_due) });
     } else {
       synced++;
-      // Direct payments: attach a live Stripe Payment Link (cached in DB).
-      await ensureStripePaymentLink({ id, external_invoice_id: row.external_invoice_id, amount_due: Number(row.amount_due), currency: row.currency }).catch(() => {});
+      // Direct payments: use the branded portal link (Payoneer under the hood).
+      await ensurePayoneerPaymentLink({ id, external_invoice_id: row.external_invoice_id, amount_due: Number(row.amount_due), currency: row.currency }).catch(() => {});
     }
   }
 
@@ -2377,6 +2505,65 @@ async function xeroConnections(accessToken: string): Promise<Array<{ tenantId: s
   return json;
 }
 
+// --- GMAIL (Google Workspace) connector: real OAuth token exchange + send ---
+async function exchangeGoogleCode(code: string): Promise<{ access_token: string; refresh_token: string }> {
+  const clientId = effectiveKey('GOOGLE_CLIENT_ID');
+  const clientSecret = effectiveKey('GOOGLE_CLIENT_SECRET');
+  if (!clientId || !clientSecret) throw new Error('GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET are not configured.');
+  const res = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      code,
+      client_id: clientId,
+      client_secret: clientSecret,
+      redirect_uri: OAUTH_REDIRECT(),
+      grant_type: 'authorization_code',
+    }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || !json.access_token) {
+    throw new Error(json?.error_description || json?.error || 'Google token exchange failed');
+  }
+  return { access_token: json.access_token, refresh_token: json.refresh_token || '' };
+}
+
+async function refreshGoogleAccess(refreshToken: string): Promise<string> {
+  const clientId = effectiveKey('GOOGLE_CLIENT_ID');
+  const clientSecret = effectiveKey('GOOGLE_CLIENT_SECRET');
+  if (!clientId || !clientSecret) throw new Error('GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET are not configured.');
+  const res = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      refresh_token: refreshToken,
+      client_id: clientId,
+      client_secret: clientSecret,
+      grant_type: 'refresh_token',
+    }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || !json.access_token) {
+    throw new Error(json?.error_description || json?.error || 'Google token refresh failed');
+  }
+  return json.access_token;
+}
+
+async function sendGmailViaApi(opts: { to: string; subject: string; html: string; accessToken: string }): Promise<{ provider: string; id: string }> {
+  const raw = Buffer.from(
+    `To: ${opts.to}\r\nSubject: ${opts.subject}\r\nContent-Type: text/html; charset=UTF-8\r\nMIME-Version: 1.0\r\n\r\n${opts.html}`
+  ).toString('base64url');
+  const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${opts.accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ raw }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json?.error?.message || 'Gmail send failed');
+  return { provider: 'gmail', id: json.id || `gmail_${Date.now()}` };
+}
+
+
 function mapXeroInvoice(i: any): ProviderInvoiceInput {
   const amount = Number(i.AmountDue || 0);
   return {
@@ -2445,14 +2632,6 @@ function buildOAuthUrl(provider: string, state: string, verifier?: string): { ur
       }
       break;
     }
-    case 'stripe':
-      if (process.env.STRIPE_CLIENT_ID && effectiveKey('STRIPE_SECRET_KEY')) {
-        return {
-          url: `https://connect.stripe.com/oauth/authorize?client_id=${process.env.STRIPE_CLIENT_ID}&redirect_uri=${encodeURIComponent(OAUTH_REDIRECT())}&response_type=code&scope=read_write&state=${state}`,
-          configured: true,
-        };
-      }
-      break;
     case 'quickbooks':
       if (effectiveKey('QUICKBOOKS_CLIENT_ID')) {
         return {
@@ -2555,13 +2734,12 @@ app.post('/api/integrations/:provider/sync', async (req, res) => {
     } else if (provider === 'xero') {
       if (!effectiveKey('XERO_CLIENT_ID') || !effectiveKey('XERO_CLIENT_SECRET')) return providerUnavailable(res, 'XERO');
       result = await syncXeroInvoices(user.profile.id, int as unknown as ProviderIntegrationRow);
-    } else if (provider === 'stripe') {
-      if (!effectiveKey('STRIPE_SECRET_KEY')) return providerUnavailable(res, 'STRIPE');
-      result = await syncStripeInvoicesFor(user.profile.id);
     } else {
-      return res.status(400).json({ error: 'UNSUPPORTED', message: 'Only quickbooks, xero and stripe support batched syncing.' });
+      return res.status(400).json({ error: 'UNSUPPORTED', message: 'Only quickbooks and xero support batched syncing.' });
     }
-    await sb.from('integrations').update({ last_synced_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', int.id);
+    if (int?.id) {
+      await sb.from('integrations').update({ last_synced_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', int.id);
+    }
     res.json({ success: true, provider, ...result });
   } catch (err: any) {
     res.status(502).json({ error: 'SYNC_FAILED', message: err.message });
@@ -2644,8 +2822,40 @@ app.get('/api/oauth/callback', async (req, res) => {
       return res.redirect('/app/connectors?connected=xero');
     }
 
-    // Other providers (Gmail / Stripe Connect) — informational response until
-    // their token exchanges are enabled with the matching credentials.
+    if (provider === 'gmail') {
+      if (!pending || pending.exp < Date.now()) {
+        return res.status(400).send('Invalid or expired OAuth state. Please try connecting again.');
+      }
+      const tokens = await exchangeGoogleCode(code);
+      const me = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+        headers: { Authorization: `Bearer ${tokens.access_token}` },
+      })
+        .then((r) => r.json())
+        .catch(() => ({}));
+      const accountName = String(me.email || me.name || 'Gmail account');
+      const { data: int } = await sb
+        .from('integrations')
+        .select('*')
+        .eq('user_id', pending.uid)
+        .eq('provider', 'gmail')
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (!int) return res.status(400).send('No pending Gmail connection found. Please sign in and connect again.');
+      await sb
+        .from('integrations')
+        .update({
+          is_active: true,
+          account_name: accountName,
+          access_token: tokens.access_token,
+          refresh_token: tokens.refresh_token,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', int.id);
+      return res.redirect('/app/connectors?connected=gmail');
+    }
+
+    // Any other provider — informational response.
     res.send(
       `<!doctype html><html><body style="font-family:system-ui;background:#170F08;color:#FDF1E6;display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
     <div style="text-align:center"><h2>${provider} authorization code received</h2>
@@ -2861,6 +3071,216 @@ app.post('/api/custom-emails/send', async (req, res) => {
 });
 
 // ==========================================
+// 6b. MULTI-CHANNEL INVOICE REMINDER SEND
+// Manual sends (invoice page send icon) and schedule automations share the
+// same rendering + dispatch helpers so both behave identically. A send can
+// target email, WhatsApp and SMS at once, using either a saved template or a
+// free-form message. Every channel carries the invoice details + payment link
+// and emails append the user's own signature.
+// ==========================================
+
+function reminderMailAddress(): string {
+  const raw = resendFromEmail();
+  const m = raw.match(/<([^>]+)>/);
+  return m ? m[1] : raw;
+}
+
+function renderInvoiceText(
+  text: string,
+  inv: any,
+  profile: { company_name: string; company_email?: string; company_phone?: string },
+  payLink: string
+): string {
+  const amount =
+    (inv.currency && inv.currency !== 'USD' ? `${inv.currency} ` : '') +
+    new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(
+      Number(inv.amount_due)
+    );
+  return String(text)
+    .replace(/\[client_name\]/gi, inv.client_name)
+    .replace(/\[external_invoice_id\]/gi, inv.external_invoice_id)
+    .replace(/\[amount_due\]/gi, amount)
+    .replace(/\[currency\]/gi, inv.currency)
+    .replace(/\[due_date\]/gi, inv.due_date)
+    .replace(/\[payment_link\]/gi, payLink)
+    .replace(/\[invoice_link\]/gi, payLink)
+    .replace(/\[company_name\]/gi, profile.company_name)
+    .replace(/\[your_name\]/gi, profile.company_name)
+    .replace(/\[company_email\]/gi, profile.company_email || '')
+    .replace(/\[company_phone\]/gi, profile.company_phone || '')
+    .replace(/\[company_number\]/gi, profile.company_phone || '')
+    .replace(/\[client_phone\]/gi, inv.client_phone || '');
+}
+
+function textToHtml(text: string): string {
+  return String(text).replace(/\n/g, '<br/>');
+}
+
+function appendSignature(html: string, signature: string): string {
+  const sig = String(signature || '').trim();
+  if (!sig) return html;
+  return `${html}<div style="margin-top:20px;padding-top:14px;border-top:1px solid #e5e5e5;color:#555555;font-size:13px;">${textToHtml(sig)}</div>`;
+}
+
+function defaultReminderText(inv: any, payLink: string, channel: 'whatsapp' | 'sms' | 'email'): string {
+  const amount = `$${Number(inv.amount_due).toFixed(2)}`;
+  if (channel === 'whatsapp') {
+    return `Hello ${inv.client_name}, this is a payment reminder for invoice ${inv.external_invoice_id} for ${amount} ${inv.currency}, due on ${inv.due_date}. Please pay securely here: ${payLink}`;
+  }
+  if (channel === 'sms') {
+    return `Hi ${inv.client_name}, invoice ${inv.external_invoice_id} for ${amount} ${inv.currency} (due ${inv.due_date}) is due. Pay securely here: ${payLink}`;
+  }
+  return `Hi ${inv.client_name},\n\nThis is a payment reminder for invoice ${inv.external_invoice_id} for ${amount} ${inv.currency}, due on ${inv.due_date}.\n\nYou can pay instantly and securely here:\n${payLink}\n\nThank you.`;
+}
+
+app.post('/api/invoices/:id/send', async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const active = assertPlanActive(user);
+  if (!active.ok) return res.status(402).json(active);
+
+  const { channel, channels, message, templateId } = req.body || {};
+  const wanted: ('email' | 'whatsapp' | 'sms')[] =
+    Array.isArray(channels) && channels.length
+      ? channels.filter((c: string) => ['email', 'whatsapp', 'sms'].includes(c))
+      : (['email', 'whatsapp', 'sms'].includes(channel) ? [channel] : ['email']);
+  if (!wanted.length) return res.status(400).json({ error: 'NO_CHANNEL', message: 'Select at least one channel (email, WhatsApp or SMS).' });
+
+  const sb = getSupabase();
+  if (!sb) return dbError(res);
+
+  const { data: inv } = await sb.from('invoices').select('*').eq('id', req.params.id).eq('user_id', user.profile.id).maybeSingle();
+  if (!inv) return res.status(404).json({ error: 'NOT_FOUND', message: 'Invoice not found.' });
+
+  const payLink = await ensurePayoneerPaymentLink(inv).catch(() => inv.payment_link || `/pay/${inv.id}`);
+
+  let tmpl: any = null;
+  if (templateId) {
+    const { data: t } = await sb
+      .from('custom_email_templates')
+      .select('*')
+      .eq('id', templateId)
+      .eq('user_id', user.profile.id)
+      .maybeSingle();
+    if (!t) return res.status(404).json({ error: 'TEMPLATE_NOT_FOUND', message: 'Template not found.' });
+    tmpl = t;
+  }
+
+  const profile = {
+    company_name: user.profile.company_name,
+    company_email: user.profile.email,
+    company_phone: (user.row as any).company_phone || '',
+  };
+  const signature = user.profile.email_signature || '';
+  const fromName = tmpl?.sender_name || user.profile.company_name || 'Eron';
+  const from = `${fromName} <${reminderMailAddress()}>`;
+
+  const results: any[] = [];
+  const errors: { channel: string; message: string }[] = [];
+
+  for (const ch of wanted) {
+    try {
+      if (ch !== 'email' && !inv.client_phone) {
+        errors.push({ channel: ch, message: `No client phone on this invoice — add one to send ${ch === 'whatsapp' ? 'WhatsApp' : 'SMS'}.` });
+        continue;
+      }
+      if (ch === 'email' && !inv.client_email) {
+        errors.push({ channel: ch, message: 'No client email on this invoice.' });
+        continue;
+      }
+
+      const limit = ch === 'sms'
+        ? await assertLimit(user.profile.id, user.profile.subscription_tier!, 'sms', { soft: true })
+        : await assertLimit(user.profile.id, user.profile.subscription_tier!, ch === 'whatsapp' ? 'whatsapp' : 'emails');
+      if (!limit.ok) {
+        errors.push({ channel: ch, message: limit.message });
+        continue;
+      }
+
+      let dispatch: { provider: string; id: string };
+      let preview: string;
+
+      if (ch === 'whatsapp') {
+        const msg = tmpl
+          ? renderInvoiceText(tmpl.body, inv, profile, payLink)
+          : message || defaultReminderText(inv, payLink, 'whatsapp');
+        dispatch = await sendWhatsAppViaWhapi({ to: inv.client_phone, message: msg });
+        preview = `${dispatch.provider.toUpperCase()} ${dispatch.id} → WhatsApp ${inv.client_phone}`;
+      } else if (ch === 'sms') {
+        const body = tmpl
+          ? renderInvoiceText(tmpl.body, inv, profile, payLink)
+          : message || defaultReminderText(inv, payLink, 'sms');
+        dispatch = await sendSmsViaVonage({ to: inv.client_phone, body });
+        preview = `${dispatch.provider.toUpperCase()} ${dispatch.id} → SMS ${inv.client_phone}`;
+      } else {
+        const subject = tmpl
+          ? renderInvoiceText(tmpl.subject || `Payment reminder: Invoice ${inv.external_invoice_id}`, inv, profile, payLink)
+          : message
+          ? `Payment reminder: Invoice ${inv.external_invoice_id}`
+          : `Payment reminder: Invoice ${inv.external_invoice_id}`;
+        const bodyText = tmpl ? renderInvoiceText(tmpl.body, inv, profile, payLink) : message || defaultReminderText(inv, payLink, 'email');
+        const html = appendSignature(textToHtml(bodyText), signature);
+        dispatch = await sendEmailViaResend({ from, to: inv.client_email, subject, html });
+        preview = `${dispatch.provider.toUpperCase()} ${dispatch.id} → ${inv.client_email}`;
+      }
+
+      const logId = `log_send_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      await sb.from('reminder_logs').insert({
+        id: logId,
+        user_id: user.profile.id,
+        invoice_id: inv.id,
+        invoice_number: inv.external_invoice_id,
+        client_name: inv.client_name,
+        client_email: inv.client_email,
+        sequence_step_title: tmpl ? `Manual ${ch.toUpperCase()} — ${tmpl.title}` : `Manual ${ch.toUpperCase()} reminder`,
+        channel: ch,
+        status: 'sent',
+        sent_at: new Date().toISOString(),
+        payload_preview: preview,
+      });
+      await addUsage(user.profile.id, {
+        reminders_delivered: 1,
+        ...(ch === 'whatsapp' ? { whatsapp_sent: 1 } : ch === 'sms' ? { sms_sent: 1 } : { emails_sent: 1 }),
+      });
+      results.push({ channel: ch, logId, dispatch });
+    } catch (err: any) {
+      console.error(`[Invoice Send] ${ch} failed:`, err.message);
+      await sb.from('reminder_logs').insert({
+        id: `log_send_fail_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        user_id: user.profile.id,
+        invoice_id: inv.id,
+        invoice_number: inv.external_invoice_id,
+        client_name: inv.client_name,
+        client_email: inv.client_email,
+        sequence_step_title: tmpl ? `Manual ${ch.toUpperCase()} — ${tmpl.title}` : `Manual ${ch.toUpperCase()} reminder`,
+        channel: ch,
+        status: 'failed',
+        error_message: err.message,
+        sent_at: new Date().toISOString(),
+      });
+      errors.push({ channel: ch, message: err.message });
+    }
+  }
+
+  await sb.from('invoices').update({ last_reminder_sent_at: new Date().toISOString() }).eq('id', inv.id);
+
+  if (results.length === 0) {
+    return res.status(502).json({
+      success: false,
+      message: errors[0]?.message || 'Send failed.',
+      errors,
+    });
+  }
+  res.json({
+    success: true,
+    message: `Reminder sent via ${results.map((r) => r.channel.toUpperCase()).join(', ')}`,
+    channels: results.map((r) => r.channel),
+    results,
+    errors,
+  });
+});
+
+// ==========================================
 // 7. AI DRAFTERS (real Gemini, plan-gated)
 // ==========================================
 app.post('/api/ai/generate-sequence', async (req, res) => {
@@ -2876,9 +3296,7 @@ app.post('/api/ai/generate-sequence', async (req, res) => {
 
   const { agencyName, tone, clientType, amount } = req.body || {};
   try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-flash-latest',
-      contents: `You are an expert B2B Payment Recovery Copywriter for digital agencies. Generate a JSON 3-step sequence for:
+    const prompt = `You are an expert B2B Payment Recovery Copywriter for digital agencies. Generate a JSON 3-step sequence for:
 Agency: ${agencyName || 'Digital Agency'}
 Tone: ${tone || 'firm and professional'}
 Client Type: ${clientType || 'Enterprise client'}
@@ -2906,9 +3324,8 @@ Return strictly valid JSON with this schema:
     "title": "Urgent WhatsApp Message",
     "template_body": "body..."
   }
-]`,
-    });
-    const text = response.text || '';
+]`;
+    const text = await generateWithModelFallback(ai, prompt);
     const cleanJson = text.replace(/```json/g, '').replace(/```/g, '').trim();
     const steps = JSON.parse(cleanJson);
     await addUsage(user.profile.id, { ai_generations: 1 });
@@ -2932,9 +3349,7 @@ app.post('/api/ai/generate-custom-email', async (req, res) => {
 
   const { prompt, tone, senderName, senderEmail } = req.body || {};
   try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-flash-latest',
-      contents: `You are an expert agency payment communications specialist. Write a custom B2B email template based on:
+    const aiPrompt = `You are an expert agency payment communications specialist. Write a custom B2B email template based on:
 User Prompt: "${prompt}"
 Tone: "${tone || 'Firm & Professional'}"
 Sender Name: "${senderName || 'Your Billing Team'}"
@@ -2950,9 +3365,8 @@ Return strictly valid JSON with this exact format:
   "subject": "Compelling subject line with [external_invoice_id]",
   "body": "Clear email body content using [client_name], [amount_due], [due_date], and [payment_link]",
   "category": "custom"
-}`,
-    });
-    const text = response.text || '';
+}`;
+    const text = await generateWithModelFallback(ai, aiPrompt);
     const cleanJson = text.replace(/```json/g, '').replace(/```/g, '').trim();
     const result = JSON.parse(cleanJson);
     await addUsage(user.profile.id, { ai_generations: 1 });
@@ -2968,30 +3382,52 @@ Return strictly valid JSON with this exact format:
 // ==========================================
 app.get('/api/billing/plans', (req, res) => {
   res.json({
-    plans: PLANS.map((p) => ({
-      id: p.id,
-      name: p.name,
-      price: p.price,
-      list_price: p.list_price,
-      sell: p.sell,
-      tagline: p.tagline,
-      invoice_limit: p.invoice_limit,
-      recommended: p.recommended,
-      fees: planChargeWithFees(p.price),
-      features: p.features,
-      limits: p.limits,
-    })),
+    plans: [
+      ...PLANS.map((p) => ({
+        id: p.id,
+        name: p.name,
+        price: p.price,
+        list_price: p.list_price,
+        sell: p.sell,
+        tagline: p.tagline,
+        invoice_limit: p.invoice_limit,
+        recommended: p.recommended,
+        fees: planChargeWithFees(p.price),
+        features: p.features,
+        limits: p.limits,
+      })),
+      {
+        id: CUSTOM_PLAN.id,
+        name: CUSTOM_PLAN.name,
+        price: CUSTOM_PLAN.price,
+        list_price: undefined,
+        sell: false,
+        tagline: CUSTOM_PLAN.tagline,
+        invoice_limit: CUSTOM_PLAN.invoice_limit,
+        recommended: false,
+        custom: true,
+        fees: { tax: 0, fee: 0, total: 0 },
+        features: CUSTOM_PLAN.features,
+        limits: CUSTOM_PLAN.limits,
+      },
+    ],
     taxRate: PLATFORM_TAX_RATE,
     gatewayFeeRate: GATEWAY_FEE_RATE,
     gatewayFeeFlat: GATEWAY_FEE_FLAT,
+    supportEmail: SUPPORT_EMAIL,
   });
 });
 
 app.post('/api/billing/checkout', async (req, res) => {
   const user = await requireUser(req, res);
   if (!user) return;
-  const tier = req.body?.tier as SubscriptionTier;
-  const plan = PLAN_BY_ID[tier];
+  const tier = req.body?.tier as string;
+  if (tier === 'custom') {
+    return res
+      .status(400)
+      .json({ error: 'CUSTOM_PLAN', message: `Custom plans are arranged directly — email ${SUPPORT_EMAIL} to get started.` });
+  }
+  const plan = PLAN_BY_ID[tier as SubscriptionTier];
   if (!plan) return res.status(400).json({ error: 'VALIDATION', message: 'Unknown plan.' });
 
   try {
@@ -3127,7 +3563,7 @@ app.post('/api/billing/cancel', async (req, res) => {
       tax: math.tax,
       gatewayFee: math.gatewayFee,
       refund: math.refund,
-      note: 'Money-back refund = unused days minus usage costs, merchant-of-record tax and gateway fees.',
+      note: 'Money-back refund = unused days minus a 10% cancellation cut minus usage costs.',
     },
     provider: providerResult.provider,
   });
@@ -3182,146 +3618,14 @@ app.get('/api/billing/events', async (req, res) => {
 });
 
 // ==========================================
-// 9. WEBHOOKS (Lemon Squeezy + Stripe, signature verified)
+// 9. WEBHOOKS (legacy endpoints removed — Payoneer handles payments directly)
 // ==========================================
-app.post('/api/webhooks/lemon-squeezy', async (req, res) => {
-  const secret = effectiveKey('LEMON_SQUEEZY_WEBHOOK_SECRET');
-  if (!secret) return res.status(401).json({ error: 'WEBHOOK_UNCONFIGURED', message: 'LEMON_SQUEEZY_WEBHOOK_SECRET is not set.' });
-
-  const signature = (req.headers['x-signature'] as string) || '';
-  const digest = crypto.createHmac('sha256', secret).update(JSON.stringify(req.body)).digest('hex');
-  const a = Buffer.from(digest, 'utf8');
-  const b = Buffer.from(signature, 'utf8');
-  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
-    return res.status(401).json({ error: 'INVALID_SIGNATURE' });
-  }
-
-  const eventName = req.body?.meta?.event_name || req.body?.event_name;
-  const attributes = req.body?.data?.attributes || {};
-  const customerEmail = attributes?.user_email || attributes?.customer_email;
-  const subscriptionId = attributes?.id || req.body?.data?.id;
-  const variantName = attributes?.variant_name;
-  const status = attributes?.status;
-
-  const sb = getSupabase();
-  if (!sb) return dbError(res);
-
-  const { data: userRow } = customerEmail
-    ? await sb.from('users').select('*').eq('email', String(customerEmail).toLowerCase()).maybeSingle()
-    : { data: null };
-  if (!userRow) return res.json({ received: true, matched: false });
-
-  const uid = (userRow as unknown as DbRow).id;
-  const tier = variantName ? String(variantName).toLowerCase() : null;
-
-  if (eventName === 'subscription_created' || eventName === 'subscription_updated') {
-    const recognized = tier && PLAN_BY_ID[tier as SubscriptionTier];
-    await sb
-      .from('users')
-      .update({
-        subscription_tier: recognized ? tier : userRow.subscription_tier,
-        subscription_status: status === 'cancelled' ? 'cancelled' : 'active',
-        lemon_squeezy_customer_id: attributes?.customer_id || userRow.lemon_squeezy_customer_id,
-        lemon_squeezy_subscription_id: String(subscriptionId || ''),
-        plan_started_at: new Date().toISOString(),
-      })
-      .eq('id', uid);
-    await recordBillingEvent({
-      userId: uid,
-      type: status === 'cancelled' ? 'subscription_cancelled' : 'subscription_renewed',
-      tier: recognized ? (tier as SubscriptionTier) : null,
-      amount: Number(attributes?.subtotal || 0) / 100,
-      provider: 'lemon-squeezy',
-    });
-  } else if (eventName === 'subscription_cancelled') {
-    await sb.from('users').update({ subscription_status: 'cancelled', subscription_tier: null, plan_started_at: null }).eq('id', uid);
-    await recordBillingEvent({ userId: uid, type: 'subscription_cancelled', tier: null, provider: 'lemon-squeezy' });
-  }
-
-  res.json({ received: true, event: eventName, matched: true });
+app.post('/api/webhooks/lemon-squeezy', (_req, res) => {
+  res.status(410).json({ error: 'DEPRECATED', message: 'Lemon Squeezy webhook removed. Payments are now handled by Payoneer.' });
 });
 
-app.post('/api/webhooks/stripe', async (req, res) => {
-  const secret = effectiveKey('STRIPE_WEBHOOK_SECRET');
-  if (!secret) return res.status(401).json({ error: 'WEBHOOK_UNCONFIGURED', message: 'STRIPE_WEBHOOK_SECRET is not set.' });
-
-  const signature = (req.headers['stripe-signature'] as string) || '';
-  const raw = req.body as Buffer;
-  const parts = signature.split(',').map((p) => p.trim());
-  const ts = parts.find((p) => p.startsWith('t='))?.slice(2);
-  const sig = parts.find((p) => p.startsWith('v1='))?.slice(3);
-  if (!ts || !sig) return res.status(401).json({ error: 'INVALID_SIGNATURE' });
-  if (Math.abs(Date.now() / 1000 - Number(ts)) > 300) return res.status(401).json({ error: 'STALE_SIGNATURE' });
-
-  const expected = crypto.createHmac('sha256', secret).update(`${ts}.${raw.toString('utf8')}`).digest('hex');
-  const a = Buffer.from(expected, 'hex');
-  const b = Buffer.from(sig, 'hex');
-  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
-    return res.status(401).json({ error: 'INVALID_SIGNATURE' });
-  }
-
-  const event = JSON.parse(raw.toString('utf8'));
-  const object = event.data?.object || {};
-  const sb = getSupabase();
-  if (!sb) return dbError(res);
-
-  if (event.type === 'checkout.session.completed') {
-    const metaTier = object.metadata?.tier;
-    const metaUser = object.metadata?.user_id;
-    if (metaUser && metaTier && PLAN_BY_ID[metaTier as SubscriptionTier]) {
-      const from = await loadUser(metaUser);
-      const fromPlan = from?.profile.subscription_tier ? PLAN_BY_ID[from.profile.subscription_tier] : null;
-      const prorated = prorateSwitch(fromPlan, PLAN_BY_ID[metaTier as SubscriptionTier], from?.profile.plan_started_at || null);
-      await sb
-        .from('users')
-        .update({
-          subscription_tier: metaTier,
-          subscription_status: 'active',
-          stripe_customer_id: object.customer || from?.profile.stripe_customer_id || null,
-          plan_started_at: from?.profile.plan_started_at || new Date().toISOString(),
-        })
-        .eq('id', metaUser);
-      await recordBillingEvent({
-        userId: metaUser,
-        type: fromPlan ? 'plan_upgrade' : 'charge',
-        tier: metaTier,
-        amount: (object.amount_total || 0) / 100,
-        proratedAmount: prorated.dueNow,
-        breakdown: { provider: 'stripe', remainingRatio: roundMoney(prorated.remainingRatio) },
-        provider: 'stripe',
-      });
-    }
-  }
-
-  if (event.type === 'invoice.payment_succeeded' || event.type === 'payment_intent.succeeded') {
-    const invoiceNumber = object.number || object.id;
-    if (invoiceNumber) {
-      const { data: targets } = await sb
-        .from('invoices')
-        .select('*')
-        .or(`external_invoice_id.eq.${invoiceNumber},payment_link.eq./pay/${invoiceNumber}`)
-        .limit(5);
-      for (const target of targets || []) {
-        await sb.from('invoices').update({ status: 'paid', sequence_paused: true }).eq('id', target.id);
-        await sb.from('reminder_logs').insert({
-          id: `log_stripe_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-          user_id: target.user_id,
-          invoice_id: target.id,
-          invoice_number: target.external_invoice_id,
-          client_name: target.client_name,
-          client_email: target.client_email,
-          sequence_step_title: 'Stripe Webhook Payment Succeeded',
-          channel: 'email',
-          status: 'sent',
-          sent_at: new Date().toISOString(),
-          payload_preview: `Stripe payment for ${invoiceNumber} confirmed. Status updated to paid.`,
-        });
-        await addUsage(target.user_id, { reminders_delivered: 1, amount_recovered: Number(target.amount_due) });
-      }
-    }
-  }
-
-  res.json({ received: true });
+app.post('/api/webhooks/stripe', (_req, res) => {
+  res.status(410).json({ error: 'DEPRECATED', message: 'Stripe webhook removed. Payments are now handled by Payoneer.' });
 });
 
 // ==========================================
@@ -3338,28 +3642,43 @@ app.post('/api/payments/create-payment-intent', async (req, res) => {
     return res.status(400).json({ error: 'ALREADY_PAID', message: 'This invoice is already paid.' });
   }
 
-  if (effectiveKey('STRIPE_SECRET_KEY')) {
-    try {
-      const base = await createStripePaymentSession({
-        invoiceId: invoice.id,
-        externalInvoiceId: invoice.external_invoice_id,
-        clientEmail: invoice.client_email,
-        amount: Number(invoice.amount_due),
-        currency: invoice.currency,
-        method: method || 'card',
-      });
-      const fee = roundMoney(Number(invoice.amount_due) * GATEWAY_FEE_RATE + GATEWAY_FEE_FLAT);
-      return res.json({
-        ...base,
-        amount: Number(invoice.amount_due) + fee,
-        fee,
-        currency: invoice.currency,
-      });
-    } catch (err: any) {
-      return res.status(err instanceof ProviderError ? 503 : 502).json({ error: 'PAYMENT_PROVIDER_ERROR', message: err.message });
-    }
+  const fee = paymentMethodFee((method || 'card') as PaymentMethod, Number(invoice.amount_due));
+
+  // Test mode simulates the Payoneer checkout: the payment completes
+  // immediately and the invoice is marked paid so the portal shows the
+  // receipt. Live mode has no hosted checkout configured yet — the portal
+  // returns a clear error instead of an endless redirect.
+  if (testOverrides.enabled) {
+    await sb.from('invoices').update({ status: 'paid', sequence_paused: true }).eq('id', invoice.id);
+    await sb.from('reminder_logs').insert({
+      id: `log_portal_${Date.now()}`,
+      user_id: invoice.user_id,
+      invoice_id: invoice.id,
+      invoice_number: invoice.external_invoice_id,
+      client_name: invoice.client_name,
+      client_email: invoice.client_email,
+      sequence_step_title: 'Invoice Paid via Portal',
+      channel: 'email',
+      status: 'sent',
+      sent_at: new Date().toISOString(),
+      payload_preview: `Test-mode payment received: $${Number(invoice.amount_due).toFixed(2)} ${invoice.currency} via ${method || 'card'}.`,
+    });
+    await addUsage(invoice.user_id, { reminders_delivered: 1, amount_recovered: Number(invoice.amount_due) });
+    return res.json({
+      completed: true,
+      provider: 'payoneer',
+      intent_id: `payoneer_${Date.now()}`,
+      amount: Number(invoice.amount_due),
+      fee,
+      currency: invoice.currency,
+      method: method || 'card',
+    });
   }
-  providerUnavailable(res, 'STRIPE');
+
+  return res.status(503).json({
+    error: 'PROVIDER_NOT_CONFIGURED',
+    message: 'Live checkout is not configured on this deployment yet. Please contact the agency to arrange payment.',
+  });
 });
 
 app.get('/api/portal/invoice/:id', async (req, res) => {
@@ -3385,6 +3704,215 @@ app.get('/api/portal/invoice/:id', async (req, res) => {
 // ==========================================
 // 11. QSTASH REMINDER WORKER CRON
 // ==========================================
+
+// True when `now` falls inside the schedule's local send window (±30 min).
+// Unknown/invalid timezones fall back to "always due" so a typo can never
+// silently stop automation.
+function scheduleIsDue(sched: { time_of_day: string; timezone: string }, now: Date): boolean {
+  const [h, m] = (sched.time_of_day || '09:00').split(':').map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return true;
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: sched.timezone,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).formatToParts(now);
+    const val = (type: string) => Number(parts.find((p) => p.type === type)?.value || 0);
+    let curH = val('hour');
+    if (curH === 24) curH = 0; // some engines render midnight as "24"
+    const curM = val('minute');
+    return curH === h && Math.abs(curM - m) <= 30;
+  } catch {
+    return true;
+  }
+}
+
+const CRON_FREQ_SECS: Record<string, number> = {
+  urgent: 2 * 60 * 60,
+  daily: 86400,
+  weekly: 604800,
+  monthly: 2629800,
+  yearly: 31557600,
+  once: 86400,
+};
+
+// Dispatches a reminder for one invoice across the given channels. Shared by
+// the legacy invoice-level automation and the per-schedule automation so the
+// two paths behave identically. When a template is supplied its subject/body
+// are rendered with the invoice + company placeholders, emails get the user's
+// signature appended, and every channel always carries the payment link.
+// Returns the reminder log rows created.
+async function dispatchInvoiceReminders(opts: {
+  uid: string;
+  tier: SubscriptionTier;
+  inv: any;
+  channels: ('email' | 'whatsapp' | 'sms')[];
+  stepTitle: string;
+  rescheduleSecs: number;
+  now: Date;
+  template?: any;
+  profile?: { company_name: string; company_email?: string; company_phone?: string; email_signature?: string };
+}): Promise<any[]> {
+  const sb = getSupabase();
+  if (!sb) return [];
+  const { uid, tier, inv, channels, stepTitle, rescheduleSecs, now, template, profile } = opts;
+  const results: any[] = [];
+  const dueDate = new Date(inv.due_date + 'T00:00:00');
+  const diffDays = Math.floor((now.getTime() - dueDate.getTime()) / 86400000);
+  const payLink = await ensurePayoneerPaymentLink(inv).catch(() => inv.payment_link || `/pay/${inv.id}`);
+  const renderProfile = {
+    company_name: profile?.company_name || 'Eron',
+    company_email: profile?.company_email || '',
+    company_phone: profile?.company_phone || '',
+  };
+  const signature = profile?.email_signature || '';
+  const fromName = template?.sender_name || profile?.company_name || 'Eron';
+  const from = `${fromName} <${reminderMailAddress()}>`;
+
+  for (const channel of channels) {
+    // Channel availability: email needs an address; whatsapp/sms need a phone.
+    if (channel === 'whatsapp' && (!inv.client_phone || !effectiveKey('WHAPI_API_TOKEN'))) continue;
+    if (channel === 'sms' && (!inv.client_phone || !effectiveKey('VONAGE_API_KEY'))) continue;
+    if (channel === 'email' && !inv.client_email) continue;
+
+    // Email channel prefers the user's connected Gmail inbox; Resend is the
+    // fallback when no Gmail connection exists or the send fails.
+    let gmailInt: any = null;
+    if (channel === 'email') {
+      const g = await sb
+        .from('integrations')
+        .select('id, access_token, refresh_token')
+        .eq('user_id', uid)
+        .eq('provider', 'gmail')
+        .eq('is_active', true)
+        .maybeSingle();
+      gmailInt = g?.data || null;
+    }
+
+    // SMS is a soft limit: it never blocks the send, it just reminds the user
+    // that the monthly quota is spent. WhatsApp/email hard-gate on upgrade.
+    const limit = channel === 'sms'
+      ? await assertLimit(uid, tier, 'sms', { soft: true })
+      : await assertLimit(uid, tier, channel === 'whatsapp' ? 'whatsapp' : 'emails');
+    if (!limit.ok) continue; // plan limit reached — skip silently, user fixed by upgrade
+    if (limit.limitReached) {
+      // Just remind: the send proceeds, but surface the quota note in the log.
+      await sb.from('reminder_logs').insert({
+        id: `log_remind_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        user_id: uid,
+        invoice_id: inv.id,
+        invoice_number: inv.external_invoice_id,
+        client_name: inv.client_name,
+        client_email: inv.client_email,
+        sequence_step_title: 'SMS quota reminder',
+        channel: 'sms',
+        status: 'sent',
+        sent_at: new Date().toISOString(),
+        payload_preview: limit.message || 'SMS monthly quota reached.',
+      });
+    }
+
+    try {
+      // Direct payment: ensure (and cache) a branded payment link first.
+      let dispatch: { provider: string; id: string };
+      if (channel === 'whatsapp') {
+        const msg = template
+          ? renderInvoiceText(template.body, inv, renderProfile, payLink)
+          : `Hello ${inv.client_name}, invoice ${inv.external_invoice_id} for $${Number(inv.amount_due).toFixed(2)} is overdue. Pay securely here: ${payLink}`;
+        dispatch = await sendWhatsAppViaWhapi({ to: inv.client_phone, message: msg });
+      } else if (channel === 'sms') {
+        const body = template
+          ? renderInvoiceText(template.body, inv, renderProfile, payLink)
+          : `Hi ${inv.client_name}, invoice ${inv.external_invoice_id} for $${Number(inv.amount_due).toFixed(2)} is overdue. Pay securely here: ${payLink}`;
+        dispatch = await sendSmsViaVonage({ to: inv.client_phone, body });
+      } else {
+        const subject = template
+          ? renderInvoiceText(template.subject || `Payment reminder: Invoice ${inv.external_invoice_id}`, inv, renderProfile, payLink)
+          : `Payment reminder: Invoice ${inv.external_invoice_id}`;
+        const bodyText = template
+          ? renderInvoiceText(template.body, inv, renderProfile, payLink)
+          : `<p>Hi ${inv.client_name},</p><p>Invoice ${inv.external_invoice_id} for $${Number(inv.amount_due).toFixed(2)} ${inv.currency} is ${diffDays > 0 ? `${diffDays} day(s) overdue` : 'due'}. Pay securely here:</p><p><a href="${payLink}">Pay now with card, bank, PayPal or wallet</a></p>`;
+        const html = template ? appendSignature(textToHtml(bodyText), signature) : bodyText;
+        if (gmailInt?.access_token) {
+          try {
+            dispatch = await sendGmailViaApi({ to: inv.client_email, subject, html, accessToken: gmailInt.access_token });
+          } catch (gmailErr: any) {
+            // Refresh the token once, then retry; otherwise fall back to Resend.
+            if (gmailInt.refresh_token) {
+              const fresh = await refreshGoogleAccess(gmailInt.refresh_token).catch(() => null);
+              if (fresh) {
+                await sb.from('integrations').update({ access_token: fresh }).eq('id', gmailInt.id);
+                dispatch = await sendGmailViaApi({ to: inv.client_email, subject, html, accessToken: fresh });
+              } else {
+                throw gmailErr;
+              }
+            } else if (effectiveKey('RESEND_API_KEY')) {
+              console.warn(`[Cron] Gmail send failed (${gmailErr.message}) — falling back to Resend.`);
+              dispatch = await sendEmailViaResend({
+                from,
+                to: inv.client_email,
+                subject,
+                html,
+              });
+            } else {
+              throw gmailErr;
+            }
+          }
+        } else {
+          dispatch = await sendEmailViaResend({
+            from,
+            to: inv.client_email,
+            subject,
+            html,
+          });
+        }
+      }
+
+      const newLog = {
+        id: `log_cron_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        user_id: uid,
+        invoice_id: inv.id,
+        invoice_number: inv.external_invoice_id,
+        client_name: inv.client_name,
+        client_email: inv.client_email,
+        sequence_step_title: stepTitle,
+        channel,
+        status: 'sent',
+        sent_at: new Date().toISOString(),
+        payload_preview: `${dispatch.provider.toUpperCase()} dispatch ${dispatch.id} sent via ${channel}${diffDays > 0 ? ` (overdue ${diffDays}d)` : ''}.`,
+      };
+      await sb.from('reminder_logs').insert(newLog);
+      await sb
+        .from('invoices')
+        .update({ last_reminder_sent_at: new Date().toISOString() })
+        .eq('id', inv.id);
+      await addUsage(uid, {
+        reminders_delivered: 1,
+        ...(channel === 'whatsapp' ? { whatsapp_sent: 1 } : channel === 'sms' ? { sms_sent: 1 } : { emails_sent: 1 }),
+      });
+      await scheduleQStashReminder({ invoice_id: inv.id }, rescheduleSecs).catch(() => {});
+      results.push(newLog);
+    } catch (err: any) {
+      console.error(`[Cron] dispatch failed for ${inv.external_invoice_id}:`, err.message);
+      await sb.from('reminder_logs').insert({
+        id: `log_failed_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        user_id: uid,
+        invoice_id: inv.id,
+        invoice_number: inv.external_invoice_id,
+        client_name: inv.client_name,
+        client_email: inv.client_email,
+        sequence_step_title: stepTitle,
+        channel,
+        status: 'failed',
+        error_message: err.message,
+        sent_at: new Date().toISOString(),
+      });
+    }
+  }
+  return results;
+}
+
 app.post('/api/cron/process-reminders', async (req, res) => {
   const session = readSession(req);
   let validSession = false;
@@ -3400,20 +3928,102 @@ app.post('/api/cron/process-reminders', async (req, res) => {
   const sb = getSupabase();
   if (!sb) return dbError(res);
 
+  // Manual runs (from the dashboard buttons or an explicit manual flag) send
+  // immediately. QStash-scheduled runs honour each schedule's time-of-day.
+  const manual = Boolean(req.body?.manual) || (validSession && !validQStash);
+
   const now = new Date();
   const results = [];
 
   const { data: users } = await sb.from('users').select('*').eq('subscription_status', 'active');
-  for (const u of users || []) {
-    const uid = (u as unknown as DbRow).id;
-    const tier = (u as unknown as DbRow).subscription_tier as SubscriptionTier;
+  for (const u of (Array.isArray(users) ? users : []) as any[]) {
+    const uid = u.id as string;
+    const tier = u.subscription_tier as SubscriptionTier;
     if (!tier || !PLAN_BY_ID[tier]) continue;
 
+    // Active automation schedules for this workspace.
+    const { data: scheduleRows } = await sb.from('schedules').select('*').eq('user_id', uid).eq('active', true);
+    const activeSchedules = (Array.isArray(scheduleRows) ? scheduleRows : []).map(normalizeSchedule);
+
+    // An empty invoice_ids list means "ALL invoices". Otherwise the schedule
+    // targets exactly the invoices listed (single or multiple).
+    const coversAll = activeSchedules.some((s) => !s.invoice_ids || s.invoice_ids.length === 0);
+    const coveredIds = new Set<string>();
+    for (const s of activeSchedules) {
+      if (s.invoice_ids && s.invoice_ids.length) s.invoice_ids.forEach((id) => coveredIds.add(id));
+    }
+
     const { data: invoices } = await sb.from('invoices').select('*').eq('user_id', uid);
-    for (const invoice of invoices || []) {
-      const inv = normalizeInvoice(invoice);
-      if (inv.status === 'paid' || inv.status === 'cancelled' || inv.sequence_paused) continue;
-      if (!inv.client_email && !inv.client_phone) continue;
+    const invoiceRows = Array.isArray(invoices) ? invoices : [];
+    let eligible = invoiceRows
+      .map((row: any) => normalizeInvoice(row))
+      .filter((inv: any) => inv.status !== 'paid' && inv.status !== 'cancelled' && !inv.sequence_paused)
+      .filter((inv: any) => (inv.client_email || inv.client_phone) != null);
+
+    // Manual "send this invoice now" runs (dashboard / invoice page) target a
+    // single invoice instead of sweeping the whole workspace.
+    const onlyInvoiceId = manual ? String(req.body?.invoice_id || '') : '';
+    if (onlyInvoiceId) {
+      eligible = eligible.filter((inv: any) => inv.id === onlyInvoiceId);
+      if (!eligible.length) continue;
+    }
+
+    // Shared rendering profile (company info + email signature) for template sends.
+    const dispatchProfile = {
+      company_name: u.company_name || 'Eron',
+      company_email: u.email || '',
+      company_phone: u.company_phone || '',
+      email_signature: u.email_signature || '',
+    };
+
+    // --- Schedule-driven automation (single / multiple / all invoices) ---
+    for (const sched of activeSchedules) {
+      let targets = eligible;
+      if (sched.invoice_ids && sched.invoice_ids.length) {
+        const wanted = new Set(sched.invoice_ids);
+        targets = targets.filter((inv: any) => wanted.has(inv.id));
+      }
+      if (!targets.length) continue;
+      // QStash runs dispatch only inside the schedule's local send window;
+      // manual runs always fire immediately.
+      if (!manual && !scheduleIsDue(sched, now)) continue;
+
+      // A schedule always uses exactly one selected template. Without one it
+      // is skipped (the UI now requires a template at save time).
+      const { data: schedTmpl } = sched.template_id
+        ? await sb.from('custom_email_templates').select('*').eq('id', sched.template_id).eq('user_id', uid).maybeSingle()
+        : { data: null };
+      if (!schedTmpl) {
+        console.warn(`[Cron] Schedule ${sched.id} has no template — skipped.`);
+        continue;
+      }
+      const stepTitle = `Automation — ${schedTmpl.title || sched.name}`;
+      const rescheduleSecs = nextRunDelaySeconds(sched, now);
+      for (const inv of targets as any[]) {
+        results.push(
+          ...(await dispatchInvoiceReminders({
+            uid,
+            tier,
+            inv,
+            channels: sched.channels,
+            stepTitle,
+            rescheduleSecs,
+            now,
+            template: schedTmpl,
+            profile: dispatchProfile,
+          }))
+        );
+      }
+      // `once` schedules switch themselves off after their single run.
+      if (sched.frequency === 'once') {
+        await sb.from('schedules').update({ active: false }).eq('id', sched.id).eq('user_id', uid);
+      }
+    }
+
+    // --- Legacy invoice-level automation for invoices NOT covered by any
+    // schedule (or when the user has no schedules at all). ---
+    for (const inv of eligible) {
+      if (coversAll || coveredIds.has(inv.id)) continue; // handled by a schedule
 
       // Invoice-level channels. Default to email when none are set (legacy rows).
       const channels: ('email' | 'whatsapp' | 'sms')[] =
@@ -3425,8 +4035,7 @@ app.post('/api/cron/process-reminders', async (req, res) => {
       // the cron cadence is capped so recurring invoices don't spam daily.
       const freq = inv.automation_frequency || 'once';
       if (freq === 'once' && inv.last_reminder_sent_at) continue;
-      const rescheduleSecs =
-        freq === 'daily' ? 86400 : freq === 'weekly' ? 604800 : freq === 'monthly' ? 2629800 : freq === 'yearly' ? 31557600 : 86400;
+      const rescheduleSecs = CRON_FREQ_SECS[freq] || 86400;
 
       const dueDate = new Date(inv.due_date + 'T00:00:00');
       const diffDays = Math.floor((now.getTime() - dueDate.getTime()) / 86400000);
@@ -3437,99 +4046,9 @@ app.post('/api/cron/process-reminders', async (req, res) => {
           ? 'Overdue Firm Reminder'
           : 'Upcoming Invoice Notice';
 
-      for (const channel of channels) {
-        // Channel availability: email needs an address; whatsapp/sms need a phone.
-        if (channel === 'whatsapp' && (!inv.client_phone || !effectiveKey('WHAPI_API_TOKEN'))) continue;
-        if (channel === 'sms' && (!inv.client_phone || !effectiveKey('TWILIO_ACCOUNT_SID'))) continue;
-        if (channel === 'email' && !inv.client_email) continue;
-
-        // SMS is a soft limit: it never blocks the send, it just reminds the user
-        // that the monthly quota is spent. WhatsApp/email hard-gate on upgrade.
-        const limit = channel === 'sms'
-          ? await assertLimit(uid, tier, 'sms', { soft: true })
-          : await assertLimit(uid, tier, channel === 'whatsapp' ? 'whatsapp' : 'emails');
-        if (!limit.ok) continue; // plan limit reached — skip silently, user fixed by upgrade
-        if (limit.limitReached) {
-          // Just remind: the send proceeds, but surface the quota note in the log.
-          await sb.from('reminder_logs').insert({
-            id: `log_remind_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-            user_id: uid,
-            invoice_id: inv.id,
-            invoice_number: inv.external_invoice_id,
-            client_name: inv.client_name,
-            client_email: inv.client_email,
-            sequence_step_title: 'SMS quota reminder',
-            channel: 'sms',
-            status: 'sent',
-            sent_at: new Date().toISOString(),
-            payload_preview: limit.message || 'SMS monthly quota reached.',
-          });
-        }
-
-        try {
-          // Direct payment: ensure (and cache) a live Stripe Payment Link first.
-          const payLink = await ensureStripePaymentLink(inv).catch(() => inv.payment_link || `/pay/${inv.id}`);
-          let dispatch: { provider: string; id: string };
-          if (channel === 'whatsapp') {
-            dispatch = await sendWhatsAppViaWhapi({
-              to: inv.client_phone,
-              message: `Hello ${inv.client_name}, invoice ${inv.external_invoice_id} for $${Number(inv.amount_due).toFixed(2)} is overdue. Pay securely here: ${payLink}`,
-            });
-          } else if (channel === 'sms') {
-            dispatch = await sendSmsViaTwilio({
-              to: inv.client_phone,
-              body: `Hi ${inv.client_name}, invoice ${inv.external_invoice_id} for $${Number(inv.amount_due).toFixed(2)} is overdue. Pay securely here: ${payLink}`,
-            });
-          } else {
-            dispatch = await sendEmailViaResend({
-              from: keyFor('RESEND_FROM_EMAIL') || 'Reminders <reminders@youragency.com>',
-              to: inv.client_email,
-              subject: `Payment reminder: Invoice ${inv.external_invoice_id}`,
-              html: `<p>Hi ${inv.client_name},</p><p>Invoice ${inv.external_invoice_id} for $${Number(inv.amount_due).toFixed(2)} ${inv.currency} is ${diffDays > 0 ? `${diffDays} day(s) overdue` : 'due'}. Pay securely here:</p><p><a href="${payLink}">Pay now with card, bank, PayPal or wallet</a></p>`,
-            });
-          }
-
-          const newLog = {
-            id: `log_cron_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-            user_id: uid,
-            invoice_id: inv.id,
-            invoice_number: inv.external_invoice_id,
-            client_name: inv.client_name,
-            client_email: inv.client_email,
-            sequence_step_title: stepTitle,
-            channel,
-            status: 'sent',
-            sent_at: new Date().toISOString(),
-            payload_preview: `${dispatch.provider.toUpperCase()} dispatch ${dispatch.id} sent via ${channel}${diffDays > 0 ? ` (overdue ${diffDays}d)` : ''}.`,
-          };
-          await sb.from('reminder_logs').insert(newLog);
-          await sb
-            .from('invoices')
-            .update({ last_reminder_sent_at: new Date().toISOString() })
-            .eq('id', inv.id);
-          await addUsage(uid, {
-            reminders_delivered: 1,
-            ...(channel === 'whatsapp' ? { whatsapp_sent: 1 } : channel === 'sms' ? { sms_sent: 1 } : { emails_sent: 1 }),
-          });
-          await scheduleQStashReminder({ invoice_id: inv.id }, rescheduleSecs).catch(() => {});
-          results.push(newLog);
-        } catch (err: any) {
-          console.error(`[Cron] dispatch failed for ${inv.external_invoice_id}:`, err.message);
-          await sb.from('reminder_logs').insert({
-            id: `log_failed_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-            user_id: uid,
-            invoice_id: inv.id,
-            invoice_number: inv.external_invoice_id,
-            client_name: inv.client_name,
-            client_email: inv.client_email,
-            sequence_step_title: stepTitle,
-            channel,
-            status: 'failed',
-            error_message: err.message,
-            sent_at: new Date().toISOString(),
-          });
-        }
-      }
+      results.push(
+        ...(await dispatchInvoiceReminders({ uid, tier, inv, channels, stepTitle, rescheduleSecs, now, profile: dispatchProfile }))
+      );
     }
   }
 

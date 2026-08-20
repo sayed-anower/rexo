@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ShieldCheck, Mail, Lock, Building2, ArrowRight, CheckCircle2, AlertCircle, ArrowLeft, KeyRound } from 'lucide-react';
+import { ShieldCheck, Mail, Lock, Building2, ArrowRight, CheckCircle2, AlertCircle, ArrowLeft, KeyRound, Landmark, CreditCard, Wallet, Globe2 } from 'lucide-react';
 import {
   loginUser,
   signupUser,
@@ -25,6 +25,15 @@ export function AuthPage({ initialMode = 'signin', onSuccess, onBackToHome }: Au
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [companyName, setCompanyName] = useState('');
+  const [payeeName, setPayeeName] = useState('');
+  const [payeeCountry, setPayeeCountry] = useState('');
+  const [payeeEmail, setPayeeEmail] = useState('');
+  const [payoutMethod, setPayoutMethod] = useState<'payoneer' | 'bank' | 'card'>('payoneer');
+  const [bankName, setBankName] = useState('');
+  const [bankIban, setBankIban] = useState('');
+  const [bankSwift, setBankSwift] = useState('');
+  const [cardNumber, setCardNumber] = useState('');
+  const [cardExpiry, setCardExpiry] = useState('');
   const [otp, setOtp] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmNew, setConfirmNew] = useState('');
@@ -42,6 +51,15 @@ export function AuthPage({ initialMode = 'signin', onSuccess, onBackToHome }: Au
     setNewPassword('');
     setConfirmNew('');
     setCooldownUntil(0);
+    setPayeeName('');
+    setPayeeCountry('');
+    setPayeeEmail('');
+    setPayoutMethod('payoneer');
+    setBankName('');
+    setBankIban('');
+    setBankSwift('');
+    setCardNumber('');
+    setCardExpiry('');
   }, [mode]);
 
   const cooldownSeconds = Math.max(0, Math.ceil((cooldownUntil - Date.now()) / 1000));
@@ -72,7 +90,21 @@ export function AuthPage({ initialMode = 'signin', onSuccess, onBackToHome }: Au
           await sendOtp('signup');
         } else {
           // Step 2: verify the code and create the account.
-          const res = await signupUser(email, password, companyName, otp);
+          const payee =
+            payeeName || payeeCountry || payeeEmail
+              ? {
+                  name: payeeName,
+                  country: payeeCountry,
+                  email: payeeEmail,
+                  payout_method: payoutMethod,
+                  bank_name: payoutMethod === 'bank' ? bankName : undefined,
+                  iban: payoutMethod === 'bank' ? bankIban : undefined,
+                  swift: payoutMethod === 'bank' ? bankSwift : undefined,
+                  card_number: payoutMethod === 'card' ? cardNumber : undefined,
+                  card_expiry: payoutMethod === 'card' ? cardExpiry : undefined,
+                }
+              : undefined;
+          const res = await signupUser(email, password, companyName, otp, { payee });
           setMessage({ type: 'success', text: res.message || 'Account created successfully!' });
           setTimeout(() => onSuccess(res.user), 500);
         }
@@ -133,7 +165,7 @@ export function AuthPage({ initialMode = 'signin', onSuccess, onBackToHome }: Au
             <div className="space-y-3 pt-2">
               <div className="flex items-center gap-2.5 text-xs font-semibold text-ink dark:text-ink2">
                 <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-                <span>Stripe, QuickBooks & Xero invoice sync</span>
+                <span>QuickBooks & Xero invoice sync</span>
               </div>
               <div className="flex items-center gap-2.5 text-xs font-semibold text-ink dark:text-ink2">
                 <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
@@ -279,6 +311,142 @@ export function AuthPage({ initialMode = 'signin', onSuccess, onBackToHome }: Au
                       className={inputClass}
                     />
                   </div>
+                </div>
+              )}
+
+              {mode === 'signup' && !awaitingOtp && (
+                <div className="rounded-2xl border border-line dark:border-line bg-main dark:bg-surface2/50 p-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Wallet className="w-4 h-4 text-primary dark:text-secondary" />
+                    <span className="text-xs font-extrabold text-ink dark:text-white">Payout Details</span>
+                    <span className="text-[10px] font-semibold text-ink3 ml-auto">Optional &middot; validated</span>
+                  </div>
+                  <p className="text-[10px] text-ink3 -mt-1">
+                    Where clients' payments land — Payoneer, bank transfer or card. You can add this later in Settings.
+                  </p>
+
+                  <div className="grid grid-cols-3 gap-2">
+                    {([
+                      { id: 'payoneer' as const, label: 'Payoneer', icon: Wallet },
+                      { id: 'bank' as const, label: 'Bank Transfer', icon: Landmark },
+                      { id: 'card' as const, label: 'Card', icon: CreditCard },
+                    ]).map((m) => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => setPayoutMethod(m.id)}
+                        className={`p-2.5 rounded-xl border text-center transition-all flex flex-col items-center gap-1 ${
+                          payoutMethod === m.id
+                            ? 'border-accent bg-primary-soft dark:bg-surface2 ring-2 ring-accent/20'
+                            : 'border-line dark:border-line bg-main dark:bg-surface2/40 hover:border-primary'
+                        }`}
+                      >
+                        <m.icon className={`w-4 h-4 ${payoutMethod === m.id ? 'text-accent' : 'text-ink3'}`} />
+                        <span className={`text-[10px] font-bold ${payoutMethod === m.id ? 'text-accent' : 'text-ink dark:text-ink2'}`}>{m.label}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-bold text-ink dark:text-ink2 mb-1">Full Legal Name</label>
+                      <input
+                        type="text"
+                        value={payeeName}
+                        onChange={(e) => setPayeeName(e.target.value)}
+                        placeholder="e.g. Jane Smith"
+                        className={inputClass}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-ink dark:text-ink2 mb-1">Country</label>
+                      <div className="relative">
+                        <Globe2 className="w-4 h-4 absolute left-3 top-3 text-ink3" />
+                        <input
+                          type="text"
+                          value={payeeCountry}
+                          onChange={(e) => setPayeeCountry(e.target.value.toUpperCase().slice(0, 2))}
+                          placeholder="e.g. US"
+                          maxLength={2}
+                          className={inputClass}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-ink dark:text-ink2 mb-1">Payout Email</label>
+                    <input
+                      type="email"
+                      value={payeeEmail}
+                      onChange={(e) => setPayeeEmail(e.target.value)}
+                      placeholder="payouts@your-agency.com"
+                      className={inputClass}
+                    />
+                  </div>
+
+                  {payoutMethod === 'bank' && (
+                    <div className="space-y-3 pt-1 border-t border-line dark:border-line">
+                      <div>
+                        <label className="block text-[10px] font-bold text-ink dark:text-ink2 mb-1">Bank Name</label>
+                        <input
+                          type="text"
+                          value={bankName}
+                          onChange={(e) => setBankName(e.target.value)}
+                          placeholder="e.g. Deutsche Bank"
+                          className={inputClass}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-ink dark:text-ink2 mb-1">IBAN</label>
+                        <input
+                          type="text"
+                          value={bankIban}
+                          onChange={(e) => setBankIban(e.target.value.toUpperCase())}
+                          placeholder="DE89370400440532013000"
+                          className={inputClass}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-ink dark:text-ink2 mb-1">SWIFT / BIC</label>
+                        <input
+                          type="text"
+                          value={bankSwift}
+                          onChange={(e) => setBankSwift(e.target.value.toUpperCase())}
+                          placeholder="DEUTDEFF"
+                          className={inputClass}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {payoutMethod === 'card' && (
+                    <div className="grid grid-cols-2 gap-3 pt-1 border-t border-line dark:border-line">
+                      <div>
+                        <label className="block text-[10px] font-bold text-ink dark:text-ink2 mb-1">Card Number</label>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={cardNumber}
+                          onChange={(e) => setCardNumber(e.target.value.replace(/[^\d\s]/g, ''))}
+                          placeholder="4111 1111 1111 1111"
+                          maxLength={19}
+                          className={inputClass}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-ink dark:text-ink2 mb-1">Expiry (MM/YY)</label>
+                        <input
+                          type="text"
+                          value={cardExpiry}
+                          onChange={(e) => setCardExpiry(e.target.value.replace(/[^\d/]/g, ''))}
+                          placeholder="08/28"
+                          maxLength={5}
+                          className={inputClass}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 

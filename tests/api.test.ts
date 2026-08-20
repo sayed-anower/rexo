@@ -12,7 +12,7 @@ import { AddressInfo } from 'node:net';
  * configured, so endpoints that need a database return the documented 503
  * NO_DB / 401 UNAUTHENTICATED responses. There are no mocks anywhere — a test
  * with a real SUPABASE_URL/SERVICE_ROLE_KEY and provider keys can exercise
- * full real flows (auth cookies, Stripe, Resend, Lemon Squeezy, QStash).
+ * full real flows (auth cookies, Resend, Payoneer, QStash).
  *
  * Env vars are cleared BEFORE the server module is imported because server.ts
  * bootstraps the database at import time.
@@ -25,9 +25,8 @@ process.env.SUPABASE_SERVICE_ROLE_KEY = '';
 process.env.RESEND_API_KEY = '';
 process.env.WHAPI_API_TOKEN = '';
 process.env.QSTASH_TOKEN = '';
-process.env.STRIPE_SECRET_KEY = '';
+process.env.PAYONEER_MERCHANT_ID = '';
 process.env.GEMINI_API_KEY = '';
-process.env.LEMON_SQUEEZY_API_KEY = '';
 process.env.GOOGLE_CLIENT_ID = '';
 process.env.GOOGLE_CLIENT_SECRET = '';
 
@@ -68,11 +67,10 @@ test('GET /api/health reports an ok status with real provider flags', async () =
   assert.strictEqual(json.testMode, false);
   for (const flag of [
     'supabaseConfigured',
-    'lemonSqueezyConfigured',
+    'payoneerConfigured',
     'qstashConfigured',
     'resendConfigured',
     'whapiConfigured',
-    'stripeConfigured',
     'googleConfigured',
     'geminiConfigured',
   ]) {
@@ -90,35 +88,40 @@ test('GET /api/db/migration serves the canonical SQL migration', async () => {
   assert.ok(sql.includes('public._init_guard'));
 });
 
-test('GET /api/billing/plans returns 3 plans with included/excluded features and fees', async () => {
+test('GET /api/billing/plans returns 4 plans (3 tiers + custom) with included/excluded features and exact fees', async () => {
   const { status, json } = await request('GET', '/api/billing/plans');
   assert.strictEqual(status, 200);
-  assert.strictEqual(json.plans.length, 3);
+  assert.strictEqual(json.plans.length, 4);
   const ids = json.plans.map((p: any) => p.id).sort();
-  assert.deepStrictEqual(ids, ['agency', 'pro', 'starter']);
+  assert.deepStrictEqual(ids, ['agency', 'custom', 'pro', 'starter']);
   const pro = json.plans.find((p: any) => p.id === 'pro');
   assert.strictEqual(pro.recommended, true);
-  assert.strictEqual(pro.price, 99);
+  assert.strictEqual(pro.price, 249);
   assert.strictEqual(pro.sell, true);
-  assert.strictEqual(pro.list_price, 129);
+  assert.strictEqual(pro.list_price, 299);
   assert.strictEqual(json.plans.find((p: any) => p.id === 'starter').sell, true);
-  assert.strictEqual(json.plans.find((p: any) => p.id === 'starter').list_price, 69);
-  assert.strictEqual(json.plans.find((p: any) => p.id === 'agency').list_price, 349);
+  assert.strictEqual(json.plans.find((p: any) => p.id === 'starter').list_price, 129);
+  assert.strictEqual(json.plans.find((p: any) => p.id === 'agency').list_price, 599);
   // Every feature must carry an `included` flag (green check / red cross).
   assert.ok(pro.features.length > 0);
   assert.ok(pro.features.every((f: any) => typeof f.included === 'boolean'));
-  // Proration constants are exposed to the UI.
-  assert.strictEqual(json.taxRate, 0.05);
-  assert.strictEqual(json.gatewayFeeRate, 0.029);
-  assert.strictEqual(json.gatewayFeeFlat, 0.3);
+  // The custom plan is a card only — no checkout, exact-zero fees.
+  const custom = json.plans.find((p: any) => p.id === 'custom');
+  assert.strictEqual(custom.custom, true);
+  assert.strictEqual(custom.price, 0);
+  assert.strictEqual(custom.fees.total, 0);
+  assert.ok(json.supportEmail);
+  // Subscriptions charge the exact price — no tax or gateway fees added.
+  assert.strictEqual(json.taxRate, 0);
+  assert.strictEqual(json.gatewayFeeRate, 0.0399);
+  assert.strictEqual(json.gatewayFeeFlat, 0.45);
 });
 
 test('GET /api/test-mode reports the test-mode switch (no mocks)', async () => {
   const { status, json } = await request('GET', '/api/test-mode');
   assert.strictEqual(status, 200);
   assert.strictEqual(json.enabled, false);
-  assert.ok(Array.isArray(json.testCards));
-  assert.ok(json.testCards.some((c: any) => c.number === '4242 4242 4242 4242'));
+    assert.ok(Array.isArray(json.testCards));
 });
 
 test('Signup requires the database (503 NO_DB, never a mock account)', async () => {
@@ -151,12 +154,13 @@ test('Provider endpoints return PROVIDER_NOT_CONFIGURED instead of fake data', a
   assert.strictEqual(json.error, 'UNAUTHENTICATED');
 });
 
-test('Billing math: full-month charge equals price + tax + gateway fee', async () => {
+test('Billing math: full-month charge equals the exact plan price (no tax or gateway fee added)', async () => {
   const { json } = await request('GET', '/api/billing/plans');
   const starter = json.plans.find((p: any) => p.id === 'starter');
-  assert.strictEqual(starter.price, 49);
-  const expectedTotal = 49 + 49 * 0.05 + (49 * 0.029 + 0.3);
-  assert.strictEqual(starter.fees.total, Math.round(expectedTotal * 100) / 100);
+  assert.strictEqual(starter.price, 99);
+  assert.strictEqual(starter.fees.total, 99);
+  assert.strictEqual(starter.fees.tax, 0);
+  assert.strictEqual(starter.fees.fee, 0);
 });
 
 test('OTP request requires the database (503 NO_DB, no mocked codes)', async () => {

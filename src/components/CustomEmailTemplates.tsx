@@ -169,30 +169,30 @@ export function CustomEmailTemplates({
   return (
     <div className="space-y-6">
       {/* Header Banner */}
-<div className="p-6 sm:p-8 rounded-3xl bg-slate-100 dark:bg-slate-900 text-white border border-slate-400 dark:border-slate-800 shadow-xl relative overflow-hidden transition-colors">
-  {/* Solid Orange Background Graphic */}
-  <div className="absolute -left-16 -bottom-12 w-[140%] h-[180%] bg-amber-600 rounded-[50%] pointer-events-none z-0" />
+<div className="p-6 sm:p-8 rounded-3xl bg-[var(--bg-surface)] text-[var(--text-primary)] border border-[var(--border-color)] shadow-xl relative overflow-hidden transition-colors">
+  {/* Primary Brand Background Graphic */}
+  <div className="absolute -left-16 -bottom-12 w-[140%] h-[180%] bg-[var(--color-primary)] rounded-[50%] pointer-events-none z-0 opacity-10" />
 
   <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
     <div>
       {/* Badges */}
       <div className="flex flex-wrap items-center gap-2 mb-2">
-        <span className="px-3 py-1 rounded-full bg-white/20 text-white border border-white/30 text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 backdrop-blur-sm">
-          <Mail className="w-3.5 h-3.5 text-white" />
+        <span className="px-3 py-1 rounded-full bg-[var(--color-primary-soft)] text-[var(--color-primary)] border border-[var(--color-secondary-soft)] text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 backdrop-blur-sm">
+          <Mail className="w-3.5 h-3.5 text-[var(--color-primary)]" />
           Email Templates
         </span>
-        <span className="px-2.5 py-1 rounded-full bg-white/10 text-white border border-white/20 text-xs font-medium backdrop-blur-sm">
+        <span className="px-2.5 py-1 rounded-full bg-[var(--bg-surface-elevated)] text-[var(--text-secondary)] border border-[var(--border-color)] text-xs font-medium backdrop-blur-sm">
           AI-Powered Drafting
         </span>
       </div>
 
       {/* Title */}
-      <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
+      <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[var(--text-primary)]">
         Message Templates
       </h1>
 
       {/* Description */}
-      <p className="mt-1 text-sm text-white/90 max-w-2xl leading-relaxed">
+      <p className="mt-1 text-sm text-[var(--text-secondary)] max-w-2xl leading-relaxed">
         Create, customize, and send reminder emails from your own sender address. Draft professional templates with AI or send a manual reminder instantly.
       </p>
     </div>
@@ -201,22 +201,24 @@ export function CustomEmailTemplates({
     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
       <button
         onClick={() => setIsAiModalOpen(true)}
-        className="px-4 py-2.5 rounded-xl bg-white/20 hover:bg-white/30 text-white font-bold text-xs transition-all border border-white/30 flex items-center justify-center gap-2 shadow-md backdrop-blur-sm"
+        className="px-4 py-2.5 rounded-xl bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-[var(--text-inverse)] font-bold text-xs transition-all border border-transparent flex items-center justify-center gap-2 shadow-md backdrop-blur-sm"
       >
-        <Sparkles className="w-4 h-4 text-white" />
+        <Sparkles className="w-4 h-4 text-[var(--text-inverse)]" />
         <span>Write Email with AI</span>
       </button>
 
       <button
         onClick={handleOpenNew}
-        className="px-4 py-2.5 rounded-xl bg-transparent hover:bg-white/10 text-white font-bold text-xs transition-all flex items-center justify-center gap-2"
+        className="px-4 py-2.5 rounded-xl bg-[var(--bg-surface-elevated)] hover:bg-[var(--border-color)] text-[var(--text-primary)] font-bold text-xs transition-all flex items-center justify-center gap-2"
       >
-        <Plus className="w-4 h-4 text-white" />
+        <Plus className="w-4 h-4 text-[var(--text-primary)]" />
         <span>New Email Template</span>
       </button>
     </div>
   </div>
 </div>
+
+
       {/* Filter Tabs & Search Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-2 overflow-x-auto pb-2 sm:pb-0 scrollbar-none">

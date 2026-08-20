@@ -86,7 +86,7 @@ export function Footer({ onNavigateHome, onOpenAuth }: FooterProps) {
                       onClick={() => onOpenAuth('signup')}
                       className="text-white font-medium"
                     >
-                      Create Account — No Free Tier
+                      Create Account
                     </button>
                   </li>
                 </>

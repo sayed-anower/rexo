@@ -11,11 +11,13 @@ import {
   ChevronDown,
   ChevronUp,
   BadgeCheck,
-  BarChart3
+  BarChart3,
+  X
 } from 'lucide-react';
 import { useApiPlans } from '../lib/useApiPlans';
 import { PlanCard } from './PlanCard';
 import { Footer } from './Footer';
+import { SUPPORT_EMAIL } from '../data/plans';
 
 interface HomePageProps {
   onOpenAuth: (mode: 'signin' | 'signup') => void;
@@ -33,15 +35,15 @@ export function HomePage({ onOpenAuth, onGoogleSignIn }: HomePageProps) {
   const faqs = [
     {
       q: 'How does Eron recover unpaid invoices automatically?',
-      a: 'Eron syncs your unpaid invoices from Stripe, QuickBooks, Xero or your own uploads. It then runs your custom recovery flow — friendly reminders before the due date, firm emails after, and optional WhatsApp follow-ups — each with a direct, secure payment link. The moment a client pays, all further reminders stop automatically.'
+      a: 'Eron syncs your unpaid invoices from QuickBooks, Xero or your own uploads. It then runs your custom recovery flow — friendly reminders before the due date, firm emails after, and optional WhatsApp follow-ups — each with a direct, secure payment link. The moment a client pays, all further reminders stop automatically.'
     },
     {
       q: 'Is there a free tier?',
-      a: 'No. You can create an account for free with your bank or card details, but the moment you want to run any action — tracking invoices, sending reminders, AI drafts — you must choose a plan. If you switch plans mid-month you are charged only the prorated difference, and if you cancel mid-month you receive a money-back refund for unused days minus usage, tax and processing fees.'
+      a: 'No. You can create an account for free with your bank or card details, but the moment you want to run any action — tracking invoices, sending reminders, AI drafts — you must choose a plan. If you switch plans mid-month you are charged only the prorated difference, and if you cancel mid-month you receive a money-back refund for unused days minus usage costs.'
     },
     {
       q: 'Can clients pay on my own branded page?',
-      a: 'Yes. Pro and Agency plans give you a white-label payment page on your own domain (e.g. billing.youragency.com). Clients see your logo and colors, and can pay by card, PayPal, bank transfer, Apple Pay or Google Pay through real Stripe and Lemon Squeezy rails.'
+      a: 'Yes. Pro and Agency plans give you a white-label payment page on your own domain (e.g. billing.youragency.com). Clients see your logo and colors, and can pay by card, PayPal, bank transfer, Apple Pay or Google Pay through real Payoneer rails.'
     },
     {
       q: 'Is my pricing transparent? Are there hidden fees?',
@@ -126,7 +128,7 @@ export function HomePage({ onOpenAuth, onGoogleSignIn }: HomePageProps) {
         <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-6 text-center">
           <span className="text-xs font-bold text-ink3 uppercase tracking-wider">Connects with</span>
           <div className="flex flex-wrap items-center justify-center gap-3 text-xs font-bold text-ink2 dark:text-ink2">
-            <span className="px-3 py-1.5 rounded-xl bg-main dark:bg-surface2 border border-line dark:border-line">Stripe</span>
+            <span className="px-3 py-1.5 rounded-xl bg-main dark:bg-surface2 border border-line dark:border-line">Payoneer</span>
             <span className="px-3 py-1.5 rounded-xl bg-main dark:bg-surface2 border border-line dark:border-line">QuickBooks</span>
             <span className="px-3 py-1.5 rounded-xl bg-main dark:bg-surface2 border border-line dark:border-line">Xero</span>
             <span className="px-3 py-1.5 rounded-xl bg-main dark:bg-surface2 border border-line dark:border-line">Gmail</span>
@@ -214,23 +216,58 @@ export function HomePage({ onOpenAuth, onGoogleSignIn }: HomePageProps) {
             </p>
           </div>
 
-          {/* Centered 3-column grid so the "Most Popular" tier sits exactly center */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 max-w-5xl mx-auto">
-            {plans.map((plan) => (
-              <PlanCard
-                key={plan.id}
-                plan={plan}
-                actionLabel="Choose This Plan"
-                onAction={() => onOpenAuth('signup')}
-                footer={
-                  plan.fees ? (
-                    <p className="text-[10px] text-ink3 mt-2 text-center">
-                      + ${plan.fees.tax.toFixed(2)} tax & ${plan.fees.fee.toFixed(2)} gateway fee — shown at checkout
+          {/* 4-column grid: 3 tiers + Custom Plan */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 max-w-6xl mx-auto">
+            {plans
+              .filter((plan) => !(plan as any).custom)
+              .map((plan) => (
+                <PlanCard
+                  key={plan.id}
+                  plan={plan}
+                  actionLabel="Choose This Plan"
+                  onAction={() => onOpenAuth('signup')}
+                />
+              ))}
+
+            {plans.some((plan) => (plan as any).custom) && (
+              <div className="relative flex flex-col p-6 rounded-3xl bg-main dark:bg-surface2/60 border border-dashed border-line dark:border-line shadow-sm">
+                <div className="flex-1">
+                  <h4 className="text-lg font-bold text-ink dark:text-white">Custom Plan</h4>
+                  {plans.find((plan) => (plan as any).custom)?.tagline && (
+                    <p className="text-[11px] text-ink2 mt-0.5">
+                      {plans.find((plan) => (plan as any).custom)?.tagline}
                     </p>
-                  ) : null
-                }
-              />
-            ))}
+                  )}
+                  <div className="my-3 flex items-baseline gap-1.5 flex-wrap">
+                    <span className="text-3xl font-black text-ink dark:text-white">Custom</span>
+                  </div>
+                  <p className="text-xs font-semibold text-primary dark:text-secondary mb-4">
+                    Pricing tailored to your volume
+                  </p>
+
+                  <ul className="space-y-2.5 text-xs text-ink2 dark:text-ink2 mb-6">
+                    {(plans.find((plan) => (plan as any).custom)?.features || []).map((f) => (
+                      <li key={f.id} className={`flex items-center gap-2 ${f.included ? '' : 'opacity-60'}`}>
+                        {f.included ? (
+                          <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                        ) : (
+                          <X className="w-4 h-4 text-rose-400 shrink-0" />
+                        )}
+                        <span>{f.label}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <a
+                  href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Custom Plan enquiry')}`}
+                  className="w-full py-3 px-4 rounded-xl bg-surface2 dark:bg-surface2 text-ink dark:text-white font-bold text-xs transition-all flex items-center justify-center gap-2 hover:bg-line dark:hover:bg-surface2"
+                >
+                  <Mail className="w-4 h-4" />
+                  <span>Talk to us — {SUPPORT_EMAIL}</span>
+                </a>
+              </div>
+            )}
           </div>
         </div>
       </section>

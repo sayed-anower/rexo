@@ -17,12 +17,12 @@ interface ConnectorsProps {
 }
 
 const CONNECTOR_ICONS: Record<string, string> = {
-  stripe: '⚡',
   quickbooks: '📊',
   xero: '🟢',
-  gmail: '✉️',
-  whatsapp: '💬',
-  slack: '💬',
+  bank: '🏦',
+  sms: '📱',
+  email: '✉️',
+  whatsapp_business: '💬',
 };
 
 const WEBHOOK_PROVIDERS: Record<string, string> = {
@@ -81,8 +81,8 @@ export function Connectors({ onConnect, onDisconnect, onSync }: ConnectorsProps)
     }
   };
 
+  const banking = connectors.filter((c) => c.category === 'banking');
   const accounting = connectors.filter((c) => c.category === 'accounting');
-  const email = connectors.filter((c) => c.category === 'email');
   const communication = connectors.filter((c) => c.category === 'communication');
 
   const renderGroup = (title: string, items: AppConnectorInfo[]) => {
@@ -109,6 +109,12 @@ export function Connectors({ onConnect, onDisconnect, onSync }: ConnectorsProps)
                   {c.connected && (
                     <span className="inline-block mt-2 text-[10px] font-mono text-primary dark:text-secondary truncate max-w-full">
                       Connected: {c.account_name || c.provider}
+                    </span>
+                  )}
+                  {c.pseudo && (
+                    <span className="flex items-center gap-1.5 mt-1 text-[10px] font-semibold text-ink3">
+                      <ShieldCheck className="w-3 h-3 text-emerald-500" />
+                      Configured via environment keys — no OAuth needed.
                     </span>
                   )}
                   {c.connected && isAccounting && WEBHOOK_PROVIDERS[c.provider] && (
@@ -166,29 +172,28 @@ export function Connectors({ onConnect, onDisconnect, onSync }: ConnectorsProps)
   return (
     <div className="space-y-6">
       {/* Header */}
-<div className="p-6 sm:p-8 rounded-3xl bg-slate-100 dark:bg-slate-900 text-white border border-slate-400 dark:border-slate-800 shadow-xl relative overflow-hidden transition-colors">
-  {/* Solid Orange Background Graphic */}
-  <div className="absolute -left-16 -bottom-12 w-[140%] h-[180%] bg-amber-600 rounded-[50%] pointer-events-none z-0" />
+<div className="p-6 sm:p-8 rounded-3xl bg-[var(--bg-surface)] text-[var(--text-primary)] border border-[var(--border-color)] shadow-xl relative overflow-hidden transition-colors">
+  {/* Primary Brand Background Graphic */}
+  <div className="absolute -left-16 -bottom-12 w-[140%] h-[180%] bg-[var(--color-primary)] rounded-[50%] pointer-events-none z-0 opacity-10" />
 
   <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
     <div>
       {/* Badge */}
       <div className="flex items-center gap-2 mb-2">
-        <span className="px-3 py-1 rounded-full bg-white/20 text-white border border-white/30 text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 backdrop-blur-sm">
-          <PlugZap className="w-3.5 h-3.5 text-white" />
+        <span className="px-3 py-1 rounded-full bg-[var(--color-primary-soft)] text-[var(--color-primary)] border border-[var(--color-secondary-soft)] text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 backdrop-blur-sm">
+          <PlugZap className="w-3.5 h-3.5 text-[var(--color-primary)]" />
           App Connections
         </span>
       </div>
 
       {/* Title */}
-      <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
+      <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[var(--text-primary)]">
         Connect Your Apps
       </h1>
 
       {/* Description */}
-      <p className="mt-1 text-sm text-white/90 max-w-2xl leading-relaxed">
-        One-click connections to your accounting, email and communication apps.
-        Eron pulls unpaid invoices and sends reminders on your behalf.
+      <p className="mt-1 text-sm text-[var(--text-secondary)] max-w-2xl leading-relaxed">
+        Connect your bank account, accounting apps and communication channels. Eron pulls unpaid invoices and sends reminders on your behalf — all branded as your company.
       </p>
     </div>
   </div>
@@ -196,16 +201,16 @@ export function Connectors({ onConnect, onDisconnect, onSync }: ConnectorsProps)
 
 
       <div className="space-y-8">
+        {renderGroup('Banking & Payments', banking)}
         {renderGroup('Accounting & Invoicing', accounting)}
-        {renderGroup('Email', email)}
-        {renderGroup('Communication', communication)}
+        {renderGroup('Communication & Messaging', communication)}
 
         <div className="p-4 rounded-2xl bg-main dark:bg-surface2/60 border border-line dark:border-line text-xs text-ink2 dark:text-ink2 flex items-start gap-2">
           <ShieldCheck className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
           <p>
             QuickBooks and Xero stay in sync through <strong>webhooks</strong> — they notify Eron only when
-            an invoice changes, so no polling is used. Invoices are cached in the database; the Sync now
-            button triggers a one-time batched pull of up to 100 invoices per API call.
+            an invoice changes, so no polling is used. WhatsApp Business, SMS and Email are configured
+            with your business credentials and send reminders branded as your company.
           </p>
         </div>
       </div>

@@ -14,13 +14,14 @@ import {
   BillingEvent,
   TeamInvite,
   TeamMember,
+  PayeeInfo,
 } from '../types';
 import { PlanDefinition, PLANS } from '../data/plans';
 
 /*
  * API layer. No mock/demo fallbacks: every call talks to the real server,
  * which persists to PostgreSQL (Supabase) and dispatches through real
- * providers (Resend / Whapi / Stripe / Lemon Squeezy / Gemini / QStash).
+ * providers (Resend / Whapi / Payoneer / Gemini / QStash).
  * Auth relies on the HttpOnly session cookie set by the server.
  */
 
@@ -68,6 +69,9 @@ export interface PlaceholderContext {
   payment_link?: string;
   company_name?: string;
   your_name?: string;
+  company_email?: string;
+  company_phone?: string;
+  client_phone?: string;
 }
 
 export function renderPlaceholders(text: string, ctx: PlaceholderContext): string {
@@ -87,7 +91,10 @@ export function renderPlaceholders(text: string, ctx: PlaceholderContext): strin
     .replace(/\[due_date\]/gi, ctx.due_date || '[due_date]')
     .replace(/\[payment_link\]/gi, ctx.payment_link || '[payment_link]')
     .replace(/\[company_name\]/gi, ctx.company_name || '[company_name]')
-    .replace(/\[your_name\]/gi, ctx.your_name || '[your_name]');
+    .replace(/\[your_name\]/gi, ctx.your_name || '[your_name]')
+    .replace(/\[company_email\]/gi, ctx.company_email || '[company_email]')
+    .replace(/\[company_phone\]/gi, ctx.company_phone || '[company_phone]')
+    .replace(/\[client_phone\]/gi, ctx.client_phone || '[client_phone]');
 }
 
 export function formatMoney(value: number): string {
@@ -144,11 +151,12 @@ export async function signupUser(
   email: string,
   password: string,
   companyName: string,
-  otp: string
+  otp: string,
+  extra?: { company_phone?: string; payee?: Record<string, unknown> }
 ): Promise<{ user: UserProfile; message?: string }> {
   return apiFetch('/api/auth/signup', {
     method: 'POST',
-    body: JSON.stringify({ email, password, company_name: companyName, otp }),
+    body: JSON.stringify({ email, password, company_name: companyName, otp, ...extra }),
   });
 }
 
@@ -182,7 +190,7 @@ export const googleSignInUrl = '/api/auth/google';
 // 2. INVOICES
 export async function fetchInvoices(): Promise<Invoice[]> {
   const data = await apiFetch<{ invoices: Invoice[] }>('/api/invoices');
-  return data.invoices;
+  return Array.isArray(data.invoices) ? data.invoices : [];
 }
 
 export async function saveInvoice(invoiceData: Partial<Invoice>): Promise<Invoice> {
@@ -203,11 +211,6 @@ export async function toggleInvoiceSequencePause(invoiceId: string): Promise<Inv
 export async function payInvoice(invoiceId: string): Promise<Invoice> {
   const data = await apiFetch<{ success: boolean; invoice: Invoice }>(`/api/invoices/${invoiceId}/pay`, { method: 'POST' });
   return data.invoice;
-}
-
-export async function syncStripeInvoices(): Promise<Invoice[]> {
-  const data = await apiFetch<{ success: boolean; invoices: Invoice[] }>('/api/invoices/sync-stripe', { method: 'POST' });
-  return data.invoices;
 }
 
 export async function fetchPortalInvoice(invoiceId: string): Promise<{
@@ -249,6 +252,48 @@ export async function triggerManualReminder(invoiceId: string): Promise<Reminder
   });
   if (!data.success) throw new Error('Automation run failed.');
   return data.processed_logs[0];
+}
+
+export async function sendInvoiceReminder(
+  invoiceId: string,
+  channel: 'email' | 'whatsapp' | 'sms',
+  message?: string,
+  options?: { templateId?: string }
+): Promise<{ success: boolean; channel: string; errors?: { channel: string; message: string }[] }> {
+  return apiFetch(`/api/invoices/${invoiceId}/send`, {
+    method: 'POST',
+    body: JSON.stringify({ channel, message, templateId: options?.templateId }),
+  });
+}
+
+export async function sendInvoiceReminderMulti(
+  invoiceId: string,
+  channels: ('email' | 'whatsapp' | 'sms')[],
+  message?: string,
+  templateId?: string
+): Promise<{ success: boolean; message: string; channels: string[]; errors?: { channel: string; message: string }[] }> {
+  return apiFetch(`/api/invoices/${invoiceId}/send`, {
+    method: 'POST',
+    body: JSON.stringify({ channels, message, templateId }),
+  });
+}
+
+// 4b. PAYEE (Payoneer / bank / card payout details)
+export async function fetchPayee(): Promise<PayeeInfo | undefined> {
+  const data = await apiFetch<{ payee: PayeeInfo }>('/api/payee');
+  return data.payee;
+}
+
+export async function updatePayee(payee: Record<string, unknown>): Promise<PayeeInfo> {
+  const data = await apiFetch<{ payee: PayeeInfo }>('/api/payee', {
+    method: 'PUT',
+    body: JSON.stringify({ payee }),
+  });
+  return data.payee;
+}
+
+export async function verifyPayee(): Promise<{ ok: boolean; verified: boolean; method?: string; checks: Record<string, { ok: boolean; note: string }> }> {
+  return apiFetch('/api/payee/verify', { method: 'POST' });
 }
 
 // 5. INTEGRATIONS (real OAuth connect)
@@ -334,9 +379,9 @@ export function calculateOpExForUsers(activeUsers: number): OpExTierData {
 
   const grossMrr = activeUsers * avgSubscriptionPrice;
 
-  const lemonSqueezyFees = activeUsers === 0 ? 0 : grossMrr * 0.05 + activeUsers * 0.50;
+  const payoneerFees = activeUsers === 0 ? 0 : grossMrr * 0.0399 + activeUsers * 0.45;
 
-  const totalOpExUnrounded = resendCost + whapiCost + qstashCost + supabaseCost + lemonSqueezyFees;
+  const totalOpExUnrounded = resendCost + whapiCost + qstashCost + supabaseCost + payoneerFees;
   const netProfitUnrounded = grossMrr - totalOpExUnrounded;
   const marginPercentage = grossMrr > 0 ? (netProfitUnrounded / grossMrr) * 100 : 0;
 
@@ -349,7 +394,7 @@ export function calculateOpExForUsers(activeUsers: number): OpExTierData {
     whapi_cost: Math.round(whapiCost),
     qstash_cost: qstashCost,
     supabase_cost: supabaseCost,
-    lemon_squeezy_fees: Math.round(lemonSqueezyFees),
+    payoneer_fees: Math.round(payoneerFees),
     total_opex: Math.round(totalOpExUnrounded),
     gross_mrr: grossMrr,
     net_profit: Math.round(netProfitUnrounded),
@@ -518,13 +563,6 @@ export async function uploadCompanyLogo(file: File): Promise<UserProfile> {
 // 11. APP CONNECTORS (provider catalogue)
 export const APP_CONNECTORS = [
   {
-    id: 'conn_stripe',
-    provider: 'stripe',
-    name: 'Stripe',
-    category: 'accounting',
-    description: 'Pull real unpaid Stripe invoices and collect payments on your own payment links.',
-  },
-  {
     id: 'conn_quickbooks',
     provider: 'quickbooks',
     name: 'QuickBooks',
@@ -545,20 +583,20 @@ export const APP_CONNECTORS = [
     category: 'email',
     description: 'Send reminders from your real Gmail / Google Workspace inbox — clients see your real address.',
   },
-  {
+ /* {
     id: 'conn_whatsapp',
     provider: 'whatsapp',
     name: 'WhatsApp Business',
     category: 'communication',
     description: 'Send high-open-rate WhatsApp reminders and payment links to overdue clients.',
-  },
-  {
+  },*/
+  /*{
     id: 'conn_slack',
     provider: 'slack',
     name: 'Slack',
     category: 'communication',
     description: 'Get a Slack ping when a client pays, or when a sequence needs your attention.',
-  },
+  },*/
 ] as const;
 
 export async function fetchAppConnectors(): Promise<AppConnectorInfo[]> {
@@ -575,12 +613,7 @@ export async function fetchAppConnectors(): Promise<AppConnectorInfo[]> {
 export interface TestModeStatus {
   enabled: boolean;
   effective: Record<string, boolean | string | null>;
-  lsVariants: Record<string, string>;
-  stripePrices: Record<string, string>;
-  testCards: { last4: string; label: string; number: string }[];
-  updateCardNumber: string;
-  testPaypalEmail: string;
-  testBank: { bankName: string; routing: string; account: string };
+  testCards: { last4: string; label: string }[];
   testEmails: string[];
   providersUrl: Record<string, string>;
 }
@@ -591,19 +624,13 @@ export async function fetchTestMode(): Promise<TestModeStatus> {
 
 export async function saveTestMode(overrides: {
   enabled: boolean;
-  stripeSecret?: string;
-  stripeWebhookSecret?: string;
+  payoneerMerchantId?: string;
   resendKey?: string;
   resendFrom?: string;
-  lemonKey?: string;
-  lemonStoreId?: string;
-  lemonWebhookSecret?: string;
   whapiToken?: string;
   googleClientId?: string;
   googleClientSecret?: string;
   qstashToken?: string;
-  lsVariants?: Record<string, string>;
-  stripePrices?: Record<string, string>;
 }): Promise<{ enabled: boolean }> {
   return apiFetch('/api/test-mode', { method: 'POST', body: JSON.stringify(overrides) });
 }
@@ -623,7 +650,16 @@ export async function createTestPaymentIntent(amount: number, currency: string =
 export async function createInvoicePaymentSession(
   invoiceId: string,
   method: 'card' | 'bank' | 'paypal' | 'wallet'
-): Promise<{ url?: string; intent_id?: string; amount: number; fee: number; currency: string; provider: string }> {
+): Promise<{
+  url?: string;
+  completed?: boolean;
+  intent_id?: string;
+  amount: number;
+  fee: number;
+  currency: string;
+  provider: string;
+  message?: string;
+}> {
   return apiFetch('/api/payments/create-payment-intent', {
     method: 'POST',
     body: JSON.stringify({ invoice_id: invoiceId, method }),

@@ -5,7 +5,7 @@ export const INITIAL_CUSTOM_EMAIL_TEMPLATES: CustomEmailTemplate[] = [
     id: 'tmpl_01',
     title: 'Friendly Pre-Due Courtesy Email',
     sender_name: 'Your Billing Team',
-    sender_email: 'billing@yourcompany.com',
+    sender_email: 'billing@yourcompany.com', 
     subject: 'Courtesy Reminder: Invoice [external_invoice_id] from [company_name]',
     body: 'Hi [client_name],\n\nThis is a friendly courtesy note regarding Invoice [external_invoice_id] for [amount_due] [currency], which is due on [due_date].\n\nTo view and clear this payment via our instant secure portal, click below:\n[payment_link]\n\nWe appreciate your continued partnership!\nBest regards,\n[company_name] Billing Team',
     category: 'friendly_reminder',

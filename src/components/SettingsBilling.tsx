@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import {
   Settings,
   CreditCard,
-  Clock,
   Globe,
   Sparkles,
   Check,
@@ -19,7 +18,6 @@ import {
   RefreshCw,
   ExternalLink,
   CheckCircle2,
-  Plus,
   Trash2,
   Copy,
   Link2,
@@ -27,28 +25,25 @@ import {
   UserPlus,
   Building2,
   ChevronDown,
+  Mail,
 } from 'lucide-react';
-import { UserProfile, SubscriptionTier, UsageStats, SchedulingPrefs, AutomationSchedule, Sequence, CustomEmailTemplate } from '../types';
-import { PLANS, PLAN_BY_ID, planChargeWithFees } from '../data/plans';
+import { UserProfile, SubscriptionTier, UsageStats, SchedulingPrefs, Sequence, CustomEmailTemplate, Invoice } from '../types';
+import { PLANS, PLAN_BY_ID, CUSTOM_PLAN, SUPPORT_EMAIL } from '../data/plans';
 import {
   fetchPlanLimits,
   fetchProration,
   fetchRefundPreview,
   cancelSubscription,
   fetchBillingEvents,
-  fetchSchedules,
-  createSchedule,
-  updateSchedule,
-  deleteSchedule,
   fetchTeamInvites,
   createTeamInvite,
   revokeTeamInvite,
   fetchTeamMembers,
   removeTeamMember,
   uploadCompanyLogo,
+  applyPlanTier,
 } from '../lib/storage';
 import { BillingEvent, TeamInvite, TeamMember } from '../types';
-import { TestModePanel } from './TestModePanel';
 
 interface SettingsBillingProps {
   user: UserProfile;
@@ -56,10 +51,10 @@ interface SettingsBillingProps {
   scheduling: SchedulingPrefs | null;
   sequences?: Sequence[];
   templates?: CustomEmailTemplate[];
+  invoices?: Invoice[];
   onUpdateProfile: (updates: Partial<UserProfile>) => Promise<any>;
   onCheckoutPlan: (tier: SubscriptionTier) => Promise<any>;
   onRefreshStatus: () => Promise<void>;
-  onSaveScheduling: (prefs: SchedulingPrefs) => Promise<any>;
   onNavigateConnectors: () => void;
   onToast: (msg: string) => void;
 }
@@ -112,14 +107,16 @@ export function SettingsBilling({
   scheduling,
   sequences = [],
   templates = [],
+  invoices = [],
   onUpdateProfile,
   onCheckoutPlan,
   onRefreshStatus,
-  onSaveScheduling,
   onNavigateConnectors,
   onToast,
 }: SettingsBillingProps) {
-  const [activeTab, setActiveTab] = useState<'billing' | 'scheduling' | 'branding' | 'team' | 'test'>('billing');
+  const [activeTab, setActiveTab] = useState<'billing' | 'branding' | 'team'>('billing');
+  const [checkoutTier, setCheckoutTier] = useState<SubscriptionTier | null>(null);
+  const [checkoutActivating, setCheckoutActivating] = useState(false);
   const [companyName, setCompanyName] = useState(user.company_name);
   const [customDomain, setCustomDomain] = useState(user.custom_domain || '');
   const [emailSig, setEmailSig] = useState(user.email_signature || '');
@@ -134,20 +131,12 @@ export function SettingsBilling({
   const [events, setEvents] = useState<BillingEvent[]>([]);
   const [eventsLoading, setEventsLoading] = useState(true);
 
-  // Multiple automation schedules
-  const [schedules, setSchedules] = useState<AutomationSchedule[]>([]);
-  const [schedulesLoaded, setSchedulesLoaded] = useState(false);
-
   // Team invites & members
   const [invites, setInvites] = useState<TeamInvite[]>([]);
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviting, setInviting] = useState(false);
   const [copiedInvite, setCopiedInvite] = useState<string | null>(null);
-
-  const [freq, setFreq] = useState<SchedulingPrefs['frequency']>(scheduling?.frequency || 'daily');
-  const [timeOfDay, setTimeOfDay] = useState(scheduling?.time_of_day || '09:00');
-  const [autoPause, setAutoPause] = useState(scheduling?.auto_pause_paid ?? true);
 
   const limits = fetchPlanLimits(user.subscription_tier);
   const currentPlan = user.subscription_tier ? PLAN_BY_ID[user.subscription_tier] : null;
@@ -172,22 +161,44 @@ export function SettingsBilling({
     };
   }, [user.subscription_tier, user.subscription_status]);
 
+  // In-app checkout: /app/settings?billing=checkout&plan=X opens the billing
+  // tab with an "activate plan" confirmation instead of a dead-end redirect.
   useEffect(() => {
-    let mounted = true;
-    fetchSchedules()
-      .then((s) => {
-        if (mounted) {
-          setSchedules(s);
-          setSchedulesLoaded(true);
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('billing') === 'checkout') {
+      const tier = params.get('plan') as SubscriptionTier | null;
+      if (tier && (tier === 'starter' || tier === 'pro' || tier === 'agency')) {
+        setCheckoutTier(tier);
+        setActiveTab('billing');
+        if (params.get('plan')) {
+          fetchProration(tier)
+            .then((p) => setProration((prev) => ({ ...prev, [tier]: p })))
+            .catch(() => {});
         }
-      })
-      .catch(() => {
-        if (mounted) setSchedulesLoaded(true);
-      });
-    return () => {
-      mounted = false;
-    };
+      }
+      // Strip the params so refresh/back navigation doesn't re-trigger checkout.
+      const clean = new URLSearchParams(window.location.search);
+      clean.delete('billing');
+      clean.delete('plan');
+      const qs = clean.toString();
+      window.history.replaceState({}, '', `${window.location.pathname}${qs ? `?${qs}` : ''}`);
+    }
   }, []);
+
+  const handleActivateCheckout = async () => {
+    if (!checkoutTier) return;
+    setCheckoutActivating(true);
+    try {
+      await applyPlanTier(checkoutTier);
+      setCheckoutTier(null);
+      onToast(`Plan activated — ${checkoutTier.toUpperCase()} limits are now applied.`);
+      await onRefreshStatus();
+    } catch (e: any) {
+      onToast(e.message || 'Plan activation failed.');
+    } finally {
+      setCheckoutActivating(false);
+    }
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -266,50 +277,6 @@ export function SettingsBilling({
     }
   };
 
-  const handleSaveScheduling = async (e: React.FormEvent) => {
-    e.preventDefault();
-    await onSaveScheduling({
-      frequency: freq,
-      time_of_day: timeOfDay,
-      timezone: scheduling?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
-      auto_pause_paid: autoPause,
-    });
-  };
-
-  const handleAddSchedule = async () => {
-    try {
-      const s = await createSchedule({
-        name: 'New Automation Schedule',
-        frequency: 'daily',
-        time_of_day: '09:00',
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
-        channels: ['email'],
-      });
-      setSchedules((prev) => [...prev, s]);
-      onToast('Schedule created — configure its timezone and message source below.');
-    } catch (e: any) {
-      onToast(e.message || 'Could not create schedule.');
-    }
-  };
-
-  const handleUpdateSchedule = async (id: string, patch: Partial<AutomationSchedule>) => {
-    try {
-      const updated = await updateSchedule(id, patch);
-      setSchedules((prev) => prev.map((s) => (s.id === id ? updated : s)));
-    } catch (e: any) {
-      onToast(e.message || 'Could not update schedule.');
-    }
-  };
-
-  const handleDeleteSchedule = async (id: string) => {
-    try {
-      await deleteSchedule(id);
-      setSchedules((prev) => prev.filter((s) => s.id !== id));
-    } catch (e: any) {
-      onToast(e.message || 'Could not delete schedule.');
-    }
-  };
-
   const handleCopyInvite = (invite: TeamInvite) => {
     const link = `${window.location.origin}/invite/${invite.token}`;
     navigator.clipboard.writeText(link);
@@ -350,10 +317,8 @@ export function SettingsBilling({
           {(
             [
               { id: 'billing', label: 'Plan & Usage', icon: CreditCard },
-              { id: 'scheduling', label: 'Automation', icon: Clock },
               { id: 'branding', label: 'Branding', icon: Palette },
               { id: 'team', label: 'Team', icon: Users },
-              { id: 'test', label: 'Test Mode', icon: FlaskConical },
             ] as const
           ).map((t) => {
             const Icon = t.icon;
@@ -378,6 +343,66 @@ export function SettingsBilling({
       {/* TAB 1: PLAN & USAGE */}
       {activeTab === 'billing' && (
         <div className="space-y-6">
+          {/* In-app checkout confirmation (billing=checkout&plan=X) */}
+          {checkoutTier && (
+            <div className="p-6 rounded-3xl bg-white dark:bg-surface border border-accent/40 dark:border-accent/40 shadow-lg space-y-4">
+              <div className="flex items-center gap-2">
+                <CreditCard className="w-5 h-5 text-primary dark:text-secondary" />
+                <h3 className="text-base font-bold text-ink dark:text-white">
+                  Confirm your plan: {PLAN_BY_ID[checkoutTier]?.name}
+                </h3>
+              </div>
+              <div className="grid sm:grid-cols-3 gap-3 text-xs">
+                <div className="p-3 rounded-2xl bg-main dark:bg-surface2/60 border border-line dark:border-line">
+                  <span className="block text-ink3 font-bold uppercase tracking-wider mb-1">Plan price</span>
+                  <span className="text-lg font-black text-ink dark:text-white">${PLAN_BY_ID[checkoutTier]?.price}/mo</span>
+                </div>
+                <div className="p-3 rounded-2xl bg-main dark:bg-surface2/60 border border-line dark:border-line">
+                  <span className="block text-ink3 font-bold uppercase tracking-wider mb-1">Tax & fees</span>
+                  <span className="text-lg font-black text-ink dark:text-white">
+                    {proration[checkoutTier]?.total != null ? `$${proration[checkoutTier].total.toFixed(2)}` : 'None'}
+                  </span>
+                </div>
+                <div className="p-3 rounded-2xl bg-main dark:bg-surface2/60 border border-line dark:border-line">
+                  <span className="block text-ink3 font-bold uppercase tracking-wider mb-1">First charge</span>
+                  <span className="text-lg font-black text-ink dark:text-white">
+                    ${(proration[checkoutTier]?.total ?? PLAN_BY_ID[checkoutTier]?.price ?? 0).toFixed(2)}
+                  </span>
+                </div>
+              </div>
+              <p className="text-[11px] text-ink2 leading-relaxed">
+                Your account is activated the moment payment is confirmed, and plan limits apply immediately.
+                Switching mid-month charges only the prorated difference; canceling mid-month refunds your unused days.
+              </p>
+              <div className="flex flex-wrap gap-3">
+                <button
+                  onClick={handleActivateCheckout}
+                  disabled={checkoutActivating}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-accent hover:bg-accent-hover text-white font-extrabold text-xs transition-all shadow-md shadow-accent/30"
+                >
+                  {checkoutActivating ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      Activating…
+                    </>
+                  ) : (
+                    <>
+                      <ShieldCheck className="w-4 h-4" />
+                      Complete checkout — Activate {PLAN_BY_ID[checkoutTier]?.name}
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={() => setCheckoutTier(null)}
+                  disabled={checkoutActivating}
+                  className="px-4 py-2.5 rounded-xl bg-surface2 dark:bg-surface2 text-ink2 font-bold text-xs hover:text-ink transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Monthly Usage */}
           <div className="p-6 rounded-3xl bg-white dark:bg-surface border border-line dark:border-line shadow-sm">
             <div className="flex items-center justify-between mb-4">
@@ -431,11 +456,10 @@ export function SettingsBilling({
             </button>
           </div>
 
-          {/* Pricing Plans — centered 3-column grid so the "Most Popular" tier sits exactly center */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 max-w-5xl mx-auto">
+          {/* Pricing Plans — 4-column grid (3 tiers + Custom Plan) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 max-w-6xl mx-auto">
             {PLANS.map((plan) => {
               const isCurrent = user.subscription_tier === plan.id;
-              const fees = planChargeWithFees(plan.price);
               const pr = proration[plan.id];
               return (
                 <div
@@ -489,18 +513,8 @@ export function SettingsBilling({
                     {pr && !pr.firstPurchase && (
                       <p className="text-[10px] text-ink3 text-center">
                         {pr.delta > 0
-                          ? `Prorated charge today: $${pr.dueNow.toFixed(2)} ($${pr.delta.toFixed(2)} + tax & fees)`
+                          ? `Prorated charge today: $${pr.dueNow.toFixed(2)}`
                           : `Downgrade credit: $${pr.credit.toFixed(2)} applied to next payment`}
-                      </p>
-                    )}
-                    {pr?.firstPurchase && (
-                      <p className="text-[10px] text-ink3 text-center">
-                        First month: ${pr.total.toFixed(2)} incl. tax & gateway fees
-                      </p>
-                    )}
-                    {!isCurrent && (
-                      <p className="text-[10px] text-ink3 text-center">
-                        + ${fees.tax.toFixed(2)} tax & ${fees.fee.toFixed(2)} gateway fee
                       </p>
                     )}
 
@@ -527,6 +541,41 @@ export function SettingsBilling({
                 </div>
               );
             })}
+
+            {/* Custom Plan card — arranged directly with the Eron team */}
+            <div className="relative flex flex-col p-6 rounded-3xl bg-main dark:bg-surface2/60 border border-dashed border-line dark:border-line shadow-sm">
+              <div className="flex-1">
+                <h4 className="text-lg font-bold text-ink dark:text-white">{CUSTOM_PLAN.name}</h4>
+                {CUSTOM_PLAN.tagline && <p className="text-[11px] text-ink2 mt-0.5">{CUSTOM_PLAN.tagline}</p>}
+                <div className="my-3 flex items-baseline gap-1.5 flex-wrap">
+                  <span className="text-3xl font-black text-ink dark:text-white">Custom</span>
+                </div>
+                <p className="text-xs font-semibold text-primary dark:text-secondary mb-4">Pricing tailored to your volume</p>
+
+                <ul className="space-y-2.5 text-xs text-ink2 dark:text-ink2 mb-6">
+                  {CUSTOM_PLAN.features.map((f) => (
+                    <li key={f.id} className={`flex items-center gap-2 ${f.included ? '' : 'opacity-60'}`}>
+                      {f.included ? (
+                        <Check className="w-4 h-4 text-emerald-500 shrink-0" />
+                      ) : (
+                        <X className="w-4 h-4 text-rose-400 shrink-0" />
+                      )}
+                      <span>{f.label}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="space-y-2">
+                <a
+                  href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Custom Plan enquiry')}`}
+                  className="w-full py-3 px-4 rounded-xl bg-surface2 dark:bg-surface2 text-ink dark:text-white font-bold text-xs transition-all flex items-center justify-center gap-2 hover:bg-line dark:hover:bg-surface2"
+                >
+                  <Mail className="w-4 h-4" />
+                  <span>Talk to us — {SUPPORT_EMAIL}</span>
+                </a>
+              </div>
+            </div>
           </div>
 
           <div className="flex justify-center gap-3 flex-wrap">
@@ -535,11 +584,11 @@ export function SettingsBilling({
               className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white dark:bg-surface border border-line dark:border-line text-xs font-bold text-ink2 hover:text-ink transition-colors"
             >
               <RefreshCw className="w-3.5 h-3.5" />
-              I've completed checkout — refresh plan status
+              Refresh plan status
             </button>
             <div className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary-soft text-primary dark:bg-surface2 dark:text-secondary text-xs font-bold">
               <ShieldCheck className="w-4 h-4" />
-              Card, bank, PayPal, Apple Pay & Google Pay via Stripe & Lemon Squeezy
+              Card, bank, PayPal, Apple Pay & Google Pay via Payoneer
             </div>
           </div>
 
@@ -550,12 +599,12 @@ export function SettingsBilling({
               <h3 className="text-base font-bold text-ink dark:text-white">Cancel plan & money-back refund</h3>
             </div>
             <p className="text-xs text-ink2 dark:text-ink2 mb-4">
-              Cancel anytime. You get a money-back refund for unused days, minus your usage costs, merchant-of-record
-              tax and gateway fees.
+              Cancel anytime. You get a money-back refund for unused days, minus a flat 10% cancellation cut and your
+              usage costs. No tax or fees are charged on subscriptions.
             </p>
 
             {refundPreview && !refundPreview.inactive ? (
-              <div className="p-4 rounded-2xl bg-main dark:bg-surface2/60 border border-line dark:border-line grid grid-cols-2 sm:grid-cols-3 gap-3 text-center mb-4">
+              <div className="p-4 rounded-2xl bg-main dark:bg-surface2/60 border border-line dark:border-line grid grid-cols-2 sm:grid-cols-4 gap-3 text-center mb-4">
                 <div>
                   <p className="text-[10px] font-bold uppercase text-ink3">Estimated refund</p>
                   <p className="text-xl font-black text-emerald-600 dark:text-emerald-400">${refundPreview.refund.toFixed(2)}</p>
@@ -565,7 +614,11 @@ export function SettingsBilling({
                   <p className="text-xl font-black text-ink dark:text-white">{Math.round(refundPreview.remainingDays)}d / 30d</p>
                 </div>
                 <div>
-                  <p className="text-[10px] font-bold uppercase text-ink3">Usage + tax + fees</p>
+                  <p className="text-[10px] font-bold uppercase text-ink3">Cancellation cut (10%)</p>
+                  <p className="text-xl font-black text-ink dark:text-white">${(refundPreview.cancellationFee ?? 0).toFixed(2)}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold uppercase text-ink3">Usage costs</p>
                   <p className="text-xl font-black text-ink dark:text-white">
                     ${(refundPreview.usageCost + refundPreview.tax + refundPreview.gatewayFee).toFixed(2)}
                   </p>
@@ -591,7 +644,7 @@ export function SettingsBilling({
                     <h3 className="text-sm font-bold text-ink dark:text-white">Cancel your {currentPlan?.name} plan?</h3>
                     <p className="text-xs text-ink2 mt-1 leading-relaxed">
                       {refundPreview && !refundPreview.inactive
-                        ? `You get a money-back refund of approx. $${refundPreview.refund.toFixed(2)} (unused days minus usage costs, tax and fees). Plan limits stop applying immediately.`
+                        ? `You get a money-back refund of approx. $${refundPreview.refund.toFixed(2)} (unused days minus a 10% cancellation cut and usage costs — no tax or fees are charged). Plan limits stop applying immediately.`
                         : 'Your plan will be cancelled and plan limits stop applying immediately.'}
                     </p>
                   </div>
@@ -642,229 +695,6 @@ export function SettingsBilling({
               </div>
             </div>
           ))}
-        </div>
-      )}
-
-      {/* TAB 2: AUTOMATION SCHEDULES */}
-      {activeTab === 'scheduling' && (
-        <div className="space-y-6">
-          <div className="p-6 sm:p-8 rounded-3xl bg-white dark:bg-surface border border-line dark:border-line shadow-sm">
-            <div className="flex items-center gap-2 mb-1">
-              <Clock className="w-5 h-5 text-primary dark:text-secondary" />
-              <h3 className="text-lg font-bold text-ink dark:text-white">Automation Schedules</h3>
-            </div>
-            <p className="text-xs text-ink2 dark:text-ink2 mb-6">
-              Create multiple schedules to send reminders at any country's local time, each with its own custom email,
-              template or recovery sequence.
-            </p>
-
-            {!schedulesLoaded ? (
-              <div className="py-8 text-center text-xs text-ink3">Loading schedules…</div>
-            ) : schedules.length === 0 ? (
-              <div className="py-8 text-center text-xs text-ink2">
-                No schedules yet. Create your first automation schedule below.
-              </div>
-            ) : (
-              <div className="space-y-4 mb-6">
-                {schedules.map((s) => (
-                  <div key={s.id} className="p-4 rounded-2xl bg-main dark:bg-surface2/60 border border-line dark:border-line space-y-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <input
-                        type="text"
-                        value={s.name}
-                        onChange={(e) => handleUpdateSchedule(s.id, { name: e.target.value })}
-                        className="flex-1 min-w-0 px-3 py-1.5 rounded-lg border border-line dark:border-line bg-white dark:bg-surface text-xs font-bold text-ink dark:text-white outline-none focus:ring-2 focus:ring-accent"
-                      />
-                      <div className="flex items-center gap-2 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => handleUpdateSchedule(s.id, { active: !s.active })}
-                          className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold flex items-center gap-1 border transition-all ${
-                            s.active
-                              ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
-                              : 'bg-surface2 dark:bg-surface2 border-line dark:border-line text-ink3'
-                          }`}
-                        >
-                          {s.active ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
-                          {s.active ? 'Active' : 'Paused'}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteSchedule(s.id)}
-                          className="p-1.5 rounded-lg text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/60 transition-colors"
-                          title="Delete schedule"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                      <div>
-                        <label className="block text-[10px] font-bold text-ink3 uppercase tracking-wider mb-1">Frequency</label>
-                        <select
-                          value={s.frequency}
-                          onChange={(e) => handleUpdateSchedule(s.id, { frequency: e.target.value as AutomationSchedule['frequency'] })}
-                          className="w-full px-3 py-2 rounded-xl border border-line dark:border-line bg-white dark:bg-surface text-xs text-ink dark:text-white outline-none focus:ring-2 focus:ring-accent"
-                        >
-                          <option value="daily">Every day</option>
-                          <option value="weekly">Once a week</option>
-                          <option value="monthly">Once a month</option>
-                          <option value="yearly">Once a year</option>
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-[10px] font-bold text-ink3 uppercase tracking-wider mb-1">Send Time (Local)</label>
-                        <input
-                          type="time"
-                          value={s.time_of_day}
-                          onChange={(e) => handleUpdateSchedule(s.id, { time_of_day: e.target.value })}
-                          className="w-full px-3 py-2 rounded-xl border border-line dark:border-line bg-white dark:bg-surface text-xs text-ink dark:text-white outline-none focus:ring-2 focus:ring-accent"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-[10px] font-bold text-ink3 uppercase tracking-wider mb-1">Timezone (Country)</label>
-                        <select
-                          value={s.timezone}
-                          onChange={(e) => handleUpdateSchedule(s.id, { timezone: e.target.value })}
-                          className="w-full px-3 py-2 rounded-xl border border-line dark:border-line bg-white dark:bg-surface text-xs text-ink dark:text-white outline-none focus:ring-2 focus:ring-accent"
-                        >
-                          {COMMON_TIMEZONES.map((tz) => (
-                            <option key={tz.value} value={tz.value}>
-                              {tz.label}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-[10px] font-bold text-ink3 uppercase tracking-wider mb-1">
-                          Message Source — Sequence
-                        </label>
-                        <select
-                          value={s.sequence_id || ''}
-                          onChange={(e) => handleUpdateSchedule(s.id, { sequence_id: e.target.value || undefined })}
-                          className="w-full px-3 py-2 rounded-xl border border-line dark:border-line bg-white dark:bg-surface text-xs text-ink dark:text-white outline-none focus:ring-2 focus:ring-accent"
-                        >
-                          <option value="">Default recovery sequence</option>
-                          {sequences.map((seq) => (
-                            <option key={seq.id} value={seq.id}>
-                              {seq.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-[10px] font-bold text-ink3 uppercase tracking-wider mb-1">
-                          Or — Custom Email Template
-                        </label>
-                        <select
-                          value={s.template_id || ''}
-                          onChange={(e) => handleUpdateSchedule(s.id, { template_id: e.target.value || undefined })}
-                          className="w-full px-3 py-2 rounded-xl border border-line dark:border-line bg-white dark:bg-surface text-xs text-ink dark:text-white outline-none focus:ring-2 focus:ring-accent"
-                        >
-                          <option value="">No custom template</option>
-                          {templates.map((t) => (
-                            <option key={t.id} value={t.id}>
-                              {t.title}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <button
-              type="button"
-              onClick={handleAddSchedule}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary-soft dark:bg-surface2 text-primary dark:text-secondary font-bold text-xs transition-all border border-line dark:border-line"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Add Schedule</span>
-            </button>
-
-            <p className="text-[10px] text-ink3 mt-3">
-              Times are stored in UTC and shown with your local offset in the activity log.
-            </p>
-          </div>
-
-          {/* Legacy single-schedule settings kept for backward compatibility */}
-          <div className="p-6 sm:p-8 rounded-3xl bg-white dark:bg-surface border border-line dark:border-line shadow-sm max-w-2xl">
-            <div className="flex items-center gap-2 mb-1">
-              <Clock3 className="w-5 h-5 text-primary dark:text-secondary" />
-              <h3 className="text-lg font-bold text-ink dark:text-white">Default Automation Settings</h3>
-            </div>
-            <p className="text-xs text-ink2 dark:text-ink2 mb-6">
-              Fallback settings used when an invoice has no custom schedule.
-            </p>
-
-            <form onSubmit={handleSaveScheduling} className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-ink dark:text-ink2 mb-1">Check For Due Reminders</label>
-                  <select
-                    value={freq}
-                    onChange={(e) => setFreq(e.target.value as SchedulingPrefs['frequency'])}
-                    className="w-full px-3 py-2.5 rounded-xl border border-line dark:border-line bg-main dark:bg-surface2 text-xs text-ink dark:text-white outline-none focus:ring-2 focus:ring-accent"
-                  >
-                    <option value="daily">Every day</option>
-                    <option value="weekly">Once a week</option>
-                    <option value="monthly">Once a month</option>
-                    <option value="yearly">Once a year</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-ink dark:text-ink2 mb-1">Send Time (Local Time)</label>
-                  <input
-                    type="time"
-                    value={timeOfDay}
-                    onChange={(e) => setTimeOfDay(e.target.value)}
-                    className="w-full px-3 py-2.5 rounded-xl border border-line dark:border-line bg-main dark:bg-surface2 text-xs text-ink dark:text-white outline-none focus:ring-2 focus:ring-accent"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-ink dark:text-ink2 mb-1">Timezone</label>
-                <input
-                  type="text"
-                  value={scheduling?.timezone || 'UTC'}
-                  disabled
-                  className="w-full px-3 py-2.5 rounded-xl border border-line dark:border-line bg-main dark:bg-surface2 text-xs text-ink3 outline-none cursor-not-allowed"
-                />
-              </div>
-
-              <label className="flex items-start gap-3 p-4 rounded-2xl bg-main dark:bg-surface2/60 border border-line dark:border-line cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={autoPause}
-                  onChange={(e) => setAutoPause(e.target.checked)}
-                  className="mt-0.5 text-primary focus:ring-accent"
-                />
-                <div>
-                  <span className="block text-xs font-bold text-ink dark:text-white">Auto-pause reminders when an invoice is paid</span>
-                  <span className="block text-[11px] text-ink2 dark:text-ink2 mt-0.5">Clients never receive a reminder after they've paid.</span>
-                </div>
-              </label>
-
-              <button
-                type="submit"
-                className="py-3 px-5 rounded-xl bg-accent hover:bg-accent-hover text-white font-bold text-xs transition-all shadow-md flex items-center gap-2"
-              >
-                <Save className="w-4 h-4" />
-                <span>Save Default Settings</span>
-              </button>
-            </form>
-          </div>
         </div>
       )}
 
@@ -1063,13 +893,6 @@ export function SettingsBilling({
             Your {currentPlan?.name || 'current'} plan includes {limits?.team_seats ?? 1} team seat{limits?.team_seats === 1 ? '' : 's'} total
             (owner + invited members). Seat limits are defined per plan — upgrade to invite more.
           </p>
-        </div>
-      )}
-
-      {/* TAB 5: TEST MODE */}
-      {activeTab === 'test' && (
-        <div className="max-w-3xl">
-          <TestModePanel onToast={onToast} />
         </div>
       )}
     </div>

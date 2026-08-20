@@ -34,27 +34,19 @@ export function Navbar({
   return (
     <header className="sticky top-0 z-50 border-b border-line dark:border-line bg-white/95 dark:bg-surface/95 backdrop-blur-md px-3 sm:px-6 py-2.5 transition-colors">
       <div className="flex items-center justify-between max-w-7xl mx-auto w-full">
-        {/* Brand Logo & Name */}
+        {/* Brand Logo & Name (always Eron — never replaced by the workspace) */}
         <button
           onClick={onNavigateHome}
           className="flex items-center gap-2.5 text-left shrink-0 focus:outline-none"
         >
-          {isLoggedIn && user.logo_url ? (
-            <img
-              src={user.logo_url}
-              alt={user.company_name || 'Eron'}
-              className="h-9 sm:h-10 w-9 sm:w-10 rounded-xl object-cover border border-line dark:border-line"
-            />
-          ) : (
-            <img
-              src="/logo.svg"
-              alt="Eron"
-              className="h-9 sm:h-10"
-            />
-          )}
+          <img
+            src="/logo.svg"
+            alt="Eron"
+            className="h-9 sm:h-10"
+          />
           <div>
             <span className="font-bold text-xl text-black dark:text-white block">
-              {isLoggedIn && user.logo_url ? user.company_name || 'Eron' : 'Eron'}
+              Eron
             </span>
             <p className="text-[10px] text-ink2 dark:text-ink2 hidden md:block">
               Get paid faster. Stop chasing invoices.
@@ -85,9 +77,17 @@ export function Navbar({
                 onClick={() => setDropdownOpen(!dropdownOpen)}
                 className="flex items-center gap-2 p-1.5 sm:px-3 sm:py-1.5 rounded-xl border border-line dark:border-line bg-main dark:bg-surface hover:bg-surface2 dark:hover:bg-surface2 transition-colors"
               >
-                <div className="w-7 h-7 rounded-lg bg-accent text-white flex items-center justify-center font-bold text-xs shrink-0">
-                  {user.company_name?.charAt(0) || 'A'}
-                </div>
+                {user.logo_url ? (
+                  <img
+                    src={user.logo_url}
+                    alt={user.company_name || 'My Agency'}
+                    className="w-7 h-7 rounded-lg object-cover border border-line dark:border-line shrink-0"
+                  />
+                ) : (
+                  <div className="w-7 h-7 rounded-lg bg-accent text-white flex items-center justify-center font-bold text-xs shrink-0">
+                    {user.company_name?.charAt(0) || 'A'}
+                  </div>
+                )}
                 <span className="text-xs font-semibold text-ink dark:text-ink hidden sm:inline max-w-[110px] truncate">
                   {user.company_name || 'My Agency'}
                 </span>
@@ -96,9 +96,18 @@ export function Navbar({
 
               {dropdownOpen && (
                 <div className="absolute right-0 mt-2 w-60 rounded-2xl bg-white dark:bg-surface border border-line dark:border-line shadow-2xl py-2 z-[100] text-xs animate-in fade-in slide-in-from-top-2 duration-150">
-                  {/* Dropdown Header showing Company Name, Email & Current Plan */}
+                  {/* Dropdown Header showing Company Logo, Name, Email & Current Plan */}
                   <div className="px-4 py-3 border-b border-line dark:border-line space-y-1">
-                    <p className="font-extrabold text-ink dark:text-white truncate">{user.company_name}</p>
+                    <div className="flex items-center gap-2">
+                      {user.logo_url && (
+                        <img
+                          src={user.logo_url}
+                          alt={user.company_name || 'My Agency'}
+                          className="w-6 h-6 rounded-lg object-cover border border-line dark:border-line"
+                        />
+                      )}
+                      <p className="font-extrabold text-ink dark:text-white truncate">{user.company_name}</p>
+                    </div>
                     <p className="text-ink2 dark:text-ink2 truncate text-[11px]">{user.email}</p>
                     <div className="pt-1">
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-primary-soft text-primary dark:bg-surface2 dark:text-secondary border border-primary-soft dark:border-line">

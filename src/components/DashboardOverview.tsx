@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   TrendingUp,
   Clock,
@@ -36,6 +36,28 @@ export function DashboardOverview({
   onSyncInvoices,
   onRunAutomation
 }: DashboardOverviewProps) {
+  const [busy, setBusy] = useState<'sync' | 'run' | null>(null);
+
+  const handleSyncClick = async () => {
+    if (busy) return;
+    setBusy('sync');
+    try {
+      await onSyncInvoices();
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleRunClick = async () => {
+    if (busy) return;
+    setBusy('run');
+    try {
+      await onRunAutomation();
+    } finally {
+      setBusy(null);
+    }
+  };
+
   // Calculations
   const overdueInvoices = invoices.filter((i) => i.status === 'overdue');
   const paidInvoices = invoices.filter((i) => i.status === 'paid');
@@ -64,47 +86,49 @@ export function DashboardOverview({
   return (
     <div className="space-y-6">
       {/* Top Banner */}
-<div className="p-6 sm:p-8 rounded-3xl bg-slate-100 dark:bg-slate-900 text-white border border-slate-400 dark:border-slate-800 shadow-xl relative overflow-hidden transition-colors">
-  {/* Solid Orange Background Graphic */}
-  <div className="absolute -left-16 -bottom-12 w-[140%] h-[180%] bg-amber-600 rounded-[50%] pointer-events-none z-0" />
+<div className="p-6 sm:p-8 rounded-3xl bg-[var(--bg-surface)] text-[var(--text-primary)] border border-[var(--border-color)] shadow-xl relative overflow-hidden transition-colors">
+  {/* Primary Brand Background Graphic */}
+  <div className="absolute -left-16 -bottom-12 w-[140%] h-[180%] bg-[var(--color-primary)] rounded-[50%] pointer-events-none z-0 opacity-10" />
 
   <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
     <div>
       {/* Badge */}
       <div className="flex items-center gap-2 mb-2">
-        <span className="px-3 py-1 rounded-full bg-white/20 text-white border border-white/30 text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 backdrop-blur-sm">
-          <Sparkles className="w-3.5 h-3.5 text-white" />
+        <span className="px-3 py-1 rounded-full bg-[var(--color-primary-soft)] text-[var(--color-primary)] border border-[var(--color-secondary-soft)] text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 backdrop-blur-sm">
+          <Sparkles className="w-3.5 h-3.5 text-[var(--color-primary)]" />
           Recovery Engine Active
         </span>
       </div>
 
       {/* Title */}
-      <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
+      <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[var(--text-primary)]">
         Welcome back, {user.company_name}!
       </h1>
 
       {/* Description */}
-      <p className="mt-1 text-sm text-white/90 max-w-2xl leading-relaxed">
-        Tracking <span className="font-bold text-white">${totalTrackedVolume.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span> in invoices with automated email and WhatsApp reminders.
+      <p className="mt-1 text-sm text-[var(--text-secondary)] max-w-2xl leading-relaxed">
+        Tracking <span className="font-bold text-[var(--text-primary)]">${totalTrackedVolume.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span> in invoices with automated email and WhatsApp reminders.
       </p>
     </div>
 
     {/* Buttons */}
     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
       <button
-        onClick={onSyncInvoices}
-        className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-xs transition-all border border-white/40 flex items-center justify-center gap-2 shadow-sm"
+        onClick={handleSyncClick}
+        disabled={busy !== null}
+        className="px-4 py-2.5 rounded-xl bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-[var(--text-inverse)] font-semibold text-xs transition-all border border-transparent flex items-center justify-center gap-2 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        <RotateCw className="w-3.5 h-3.5 text-white" />
-        <span>Sync Invoices</span>
+        <RotateCw className={`w-3.5 h-3.5 text-[var(--text-inverse)] ${busy === 'sync' ? 'animate-spin' : ''}`} />
+        <span>{busy === 'sync' ? 'Syncing...' : 'Sync Invoices'}</span>
       </button>
 
       <button
-        onClick={onRunAutomation}
-        className="px-4 py-2.5 rounded-xl bg-transparent hover:bg-white/10 text-white font-bold text-xs transition-all flex items-center justify-center gap-2"
+        onClick={handleRunClick}
+        disabled={busy !== null}
+        className="px-4 py-2.5 rounded-xl bg-[var(--bg-surface-elevated)] hover:bg-[var(--border-color)] text-[var(--text-primary)] font-bold text-xs transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        <Play className="w-3.5 h-3.5 text-white" />
-        <span>Run Automation Now</span>
+        <Play className={`w-3.5 h-3.5 text-[var(--text-primary)] ${busy === 'run' ? 'animate-spin' : ''}`} />
+        <span>{busy === 'run' ? 'Running...' : 'Run Automation Now'}</span>
       </button>
     </div>
   </div>

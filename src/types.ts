@@ -5,9 +5,7 @@ export interface UserProfile {
   id: string;
   email: string;
   company_name: string;
-  lemon_squeezy_customer_id?: string;
-  lemon_squeezy_subscription_id?: string;
-  stripe_customer_id?: string;
+  company_phone?: string;
   subscription_tier: SubscriptionTier | null;
   subscription_status: SubscriptionStatus;
   plan_started_at?: string;
@@ -16,7 +14,22 @@ export interface UserProfile {
   brand_color?: string;
   logo_url?: string;
   email_signature?: string;
+  payee?: PayeeInfo;
   created_at: string;
+}
+
+export interface PayeeInfo {
+  name?: string;
+  country?: string;
+  email?: string;
+  payout_method?: 'payoneer' | 'bank' | 'card';
+  bank_name?: string;
+  bank_iban?: string; // masked (first 4 •••• last 4)
+  bank_swift?: string;
+  card_brand?: string;
+  card_last4?: string;
+  card_expiry?: string;
+  verified: boolean;
 }
 
 export interface BillingEvent {
@@ -34,7 +47,6 @@ export interface BillingEvent {
 }
 
 export type IntegrationProvider =
-  | 'stripe'
   | 'quickbooks'
   | 'xero'
   | 'gmail'
@@ -57,7 +69,7 @@ export interface Integration {
 
 export type InvoiceStatus = 'unpaid' | 'paid' | 'overdue' | 'cancelled';
 
-export type AutomationFrequency = 'once' | 'daily' | 'weekly' | 'monthly' | 'yearly';
+export type AutomationFrequency = 'once' | 'urgent' | 'daily' | 'weekly' | 'monthly' | 'yearly';
 
 export interface Invoice {
   id: string;
@@ -124,7 +136,7 @@ export interface ReminderLog {
 export type NavigationTab =
   | 'dashboard'
   | 'invoices'
-  | 'sequence'
+  | 'automation'
   | 'templates'
   | 'activity'
   | 'connectors'
@@ -177,12 +189,13 @@ export interface AutomationSchedule {
   id: string;
   user_id: string;
   name: string;
-  frequency: 'daily' | 'weekly' | 'monthly' | 'yearly';
+  frequency: 'once' | 'urgent' | 'daily' | 'weekly' | 'monthly' | 'yearly';
   time_of_day: string; // "09:00"
   timezone: string; // IANA timezone, e.g. "America/New_York"
   sequence_id?: string;
   template_id?: string;
   channels: ChannelType[];
+  invoice_ids?: string[]; // empty/undefined = ALL invoices; otherwise the targeted invoices
   active: boolean;
   created_at: string;
 }
@@ -211,10 +224,11 @@ export interface AppConnectorInfo {
   id: string;
   provider: IntegrationProvider;
   name: string;
-  category: 'accounting' | 'communication' | 'email' | 'signin';
+  category: 'accounting' | 'communication' | 'email' | 'signin' | 'banking';
   description: string;
   connected: boolean;
   account_name?: string;
+  pseudo?: boolean; // connected via .env keys, not an OAuth handshake
 }
 
 export interface OpExTierData {
@@ -226,7 +240,7 @@ export interface OpExTierData {
   whapi_cost: number; // WhatsApp delivery (Whapi.cloud)
   qstash_cost: number; // scheduled jobs / cron (Upstash QStash)
   supabase_cost: number; // Postgres + auth (Supabase)
-  lemon_squeezy_fees: number; // payment-processing on subscriptions (Lemon Squeezy)
+  payoneer_fees: number; // payment-processing fees (Payoneer)
   total_opex: number;
   gross_mrr: number;
   net_profit: number;

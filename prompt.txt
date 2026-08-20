@@ -1,1 +1,3 @@
-opencode -s ses_ff5b34e23ffereUfwS5ItpTqcA
+1. Stripe Link
+2. Invoice + Message Send
+3. Automation

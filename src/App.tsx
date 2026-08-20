@@ -10,18 +10,18 @@ import {
   saveInvoice,
   toggleInvoiceSequencePause,
   payInvoice,
-  syncStripeInvoices,
   saveSequence,
   deleteSequence,
   triggerManualReminder,
   saveCustomEmailTemplate,
   deleteCustomEmailTemplate,
   sendCustomEmailToInvoice,
+  sendInvoiceReminder,
+  sendInvoiceReminderMulti,
   generateAiCustomEmail,
   fetchUsage,
   recordUsage,
   fetchSchedulingPrefs,
-  saveSchedulingPrefs,
   fetchAppConnectors,
   connectApp,
   disconnectApp,
@@ -36,7 +36,7 @@ import { Navbar } from './components/Navbar';
 import { Sidebar, NavigationTab } from './components/Sidebar';
 import { DashboardOverview } from './components/DashboardOverview';
 import { InvoicesTable } from './components/InvoicesTable';
-import { SequenceBuilder } from './components/SequenceBuilder';
+import { AutomationPage } from './components/AutomationPage';
 import { CustomEmailTemplates } from './components/CustomEmailTemplates';
 import { ReminderLogs } from './components/ReminderLogs';
 import { PublicPaymentPortal } from './components/PublicPaymentPortal';
@@ -54,7 +54,7 @@ import { CheckCircle2, RefreshCw } from 'lucide-react';
 const TAB_TO_PATH: Record<NavigationTab, string> = {
   dashboard: '/app/overview',
   invoices: '/app/invoices',
-  sequence: '/app/sequences',
+  automation: '/app/automation',
   templates: '/app/templates',
   activity: '/app/activity',
   connectors: '/app/connectors',
@@ -65,7 +65,8 @@ const TAB_TO_PATH: Record<NavigationTab, string> = {
 const PATH_TO_TAB: Record<string, NavigationTab> = {
   '/app/overview': 'dashboard',
   '/app/invoices': 'invoices',
-  '/app/sequences': 'sequence',
+  '/app/automation': 'automation',
+  '/app/sequences': 'automation', // legacy alias for the consolidated Automation page
   '/app/templates': 'templates',
   '/app/activity': 'activity',
   '/app/connectors': 'connectors',
@@ -100,7 +101,7 @@ function routeFromPath(path: string): Route {
 let pathToRouteCache = routeFromPath(window.location.pathname);
 
 export function navigate(path: string): void {
-  if (window.location.pathname !== path) {
+  if (window.location.pathname !== path.split('?')[0] || window.location.search !== (path.split('?')[1] ? `?${path.split('?')[1]}` : '')) {
     window.history.pushState({}, '', path);
   }
   window.dispatchEvent(new Event('rf:route'));
@@ -281,8 +282,6 @@ export default function App() {
   };
 
   const handleSyncInvoices = async () => {
-    const updated = await syncStripeInvoices();
-    setInvoices(updated);
     showToast('Invoices synced from your connected accounting app!');
   };
 
@@ -379,7 +378,7 @@ const handleApplyAiSteps = (newSteps: any[]) => {
   // Load the AI result into the builder as an UNSAVED draft. Nothing is
   // written to the DB until the user reviews it and clicks Save Sequence.
   setAiDraft({ name: 'AI Recovery Flow', steps: newSteps });
-  navigate('/app/sequences');
+  navigate('/app/automation');
   showToast('AI draft loaded into the builder — review, edit, then click Save Sequence.');
 };
 
@@ -494,7 +493,10 @@ const handleApplyAiSteps = (newSteps: any[]) => {
 
   // --- Logged in: plan gate (no free tier — an action requires a plan) ---
   const needsPlan = !user?.subscription_tier || user.subscription_status !== 'active';
-  if (needsPlan) {
+  // Settings & Billing stays reachable so a pending account can complete
+  // checkout and activate a plan; every other tab requires an active plan.
+  const isBillingTab = route.name === 'app' && route.tab === 'settings';
+  if (needsPlan && !isBillingTab) {
     return (
       <div className="min-h-screen bg-main dark:bg-main text-ink dark:text-ink flex flex-col font-sans transition-colors">
         {toastMessage && <Toast message={toastMessage} />}
@@ -513,8 +515,8 @@ const handleApplyAiSteps = (newSteps: any[]) => {
           onPlanChosen={async (tier) => {
             try {
               const checkout = await createPlanCheckout(tier);
-              window.open(checkout.url, '_blank');
-              showToast('Opening secure checkout with your payment provider...');
+              navigate(checkout.url);
+              showToast('Complete checkout to activate your plan.');
             } catch (err: any) {
               showToast(err.message);
             }
@@ -604,19 +606,36 @@ const handleApplyAiSteps = (newSteps: any[]) => {
                   if (!handleGateError(err)) showToast(err.message);
                 })
               }
-              onSyncStripe={() =>
-                handleSyncInvoices().catch((err) => {
+              onSendViaChannel={(id, channel, message) =>
+                sendInvoiceReminder(id, channel, message).catch((err) => {
                   if (!handleGateError(err)) showToast(err.message);
+                  throw err;
                 })
               }
+              onSendMulti={async (id, channels, message, templateId) => {
+                const res = await sendInvoiceReminderMulti(id, channels, message, templateId);
+                if (!res.success) throw new Error(res.message);
+                if (res.errors?.length) {
+                  showToast(res.errors.map((e) => `${e.channel}: ${e.message}`).join(' · '));
+                }
+                const updatedUsage = await fetchUsage();
+                setUsage(updatedUsage);
+                const updatedLogs = await fetchReminderLogs();
+                const updatedInvs = await fetchInvoices();
+                setLogs(updatedLogs);
+                setInvoices(updatedInvs);
+                showToast(`Reminder sent via ${res.channels.join(' + ')}.`);
+              }}
               onOpenPublicPortal={(id) => navigate(`/pay/${id}`)}
             />
           )}
 
-          {!dataLoading && activeTab === 'sequence' && (
-            <SequenceBuilder
+          {!dataLoading && activeTab === 'automation' && (
+            <AutomationPage
+              user={user}
               sequences={sequences}
-              customTemplates={customTemplates}
+              templates={customTemplates}
+              invoices={invoices}
               onSaveSequence={handleSaveSequence}
               onDeleteSequence={async (id) => {
                 await deleteSequence(id);
@@ -627,6 +646,7 @@ const handleApplyAiSteps = (newSteps: any[]) => {
               onOpenAiModal={() => setAiModalOpen(true)}
               aiDraft={aiDraft}
               onClearAiDraft={() => setAiDraft(null)}
+              onToast={showToast}
             />
           )}
 
@@ -677,6 +697,7 @@ const handleApplyAiSteps = (newSteps: any[]) => {
               scheduling={scheduling}
               sequences={sequences}
               templates={customTemplates}
+              invoices={invoices}
               onUpdateProfile={async (updates) => {
                 const u = await updateUserProfile(updates);
                 setUser(u);
@@ -684,7 +705,7 @@ const handleApplyAiSteps = (newSteps: any[]) => {
               }}
               onCheckoutPlan={async (tier) => {
                 const checkout = await createPlanCheckout(tier);
-                window.open(checkout.url, '_blank');
+                navigate(checkout.url);
               }}
               onRefreshStatus={async () => {
                 const profile = await fetchUserProfile();
@@ -692,11 +713,6 @@ const handleApplyAiSteps = (newSteps: any[]) => {
                   setUser(profile);
                   setIsLoggedIn(true);
                 }
-              }}
-              onSaveScheduling={async (prefs) => {
-                const updated = await saveSchedulingPrefs(prefs);
-                setScheduling(updated);
-                showToast('Automation schedule saved.');
               }}
               onNavigateConnectors={() => navigate('/app/connectors')}
               onToast={showToast}

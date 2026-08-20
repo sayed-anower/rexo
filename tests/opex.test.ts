@@ -35,21 +35,21 @@ test('OpEx model at 100 users matches the README §6 row', () => {
   assert.strictEqual(m.whapi_cost, 35);
   assert.strictEqual(m.qstash_cost, 15);
   assert.strictEqual(m.supabase_cost, 25);
-  // 5% × $9,900 MRR + 100 × $0.50 = $545.
-  assert.strictEqual(m.lemon_squeezy_fees, 545);
+  // 3.99% × $9,900 MRR + 100 × $0.45 = $440.
+  assert.strictEqual(m.payoneer_fees, 440);
 
-  assert.strictEqual(m.total_opex, 640);
+  assert.strictEqual(m.total_opex, 535);
   assert.strictEqual(m.gross_mrr, 9900);
-  assert.strictEqual(m.net_profit, 9260);
-  assert.strictEqual(m.margin_percentage, 93.5);
+  assert.strictEqual(m.net_profit, 9365);
+  assert.strictEqual(m.margin_percentage, 94.6);
 });
 
 test('OpEx model at 10 users matches the README §6 row', () => {
   const m = calculateOpExForUsers(10);
-  assert.strictEqual(m.total_opex, 150);
+  assert.strictEqual(m.total_opex, 139);
   assert.strictEqual(m.gross_mrr, 990);
-  assert.strictEqual(m.net_profit, 841); // rounding quirk: net uses unrounded OpEx
-  assert.strictEqual(m.margin_percentage, 84.9);
+  assert.strictEqual(m.net_profit, 851);
+  assert.strictEqual(m.margin_percentage, 86.0);
 });
 
 test('OpEx model at 1,000 users crosses the overage tiers', () => {
@@ -67,10 +67,10 @@ test('OpEx model at 1,000 users crosses the overage tiers', () => {
   assert.strictEqual(m.supabase_cost, 75);
 
   // Cross-check against the README §6 1,000-user row.
-  assert.strictEqual(m.total_opex, 5905);
+  assert.strictEqual(m.total_opex, 4855);
   assert.strictEqual(m.gross_mrr, 99000);
-  assert.strictEqual(m.net_profit, 93095);
-  assert.strictEqual(m.margin_percentage, 94.0);
+  assert.strictEqual(m.net_profit, 94145);
+  assert.strictEqual(m.margin_percentage, 95.1);
 });
 
 test('OpEx model at 250 users sits at the Supabase price cliff', () => {
@@ -78,7 +78,7 @@ test('OpEx model at 250 users sits at the Supabase price cliff', () => {
   assert.strictEqual(m.supabase_cost, 25); // ≤ 250 agencies → $25
   assert.strictEqual(m.whapi_cost, 75); // 5,000 msgs × $0.015 = $75
   assert.strictEqual(m.qstash_cost, 15); // 6,250 jobs ≤ 10,000 → $15
-  assert.strictEqual(m.lemon_squeezy_fees, 1363); // 5% × $24,750 + 250 × $0.50
-  assert.strictEqual(m.total_opex, 1498);
-  assert.strictEqual(m.net_profit, 23253);
+  assert.strictEqual(m.payoneer_fees, 1100); // 3.99% × $24,750 + 250 × $0.45
+  assert.strictEqual(m.total_opex, 1235);
+  assert.strictEqual(m.net_profit, 23515);
 });

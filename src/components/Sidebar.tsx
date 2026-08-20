@@ -23,7 +23,7 @@ import { fetchWorkspaces, switchWorkspace } from '../lib/storage';
 export type NavigationTab =
   | 'dashboard'
   | 'invoices'
-  | 'sequence'
+  | 'automation'
   | 'templates'
   | 'activity'
   | 'connectors'
@@ -60,8 +60,8 @@ export function Sidebar({ activeTab, onTabChange, unpaidCount, user, onRefreshDa
       badgeColor: 'bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300',
     },
     {
-      id: 'sequence' as NavigationTab,
-      label: 'Recovery Flows',
+      id: 'automation' as NavigationTab,
+      label: 'Automation',
       icon: GitBranch,
       badge: null,
     },
@@ -154,8 +154,8 @@ export function Sidebar({ activeTab, onTabChange, unpaidCount, user, onRefreshDa
 
       {/* Navigation Content List: Visible always on lg+, conditionally on mobile */}
       <div
-        className={`p-3 sm:p-4 ${
-          mobileMenuOpen ? 'block' : 'hidden lg:block'
+        className={`p-3 sm:p-4 transition-all duration-200 ease-out ${
+          mobileMenuOpen ? 'block animate-in slide-in-from-top-2 fade-in duration-200' : 'hidden lg:block'
         }`}
       >
         <div className="space-y-1">

@@ -3,7 +3,6 @@ import {
   Search,
   Filter,
   Plus,
-  RotateCw,
   Copy,
   Check,
   Pause,
@@ -17,10 +16,12 @@ import {
   CreditCard,
   Mail,
   Sparkles,
-  CheckCircle2
+  CheckCircle2,
+  MessageSquare,
+  Phone
 } from 'lucide-react';
 import { Invoice, Sequence, CustomEmailTemplate, UserProfile, ChannelType, AutomationFrequency } from '../types';
-import { renderPlaceholders } from '../lib/storage';
+import { renderPlaceholders, sendInvoiceReminderMulti } from '../lib/storage';
 
 interface InvoicesTableProps {
   invoices: Invoice[];
@@ -30,8 +31,9 @@ interface InvoicesTableProps {
   onSaveInvoice: (inv: Partial<Invoice>) => Promise<any>;
   onTogglePause: (id: string) => Promise<any>;
   onTriggerManualReminder: (id: string) => Promise<any>;
+  onSendViaChannel?: (invoiceId: string, channel: 'email' | 'whatsapp' | 'sms', message?: string) => Promise<any>;
+  onSendMulti?: (invoiceId: string, channels: ChannelType[], message?: string, templateId?: string) => Promise<any>;
   onSendCustomEmail?: (tmpl: CustomEmailTemplate, inv: Invoice) => Promise<any>;
-  onSyncStripe: () => Promise<any>;
   onOpenPublicPortal: (invoiceId: string) => void;
 }
 
@@ -43,8 +45,9 @@ export function InvoicesTable({
   onSaveInvoice,
   onTogglePause,
   onTriggerManualReminder,
+  onSendViaChannel,
+  onSendMulti,
   onSendCustomEmail,
-  onSyncStripe,
   onOpenPublicPortal
 }: InvoicesTableProps) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -52,12 +55,13 @@ export function InvoicesTable({
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [syncing, setSyncing] = useState(false);
   const [sendingId, setSendingId] = useState<string | null>(null);
 
   // Send Email Selection Modal State
   const [sendModalInvoice, setSendModalInvoice] = useState<Invoice | null>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>(customTemplates[0]?.id || 'default_sequence');
+  const [sendChannels, setSendChannels] = useState<ChannelType[]>(['email']);
+  const [sendCustomMessage, setSendCustomMessage] = useState('');
   const [isTransmitting, setIsTransmitting] = useState(false);
 
   // New Invoice Form State
@@ -91,7 +95,7 @@ export function InvoicesTable({
   });
 
   const handleCopyLink = (inv: Invoice) => {
-    // payment_link may be a live Stripe checkout URL or a relative portal path.
+    // payment_link is a branded portal path via Payoneer.
     const fullUrl = inv.payment_link.startsWith('http')
       ? inv.payment_link
       : `${window.location.origin}${inv.payment_link}`;
@@ -132,11 +136,31 @@ export function InvoicesTable({
     }
   };
 
+  const toggleSendChannel = (ch: ChannelType) => {
+    setSendChannels((prev) => {
+      if (prev.includes(ch)) {
+        if (prev.length === 1) return prev; // keep at least one channel
+        return prev.filter((c) => c !== ch);
+      }
+      return [...prev, ch];
+    });
+  };
+
   const handleExecuteSend = async () => {
     if (!sendModalInvoice) return;
     setIsTransmitting(true);
     try {
-      if (selectedTemplateId === 'default_sequence' || !onSendCustomEmail) {
+      if (sendChannels.length > 1 && onSendMulti) {
+        // Simultaneous multi-channel delivery (Email + WhatsApp + SMS).
+        await onSendMulti(
+          sendModalInvoice.id,
+          sendChannels,
+          sendCustomMessage || undefined,
+          selectedTemplateId !== 'default_sequence' ? selectedTemplateId : undefined
+        );
+      } else if (sendChannels[0] !== 'email' && onSendViaChannel) {
+        await onSendViaChannel(sendModalInvoice.id, sendChannels[0], sendCustomMessage || undefined);
+      } else if (selectedTemplateId === 'default_sequence' || !onSendCustomEmail) {
         await onTriggerManualReminder(sendModalInvoice.id);
       } else {
         const targetTmpl = customTemplates.find((t) => t.id === selectedTemplateId);
@@ -147,17 +171,10 @@ export function InvoicesTable({
         }
       }
       setSendModalInvoice(null);
+      setSendChannels(['email']);
+      setSendCustomMessage('');
     } finally {
       setIsTransmitting(false);
-    }
-  };
-
-  const handleSyncStripeClick = async () => {
-    setSyncing(true);
-    try {
-      await onSyncStripe();
-    } finally {
-      setSyncing(false);
     }
   };
 
@@ -173,15 +190,6 @@ export function InvoicesTable({
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
-          <button
-            onClick={handleSyncStripeClick}
-            disabled={syncing}
-            className="px-3.5 py-2 rounded-xl bg-surface2 dark:bg-surface2 hover:bg-line dark:hover:bg-surface2 text-ink dark:text-ink text-xs font-semibold transition-all flex items-center gap-2 border border-line dark:border-line"
-          >
-            <RotateCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin text-primary' : ''}`} />
-            <span>{syncing ? 'Syncing...' : 'Sync Invoices'}</span>
-          </button>
-
           <button
             onClick={() => setIsCreateModalOpen(true)}
             className="px-4 py-2 rounded-xl bg-accent hover:bg-accent-hover text-white text-xs font-bold transition-all flex items-center gap-2 shadow-md shadow-accent/25"
@@ -415,12 +423,12 @@ export function InvoicesTable({
         </div>
       )}
 
-      {/* Select Email / Mail Template to Send Modal */}
+      {/* Select Channel & Send Reminder Modal */}
       {sendModalInvoice && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-primary-strong/60 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="relative w-full max-w-lg max-h-[80vh] overflow-y-auto rounded-3xl bg-white dark:bg-surface border border-line dark:border-line p-6 sm:p-8 shadow-2xl space-y-5">
             <button
-              onClick={() => setSendModalInvoice(null)}
+              onClick={() => { setSendModalInvoice(null); setSendChannels(['email']); setSendCustomMessage(''); }}
               className="absolute top-5 right-5 p-2 rounded-full text-ink3 hover:bg-surface2 dark:hover:bg-surface2"
             >
               <X className="w-5 h-5" />
@@ -428,11 +436,11 @@ export function InvoicesTable({
 
             <div className="flex items-center gap-3 border-b border-line dark:border-line pb-4">
               <div className="w-10 h-10 rounded-2xl bg-primary-soft dark:bg-surface2 text-primary dark:text-secondary flex items-center justify-center shrink-0">
-                <Mail className="w-5 h-5" />
+                <Send className="w-5 h-5" />
               </div>
               <div>
                 <h3 className="text-base font-extrabold text-ink dark:text-white">
-                  Send a Reminder Message
+                  Send a Reminder
                 </h3>
                 <p className="text-xs text-ink2 dark:text-ink2">
                   Client: <span className="font-bold text-ink dark:text-ink">{sendModalInvoice.client_name}</span> ({sendModalInvoice.external_invoice_id})
@@ -441,12 +449,45 @@ export function InvoicesTable({
             </div>
 
             <div className="space-y-4">
-              {/* Select Email Template */}
+              {/* Channel Selector */}
               <div>
                 <label className="block text-xs font-bold text-ink dark:text-ink2 mb-2">
-                  Choose Custom Email or Sequence Step *
+                  Send Via Channels (select one or more)
                 </label>
-                <div className="space-y-2">
+                <div className="grid grid-cols-3 gap-2">
+                  {([
+                    { id: 'email' as const, label: 'Email', icon: Mail, available: !!sendModalInvoice.client_email },
+                    { id: 'whatsapp' as const, label: 'WhatsApp', icon: MessageSquare, available: !!sendModalInvoice.client_phone },
+                    { id: 'sms' as const, label: 'SMS', icon: Phone, available: !!sendModalInvoice.client_phone },
+                  ]).map((ch) => (
+                    <button
+                      key={ch.id}
+                      type="button"
+                      onClick={() => toggleSendChannel(ch.id)}
+                      disabled={!ch.available}
+                      className={`p-3 rounded-xl border text-center transition-all flex flex-col items-center gap-1.5 ${
+                        sendChannels.includes(ch.id)
+                          ? 'border-accent bg-primary-soft dark:bg-surface2 ring-2 ring-accent/20'
+                          : ch.available
+                          ? 'border-line dark:border-line bg-main dark:bg-surface2/40 hover:border-primary'
+                          : 'border-line dark:border-line bg-main dark:bg-surface2/40 opacity-40 cursor-not-allowed'
+                      }`}
+                    >
+                      <ch.icon className={`w-4 h-4 ${sendChannels.includes(ch.id) ? 'text-accent' : 'text-ink3'}`} />
+                      <span className={`text-[11px] font-bold ${sendChannels.includes(ch.id) ? 'text-accent' : 'text-ink dark:text-ink2'}`}>{ch.label}</span>
+                      {!ch.available && <span className="text-[9px] text-ink3">No {ch.id === 'email' ? 'email' : 'phone'}</span>}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Email-specific: template selection */}
+              {sendChannels.includes('email') && (
+                <div>
+                  <label className="block text-xs font-bold text-ink dark:text-ink2 mb-2">
+                    Choose Template or Sequence Step
+                  </label>
+                  <div className="space-y-2">
                     <label
                       onClick={() => setSelectedTemplateId('default_sequence')}
                       className={`p-3 rounded-2xl border text-xs flex items-start gap-3 cursor-pointer transition-all ${
@@ -467,48 +508,68 @@ export function InvoicesTable({
                           Standard Sequence Reminder Step
                         </span>
                         <span className="text-[11px] text-ink2 dark:text-ink2 block mt-0.5">
-                          Trigger the next reminder step in this invoice's recovery flow
+                          Trigger the next reminder step in this invoice&apos;s recovery flow
                         </span>
                       </div>
                     </label>
 
-                  {customTemplates.map((tmpl) => (
-                    <label
-                      key={tmpl.id}
-                      onClick={() => setSelectedTemplateId(tmpl.id)}
-                      className={`p-3 rounded-2xl border text-xs flex items-start gap-3 cursor-pointer transition-all ${
-                        selectedTemplateId === tmpl.id
-                          ? 'bg-primary-soft dark:bg-surface2 border-accent dark:border-accent'
-                          : 'bg-main dark:bg-surface2/40 border-line dark:border-line hover:border-line'
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name="email_tmpl"
-                        checked={selectedTemplateId === tmpl.id}
-                        onChange={() => setSelectedTemplateId(tmpl.id)}
-                        className="mt-0.5 text-primary focus:ring-accent"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-extrabold text-ink dark:text-white truncate">
-                            {tmpl.title}
-                          </span>
-                          <span className="text-[10px] font-bold text-primary dark:text-secondary shrink-0">
-                            From: {tmpl.sender_name}
+                    {customTemplates.map((tmpl) => (
+                      <label
+                        key={tmpl.id}
+                        onClick={() => setSelectedTemplateId(tmpl.id)}
+                        className={`p-3 rounded-2xl border text-xs flex items-start gap-3 cursor-pointer transition-all ${
+                          selectedTemplateId === tmpl.id
+                            ? 'bg-primary-soft dark:bg-surface2 border-accent dark:border-accent'
+                            : 'bg-main dark:bg-surface2/40 border-line dark:border-line hover:border-line'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="email_tmpl"
+                          checked={selectedTemplateId === tmpl.id}
+                          onChange={() => setSelectedTemplateId(tmpl.id)}
+                          className="mt-0.5 text-primary focus:ring-accent"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-extrabold text-ink dark:text-white truncate">
+                              {tmpl.title}
+                            </span>
+                            <span className="text-[10px] font-bold text-primary dark:text-secondary shrink-0">
+                              From: {tmpl.sender_name}
+                            </span>
+                          </div>
+                          <span className="text-[11px] text-ink2 dark:text-ink2 block mt-0.5 truncate">
+                            &lt;{tmpl.sender_email}&gt; &middot; Subject: {tmpl.subject}
                           </span>
                         </div>
-                        <span className="text-[11px] text-ink2 dark:text-ink2 block mt-0.5 truncate">
-                          &lt;{tmpl.sender_email}&gt; • Subject: {tmpl.subject}
-                        </span>
-                      </div>
-                    </label>
-                  ))}
+                      </label>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
 
-              {/* Rendered Live Email Preview */}
-              {selectedTemplateId !== 'default_sequence' && (
+              {/* WhatsApp / SMS: custom message input */}
+              {sendChannels.some((c) => c !== 'email') && (
+                <div>
+                  <label className="block text-xs font-bold text-ink dark:text-ink2 mb-2">
+                    Message (Optional)
+                  </label>
+                  <textarea
+                    value={sendCustomMessage}
+                    onChange={(e) => setSendCustomMessage(e.target.value)}
+                    rows={3}
+                    placeholder={`Leave empty for default ${sendChannels.filter((c) => c !== 'email').join('/').toUpperCase()} reminder message with payment link, or type a custom message...`}
+                    className="w-full px-3 py-2 rounded-xl border border-line dark:border-line bg-main dark:bg-surface2 text-xs text-ink dark:text-white outline-none focus:ring-2 focus:ring-accent resize-none"
+                  />
+                  <p className="text-[10px] text-ink3 mt-1">
+                    {sendChannels.filter((c) => c !== 'email').map((c) => (c === 'whatsapp' ? 'WhatsApp Business API' : 'SMS gateway')).join(' & ')} &middot; Payment link included automatically
+                  </p>
+                </div>
+              )}
+
+              {/* Rendered Email Preview for email channel */}
+              {sendChannels.includes('email') && selectedTemplateId !== 'default_sequence' && (
                 <div className="p-4 rounded-2xl bg-main dark:bg-surface2/80 border border-line dark:border-line text-xs space-y-2">
                   <span className="text-[10px] font-extrabold text-ink3 uppercase tracking-wider block">
                     Rendered Email Message Preview
@@ -550,7 +611,7 @@ export function InvoicesTable({
               <div className="pt-2 flex items-center justify-end gap-3 border-t border-line dark:border-line">
                 <button
                   type="button"
-                  onClick={() => setSendModalInvoice(null)}
+                  onClick={() => { setSendModalInvoice(null); setSendChannels(['email']); setSendCustomMessage(''); }}
                   className="px-4 py-2 rounded-xl text-ink2 dark:text-ink2 hover:bg-surface2 text-xs font-bold transition-all"
                 >
                   Cancel
@@ -566,7 +627,7 @@ export function InvoicesTable({
                   ) : (
                     <>
                       <Send className="w-4 h-4" />
-                      <span>Send Message</span>
+                      <span>Send {sendChannels.length > 1 ? 'via ' + sendChannels.join(' + ') : sendChannels[0] === 'email' ? 'Email' : sendChannels[0] === 'whatsapp' ? 'WhatsApp' : 'SMS'}</span>
                     </>
                   )}
                 </button>

@@ -27,17 +27,26 @@ create table if not exists public.users (
   email text unique not null,
   password_hash text,
   company_name text not null default '',
+  company_phone text,
   subscription_tier text,
   subscription_status text not null default 'pending',
-  lemon_squeezy_customer_id text,
-  lemon_squeezy_subscription_id text,
-  stripe_customer_id text,
   plan_started_at timestamptz,
   plan_period text default 'monthly',
   custom_domain text,
   brand_color text default '#E58233',
   logo_url text,
   email_signature text,
+  payee_name text,
+  payee_country text,
+  payee_email text,
+  payout_method text,
+  bank_name text,
+  bank_iban text,
+  bank_swift text,
+  card_brand text,
+  card_last4 text,
+  card_expiry text,
+  payee_verified boolean default false,
   created_at timestamptz default now()
 );
 
@@ -172,10 +181,12 @@ create table if not exists public.schedules (
   sequence_id text,
   template_id text,
   channels text[] not null default '{email}',
+  invoice_ids text[] not null default '{}',
   active boolean not null default true,
   created_at timestamptz default now()
 );
 create index if not exists schedules_user_idx on public.schedules(user_id);
+alter table if exists public.schedules add column if not exists invoice_ids text[] not null default '{}';
 
 create table if not exists public.team_invites (
   id uuid primary key default gen_random_uuid(),

@@ -16,8 +16,7 @@ import {
 import confetti from 'canvas-confetti';
 import { Invoice, UserProfile } from '../types';
 import { createInvoicePaymentSession } from '../lib/storage';
-
-type PaymentMethod = 'card' | 'bank' | 'paypal' | 'wallet';
+import { PAYMENT_METHOD_FEES, paymentMethodFee, PaymentMethod, PaymentMethodFee } from '../data/plans';
 
 interface PortalAgency {
   company_name: string;
@@ -33,9 +32,6 @@ interface PublicPaymentPortalProps {
   loading?: boolean;
   onBackToApp?: () => void;
 }
-
-const GATEWAY_FEE_RATE = 0.029;
-const GATEWAY_FEE_FLAT = 0.3;
 
 export function PublicPaymentPortal({
   invoice,
@@ -85,20 +81,22 @@ export function PublicPaymentPortal({
     );
   }
 
-  const fee = invoice.amount_due * GATEWAY_FEE_RATE + GATEWAY_FEE_FLAT;
-  const totalDue = invoice.amount_due + fee;
-
   const handlePay = async () => {
     setProcessing(true);
     setError(null);
     try {
       const session = await createInvoicePaymentSession(invoiceId, paymentMethod);
+      if (session.completed) {
+        // Payment confirmed — the invoice was marked paid server-side.
+        setPaid(true);
+        return;
+      }
       if (session.url) {
         // Real provider checkout (card, PayPal, wallets, bank transfers).
         window.location.href = session.url;
         return;
       }
-      setError('Checkout session created but no redirect URL was returned.');
+      setError(session.message || 'Checkout session created but no redirect URL was returned.');
     } catch (err: any) {
       setError(err.message || 'Payment provider failure. Please try another method.');
     } finally {
@@ -122,12 +120,19 @@ export function PublicPaymentPortal({
     });
   };
 
-  const methods: { id: PaymentMethod; label: string; hint: string; icon: React.ElementType }[] = [
-    { id: 'card', label: 'Credit / Debit Card', hint: 'Visa, Mastercard, Amex, Apple Pay & Google Pay', icon: CreditCard },
-    { id: 'paypal', label: 'PayPal', hint: 'Pay with your PayPal balance or linked card', icon: Wallet },
-    { id: 'bank', label: 'Bank Transfer / ACH', hint: 'SEPA, iDEAL and US bank debits', icon: Landmark },
-    { id: 'wallet', label: 'Wallets & Local', hint: 'Apple Pay, Google Pay, Klarna and more', icon: Banknote },
-  ];
+const methods: { id: PaymentMethod; label: string; hint: string; icon: React.ElementType }[] = [
+  { id: 'card', label: 'Credit / Debit Card', hint: 'Visa, Mastercard, Amex, Apple Pay & Google Pay', icon: CreditCard },
+  { id: 'paypal', label: 'PayPal', hint: 'Pay with your PayPal balance or linked card', icon: Wallet },
+  { id: 'bank', label: 'Bank Transfer / ACH', hint: 'SEPA, iDEAL and US bank debits', icon: Landmark },
+  { id: 'wallet', label: 'Wallets & Local', hint: 'Apple Pay, Google Pay, Klarna and more', icon: Banknote },
+];
+
+function feeRateLabel(def: PaymentMethodFee): string {
+  const pct = `${(def.rate * 100).toFixed(2).replace(/\.?0+$/, '')}%`;
+  if (def.cap != null) return `${pct} (max $${def.cap.toFixed(2)})`;
+  if (def.flat) return `${pct} + $${def.flat.toFixed(2)}`;
+  return pct;
+}
 
   return (
     <div className="min-h-screen bg-main dark:bg-main text-ink dark:text-ink flex flex-col justify-between py-8 px-4 sm:px-6 transition-colors">
@@ -269,6 +274,10 @@ export function PublicPaymentPortal({
                         <span className="text-xs font-bold text-ink dark:text-white">{m.label}</span>
                       </div>
                       <p className="text-[10px] text-ink2 mt-1 leading-relaxed">{m.hint}</p>
+                      <p className={`text-[10px] mt-1 font-semibold ${selected ? 'text-accent' : 'text-ink3'}`}>
+                        Payoneer fee: {feeRateLabel(PAYMENT_METHOD_FEES[m.id])} &middot;{' '}
+                        {PAYMENT_METHOD_FEES[m.id].level === 'high' ? 'Higher fee' : 'Lower fee'}
+                      </p>
                     </button>
                   );
                 })}
@@ -279,10 +288,8 @@ export function PublicPaymentPortal({
                   <p className="font-bold text-ink flex items-center gap-1.5">
                     <AlertTriangle className="w-3.5 h-3.5 text-warn" /> Test mode is active on this portal
                   </p>
-                  <p>Test cards: <span className="font-mono text-ink">4242 4242 4242 4242</span> (succeeds) ·{' '}
-                    <span className="font-mono text-ink">4000 0000 0000 0002</span> (declined) ·{' '}
-                    <span className="font-mono text-ink">4000 0000 0000 3155</span> (3DS).</p>
-                  <p>Test bank: routing <span className="font-mono text-ink">110000000</span>, account <span className="font-mono text-ink">000123456789</span>.</p>
+                  <p>Test cards: <span className="font-mono text-ink">4242 4242 4242 4242</span> (succeeds) &middot;{' '}
+                    <span className="font-mono text-ink">4000 0000 0000 0002</span> (declined).</p>
                   <button
                     type="button"
                     onClick={() => setShowTestCards(!showTestCards)}
@@ -292,9 +299,8 @@ export function PublicPaymentPortal({
                   </button>
                   {showTestCards && (
                     <ul className="list-disc pl-4 space-y-0.5">
+                      <li>Bank transfer: use any routing/account number</li>
                       <li>PayPal sandbox: paypal-test@example.com</li>
-                      <li>iDEAL/SEPA: use bank details shown at checkout</li>
-                      <li>3DS challenge: any test OTP works (e.g. 1234)</li>
                     </ul>
                   )}
                 </div>
@@ -307,15 +313,21 @@ export function PublicPaymentPortal({
                 </div>
               )}
 
-              <div className="p-3 rounded-xl bg-surface2 dark:bg-surface2/50 border border-line dark:border-line flex items-start gap-2">
-                <Info className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
-                <p className="text-[11px] text-ink2 dark:text-ink2 leading-relaxed">
-                  A processing fee of <span className="font-bold text-ink dark:text-white">${fee.toFixed(2)}</span>{' '}
-                  (2.9% + $0.30, charged by the payment provider) is added to your invoice total of{' '}
-                  <span className="font-bold text-ink dark:text-white">${invoice.amount_due.toFixed(2)}</span>, for a{' '}
-                  <span className="font-bold text-ink dark:text-white">total of ${totalDue.toFixed(2)}</span>. No hidden fees — ever.
-                </p>
-              </div>
+              {(() => {
+                const def = PAYMENT_METHOD_FEES[paymentMethod];
+                const est = paymentMethodFee(paymentMethod, invoice.amount_due);
+                return (
+                  <div className="p-3 rounded-xl bg-surface2 dark:bg-surface2/50 border border-line dark:border-line flex items-start gap-2">
+                    <Info className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
+                    <p className="text-[11px] text-ink2 dark:text-ink2 leading-relaxed">
+                      Payoneer charges a <span className="font-bold text-ink dark:text-white">{def.level === 'high' ? 'higher' : 'lower'}</span>{' '}
+                      processing fee for {def.label.toLowerCase()}: <span className="font-bold text-ink dark:text-white">{feeRateLabel(def)}</span> —{' '}
+                      about <span className="font-bold text-ink dark:text-white">${est.toFixed(2)}</span> on this invoice. The fee is charged by
+                      Payoneer and applied automatically; the full invoice amount below is exactly what is collected.
+                    </p>
+                  </div>
+                );
+              })()}
 
               <button
                 type="button"
@@ -327,7 +339,7 @@ export function PublicPaymentPortal({
                   <span>Contacting secure payment provider...</span>
                 ) : (
                   <>
-                    <span>Pay ${totalDue.toFixed(2)} {invoice.currency} Securely</span>
+                    <span>Pay {invoice.amount_due.toFixed(2)} {invoice.currency} Securely</span>
                     <ArrowRight className="w-4 h-4" />
                   </>
                 )}
@@ -337,7 +349,7 @@ export function PublicPaymentPortal({
         </div>
 
         <div className="text-center text-xs text-ink3">
-          Powered by <span className="font-bold text-ink dark:text-ink2">Eron SaaS</span> • Stripe & Lemon Squeezy payment rails
+          Powered by <span className="font-bold text-ink dark:text-ink2">Eron SaaS</span> &middot; Secure payments via Payoneer
         </div>
       </div>
       {isPaid && <ConfettiFn trigger={handleConfetti} />}
