@@ -19,7 +19,7 @@ function formatLocalWithOffset(iso: string): { local: string; offset: string } {
 
 export function ReminderLogs({ logs }: ReminderLogsProps) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [channelFilter, setChannelFilter] = useState<'all' | 'email' | 'whatsapp' | 'sms'>('all');
+  const [channelFilter, setChannelFilter] = useState<'all' | 'email' | 'whatsapp' | 'SMS'>('all');
   const [selectedLog, setSelectedLog] = useState<ReminderLog | null>(null);
 
   const filteredLogs = logs.filter((log) => {
@@ -67,7 +67,7 @@ export function ReminderLogs({ logs }: ReminderLogsProps) {
         </div>
 
         <div className="flex items-center gap-1.5">
-          {(['all', 'email', 'whatsapp', 'sms'] as const).map((ch) => (
+          {(['all', 'email', 'whatsapp', 'SMS'] as const).map((ch) => (
             <button
               key={ch}
               onClick={() => setChannelFilter(ch)}
@@ -141,14 +141,14 @@ export function ReminderLogs({ logs }: ReminderLogsProps) {
                         className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase ${
                           log.channel === 'whatsapp'
                             ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
-                            : log.channel === 'sms'
+                            : log.channel === 'SMS'
                             ? 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300'
                             : 'bg-primary-soft text-primary dark:bg-surface2 dark:text-secondary'
                         }`}
                       >
                         {log.channel === 'whatsapp' ? (
                           <MessageSquare className="w-3 h-3" />
-                        ) : log.channel === 'sms' ? (
+                        ) : log.channel === 'SMS' ? (
                           <Smartphone className="w-3 h-3" />
                         ) : (
                           <Mail className="w-3 h-3" />

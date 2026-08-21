@@ -59,48 +59,6 @@ interface SettingsBillingProps {
   onToast: (msg: string) => void;
 }
 
-const COMMON_TIMEZONES = [
-  { value: 'UTC', label: 'UTC (Universal Coordinated Time)' },
-  { value: 'America/New_York', label: 'New York (GMT-5 / EST)' },
-  { value: 'America/Chicago', label: 'Chicago (GMT-6 / CST)' },
-  { value: 'America/Denver', label: 'Denver (GMT-7 / MST)' },
-  { value: 'America/Los_Angeles', label: 'Los Angeles (GMT-8 / PST)' },
-  { value: 'America/Phoenix', label: 'Phoenix (GMT-7 / MST no DST)' },
-  { value: 'America/Toronto', label: 'Toronto (GMT-5 / EST)' },
-  { value: 'America/Mexico_City', label: 'Mexico City (GMT-6 / CST)' },
-  { value: 'America/Sao_Paulo', label: 'Sao Paulo (GMT-3 / BRT)' },
-  { value: 'Europe/London', label: 'London (GMT+0 / GMT)' },
-  { value: 'Europe/Paris', label: 'Paris (GMT+1 / CET)' },
-  { value: 'Europe/Berlin', label: 'Berlin (GMT+1 / CET)' },
-  { value: 'Europe/Madrid', label: 'Madrid (GMT+1 / CET)' },
-  { value: 'Europe/Amsterdam', label: 'Amsterdam (GMT+1 / CET)' },
-  { value: 'Europe/Rome', label: 'Rome (GMT+1 / CET)' },
-  { value: 'Europe/Stockholm', label: 'Stockholm (GMT+1 / CET)' },
-  { value: 'Europe/Warsaw', label: 'Warsaw (GMT+1 / CET)' },
-  { value: 'Europe/Istanbul', label: 'Istanbul (GMT+3 / TRT)' },
-  { value: 'Europe/Moscow', label: 'Moscow (GMT+3 / MSK)' },
-  { value: 'Europe/Dublin', label: 'Dublin (GMT+0 / GMT)' },
-  { value: 'Asia/Dubai', label: 'Dubai (GMT+4 / GST)' },
-  { value: 'Asia/Karachi', label: 'Karachi (GMT+5 / PKT)' },
-  { value: 'Asia/Kolkata', label: 'Mumbai / New Delhi (GMT+5:30 / IST)' },
-  { value: 'Asia/Dhaka', label: 'Dhaka (GMT+6 / BST)' },
-  { value: 'Asia/Bangkok', label: 'Bangkok (GMT+7 / ICT)' },
-  { value: 'Asia/Jakarta', label: 'Jakarta (GMT+7 / WIB)' },
-  { value: 'Asia/Singapore', label: 'Singapore (GMT+8 / SGT)' },
-  { value: 'Asia/Hong_Kong', label: 'Hong Kong (GMT+8 / HKT)' },
-  { value: 'Asia/Shanghai', label: 'Shanghai (GMT+8 / CST)' },
-  { value: 'Asia/Taipei', label: 'Taipei (GMT+8 / CST)' },
-  { value: 'Asia/Seoul', label: 'Seoul (GMT+9 / KST)' },
-  { value: 'Asia/Tokyo', label: 'Tokyo (GMT+9 / JST)' },
-  { value: 'Australia/Sydney', label: 'Sydney (GMT+10 / AEST)' },
-  { value: 'Australia/Melbourne', label: 'Melbourne (GMT+10 / AEST)' },
-  { value: 'Australia/Brisbane', label: 'Brisbane (GMT+10 / AEST)' },
-  { value: 'Pacific/Auckland', label: 'Auckland (GMT+12 / NZST)' },
-  { value: 'Africa/Cairo', label: 'Cairo (GMT+2 / EET)' },
-  { value: 'Africa/Lagos', label: 'Lagos (GMT+1 / WAT)' },
-  { value: 'Africa/Johannesburg', label: 'Johannesburg (GMT+2 / SAST)' },
-];
-
 export function SettingsBilling({
   user,
   usage,
@@ -411,7 +369,7 @@ export function SettingsBilling({
                 <h3 className="text-base font-bold text-ink dark:text-white">This Month's Usage</h3>
               </div>
               <span className="text-xs text-ink3">
-                {usage?.emails_sent ?? 0} emails · {usage?.whatsapp_sent ?? 0} WhatsApp · {usage?.sms_sent ?? 0} SMS · {usage?.ai_generations ?? 0} AI drafts
+                {usage?.emails_sent ?? 0} emails · {usage?.whatsapp_sent ?? 0} WhatsApp · {usage?.SMS_sent ?? 0} SMS · {usage?.ai_generations ?? 0} AI drafts
               </span>
             </div>
 
@@ -420,7 +378,7 @@ export function SettingsBilling({
                 {[
                   { label: 'Emails sent', used: usage?.emails_sent ?? 0, limit: limits.emails_per_month },
                   { label: 'WhatsApp messages', used: usage?.whatsapp_sent ?? 0, limit: limits.whatsapp_per_month },
-                  { label: 'SMS messages', used: usage?.sms_sent ?? 0, limit: limits.sms_per_month },
+                  { label: 'SMS messages', used: usage?.SMS_sent ?? 0, limit: limits.SMS_per_month },
                   { label: 'AI drafts', used: usage?.ai_generations ?? 0, limit: limits.ai_generations },
                 ].map((m) => {
                   const pct = m.limit === -1 ? 0 : Math.min(100, Math.round((m.used / Math.max(1, m.limit)) * 100));

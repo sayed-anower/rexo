@@ -445,7 +445,7 @@ export function SequenceBuilder({ sequences, customTemplates = [], onSaveSequenc
                         onChange={(e) => {
                           if (e.target.value) handleUseTemplate(step.id, e.target.value);
                         }}
-                        className="flex-1 px-3 py-2 rounded-xl border border-line dark:border-line bg-main dark:bg-surface2 text-xs text-ink dark:text-white outline-none focus:ring-2 focus:ring-accent"
+                        className="flex-1 px-3 py-2 rounded-xl border border-line dark:border-line bg-main dark:bg-surface2 text-xs text-ink dark:text-white outline-none focus:ring-2 focus:ring-accent max-w-[60%]"
                       >
                         <option value="">— select a custom email template or write your own below —</option>
                         {customTemplates.map((t) => (

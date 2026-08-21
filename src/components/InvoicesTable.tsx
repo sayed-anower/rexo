@@ -18,10 +18,12 @@ import {
   Sparkles,
   CheckCircle2,
   MessageSquare,
-  Phone
+  Phone,
+  RefreshCw,
+  Trash2
 } from 'lucide-react';
 import { Invoice, Sequence, CustomEmailTemplate, UserProfile, ChannelType, AutomationFrequency } from '../types';
-import { renderPlaceholders, sendInvoiceReminderMulti } from '../lib/storage';
+import { renderPlaceholders, sendInvoiceReminderMulti, absolutePaymentUrl } from '../lib/storage';
 
 interface InvoicesTableProps {
   invoices: Invoice[];
@@ -29,9 +31,10 @@ interface InvoicesTableProps {
   customTemplates?: CustomEmailTemplate[];
   user?: UserProfile;
   onSaveInvoice: (inv: Partial<Invoice>) => Promise<any>;
+  onDeleteInvoice?: (id: string) => Promise<any>;
   onTogglePause: (id: string) => Promise<any>;
   onTriggerManualReminder: (id: string) => Promise<any>;
-  onSendViaChannel?: (invoiceId: string, channel: 'email' | 'whatsapp' | 'sms', message?: string) => Promise<any>;
+  onSendViaChannel?: (invoiceId: string, channel: 'email' | 'whatsapp' | 'SMS', message?: string) => Promise<any>;
   onSendMulti?: (invoiceId: string, channels: ChannelType[], message?: string, templateId?: string) => Promise<any>;
   onSendCustomEmail?: (tmpl: CustomEmailTemplate, inv: Invoice) => Promise<any>;
   onOpenPublicPortal: (invoiceId: string) => void;
@@ -43,6 +46,7 @@ export function InvoicesTable({
   customTemplates = [],
   user,
   onSaveInvoice,
+  onDeleteInvoice,
   onTogglePause,
   onTriggerManualReminder,
   onSendViaChannel,
@@ -56,6 +60,9 @@ export function InvoicesTable({
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [sendingId, setSendingId] = useState<string | null>(null);
+  const [isSavingInvoice, setIsSavingInvoice] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<Invoice | null>(null);
 
   // Send Email Selection Modal State
   const [sendModalInvoice, setSendModalInvoice] = useState<Invoice | null>(null);
@@ -95,36 +102,51 @@ export function InvoicesTable({
   });
 
   const handleCopyLink = (inv: Invoice) => {
-    // payment_link is a branded portal path via Payoneer.
-    const fullUrl = inv.payment_link.startsWith('http')
-      ? inv.payment_link
-      : `${window.location.origin}${inv.payment_link}`;
-    navigator.clipboard.writeText(fullUrl);
+    // payment_link is a branded portal path via Payoneer — always share the
+    // full public URL the client will receive.
+    navigator.clipboard.writeText(absolutePaymentUrl(inv.payment_link));
     setCopiedId(inv.id);
     setTimeout(() => setCopiedId(null), 2000);
   };
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    await onSaveInvoice({
-      client_name: newClientName,
-      client_email: newClientEmail,
-      client_phone: newClientPhone,
-      amount_due: parseFloat(newAmount) || 1200,
-      due_date: newDueDate || new Date().toISOString().split('T')[0],
-      description: newDesc || 'Digital Agency Retainer',
-      status: 'unpaid',
-      currency: 'USD',
-      channels: newChannels,
-      automation_frequency: newAutomation,
-    });
-    setIsCreateModalOpen(false);
-    setNewClientName('');
-    setNewClientEmail('');
-    setNewAmount('');
-    setNewDesc('');
-    setNewChannels(['email']);
-    setNewAutomation('once');
+    if (isSavingInvoice) return;
+    setIsSavingInvoice(true);
+    try {
+      await onSaveInvoice({
+        client_name: newClientName,
+        client_email: newClientEmail,
+        client_phone: newClientPhone,
+        amount_due: parseFloat(newAmount) || 1200,
+        due_date: newDueDate || new Date().toISOString().split('T')[0],
+        description: newDesc || 'Digital Agency Retainer',
+        status: 'unpaid',
+        currency: 'USD',
+        channels: newChannels,
+        automation_frequency: newAutomation,
+      });
+      setIsCreateModalOpen(false);
+      setNewClientName('');
+      setNewClientEmail('');
+      setNewAmount('');
+      setNewDesc('');
+      setNewChannels(['email']);
+      setNewAutomation('once');
+    } finally {
+      setIsSavingInvoice(false);
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!confirmDelete || !onDeleteInvoice) return;
+    setDeletingId(confirmDelete.id);
+    try {
+      await onDeleteInvoice(confirmDelete.id);
+      setConfirmDelete(null);
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   const handleOpenSendModal = (inv: Invoice) => {
@@ -185,7 +207,9 @@ export function InvoicesTable({
         <div>
           <h2 className="text-xl font-bold text-ink dark:text-white">Your Invoices</h2>
           <p className="text-xs text-ink2 dark:text-ink2">
-            Synced from your connected accounting apps. Automatic reminders run on your schedule.
+            Synced from your connected accounting apps — or add one with <span className="font-bold">New Invoice</span>. Use
+            the send icon to remind a client instantly, or open Automation to schedule recurring reminders. Every invoice has
+            a public payment link you can copy or share.
           </p>
         </div>
 
@@ -349,6 +373,17 @@ export function InvoicesTable({
                         >
                           <Eye className="w-4 h-4" />
                         </button>
+
+                        {onDeleteInvoice && (
+                          <button
+                            onClick={() => setConfirmDelete(inv)}
+                            disabled={deletingId === inv.id}
+                            className="p-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/60 text-rose-600 dark:text-rose-400 transition-colors disabled:opacity-50"
+                            title="Delete Invoice"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -458,7 +493,7 @@ export function InvoicesTable({
                   {([
                     { id: 'email' as const, label: 'Email', icon: Mail, available: !!sendModalInvoice.client_email },
                     { id: 'whatsapp' as const, label: 'WhatsApp', icon: MessageSquare, available: !!sendModalInvoice.client_phone },
-                    { id: 'sms' as const, label: 'SMS', icon: Phone, available: !!sendModalInvoice.client_phone },
+                    { id: 'SMS' as const, label: 'SMS', icon: Phone, available: !!sendModalInvoice.client_phone },
                   ]).map((ch) => (
                     <button
                       key={ch.id}
@@ -586,7 +621,7 @@ export function InvoicesTable({
                             amount_due: sendModalInvoice.amount_due,
                             currency: sendModalInvoice.currency,
                             due_date: sendModalInvoice.due_date,
-                            payment_link: sendModalInvoice.payment_link,
+                            payment_link: absolutePaymentUrl(sendModalInvoice.payment_link),
                             company_name: user?.company_name || 'Your Studio',
                           })}
                         </div>
@@ -597,7 +632,7 @@ export function InvoicesTable({
                             amount_due: sendModalInvoice.amount_due,
                             currency: sendModalInvoice.currency,
                             due_date: sendModalInvoice.due_date,
-                            payment_link: sendModalInvoice.payment_link,
+                            payment_link: absolutePaymentUrl(sendModalInvoice.payment_link),
                             company_name: user?.company_name || 'Your Studio',
                           })}
                         </div>
@@ -748,7 +783,7 @@ export function InvoicesTable({
                   Reminder Channels
                 </label>
                 <div className="grid grid-cols-3 gap-2">
-                  {(['email', 'whatsapp', 'sms'] as ChannelType[]).map((ch) => (
+                  {(['email', 'whatsapp', 'SMS'] as ChannelType[]).map((ch) => (
                     <button
                       key={ch}
                       type="button"
@@ -782,11 +817,66 @@ export function InvoicesTable({
 
               <button
                 type="submit"
-                className="w-full py-3 px-4 rounded-xl bg-accent hover:bg-accent-hover text-white font-bold text-xs transition-all shadow-md"
+                disabled={isSavingInvoice}
+                className="w-full py-3 px-4 rounded-xl bg-accent hover:bg-accent-hover text-white font-bold text-xs transition-all shadow-md disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
-                Save Invoice & Attach Sequence
+                {isSavingInvoice ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Saving…</span>
+                  </>
+                ) : (
+                  'Save Invoice & Attach Sequence'
+                )}
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Invoice Confirmation Modal */}
+      {confirmDelete && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-primary-strong/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="relative w-full max-w-sm rounded-3xl bg-white dark:bg-surface border border-line dark:border-line p-6 sm:p-8 shadow-2xl">
+            <div className="flex items-start gap-3 mb-5">
+              <div className="w-10 h-10 rounded-2xl bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-extrabold text-ink dark:text-white">Delete this invoice?</h3>
+                <p className="text-xs text-ink2 dark:text-ink2 mt-1">
+                  <span className="font-bold">{confirmDelete.external_invoice_id}</span> ({confirmDelete.client_name}) and its
+                  reminder history will be permanently removed. Automated reminders for it stop immediately.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(null)}
+                className="px-4 py-2 rounded-xl text-ink2 dark:text-ink2 hover:bg-surface2 text-xs font-bold transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                disabled={deletingId === confirmDelete.id}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all shadow-md disabled:opacity-60 flex items-center gap-2"
+              >
+                {deletingId === confirmDelete.id ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Deleting…</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete Invoice</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

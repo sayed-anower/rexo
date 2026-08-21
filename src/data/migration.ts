@@ -133,7 +133,7 @@ create table if not exists public.usage (
   month text not null,
   emails_sent integer not null default 0,
   whatsapp_sent integer not null default 0,
-  sms_sent integer not null default 0,
+  SMS_sent integer not null default 0,
   ai_generations integer not null default 0,
   reminders_delivered integer not null default 0,
   amount_recovered numeric not null default 0,
@@ -201,6 +201,11 @@ create table if not exists public.schedules (
 );
 create index if not exists schedules_user_idx on public.schedules(user_id);
 alter table if exists public.schedules add column if not exists invoice_ids text[] not null default '{}';
+-- kind: 'automation' = template + cadence schedule, 'recovery' = day-offset
+-- reminders driven by the steps of the linked recovery flow (sequence_id).
+alter table if exists public.schedules add column if not exists kind text not null default 'automation';
+-- interval_minutes: cadence for minutely/hourly automations (e.g. every 15 min).
+alter table if exists public.schedules add column if not exists interval_minutes integer;
 
 -- Team invite links: owner shares a link; the recipient signs up/signs in
 -- (verified by a one-time email code) and joins the owner's workspace.

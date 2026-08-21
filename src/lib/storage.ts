@@ -105,6 +105,14 @@ export function formatMoney(value: number): string {
   }).format(value);
 }
 
+// Payment links are stored as portal paths ("/pay/<id>"); previews and copy
+// actions always show the full public URL the client will receive.
+export function absolutePaymentUrl(link: string | undefined | null): string {
+  const raw = String(link || '');
+  if (/^https?:\/\//i.test(raw)) return raw;
+  return `${window.location.origin}${raw.startsWith('/') ? '' : '/'}${raw}`;
+}
+
 // 1. AUTH & USER PROFILE (real session cookie)
 export async function fetchUserProfile(): Promise<UserProfile | null> {
   try {
@@ -208,6 +216,10 @@ export async function toggleInvoiceSequencePause(invoiceId: string): Promise<Inv
   return data.invoice;
 }
 
+export async function deleteInvoice(invoiceId: string): Promise<{ success: boolean }> {
+  return apiFetch(`/api/invoices/${invoiceId}`, { method: 'DELETE' });
+}
+
 export async function payInvoice(invoiceId: string): Promise<Invoice> {
   const data = await apiFetch<{ success: boolean; invoice: Invoice }>(`/api/invoices/${invoiceId}/pay`, { method: 'POST' });
   return data.invoice;
@@ -256,7 +268,7 @@ export async function triggerManualReminder(invoiceId: string): Promise<Reminder
 
 export async function sendInvoiceReminder(
   invoiceId: string,
-  channel: 'email' | 'whatsapp' | 'sms',
+  channel: 'email' | 'whatsapp' | 'SMS',
   message?: string,
   options?: { templateId?: string }
 ): Promise<{ success: boolean; channel: string; errors?: { channel: string; message: string }[] }> {
@@ -268,7 +280,7 @@ export async function sendInvoiceReminder(
 
 export async function sendInvoiceReminderMulti(
   invoiceId: string,
-  channels: ('email' | 'whatsapp' | 'sms')[],
+  channels: ('email' | 'whatsapp' | 'SMS')[],
   message?: string,
   templateId?: string
 ): Promise<{ success: boolean; message: string; channels: string[]; errors?: { channel: string; message: string }[] }> {

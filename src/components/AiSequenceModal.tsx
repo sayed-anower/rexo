@@ -191,7 +191,7 @@ export function AiSequenceModal({
                         setGeneratedSteps((prev) =>
                           (prev || []).map((s) =>
                             s.id === step.id
-                              ? { ...s, channel: e.target.value as 'email' | 'whatsapp' | 'sms' }
+                              ? { ...s, channel: e.target.value as 'email' | 'whatsapp' | 'SMS' }
                               : s
                           )
                         )
@@ -200,7 +200,7 @@ export function AiSequenceModal({
                     >
                       <option value="email">Email</option>
                       <option value="whatsapp">WhatsApp</option>
-                      <option value="sms">SMS</option>
+                      <option value="SMS">SMS</option>
                     </select>
                     <span className="text-ink3">Days to due</span>
                     <input

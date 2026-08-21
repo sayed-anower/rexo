@@ -28,7 +28,7 @@ import { MIGRATION_SQL } from './src/data/migration';
 import { SubscriptionTier, UserProfile } from './src/types';
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 // ==========================================
 // HELPERS: CONFIG, KEYS & PLACEHOLDER DETECTION
@@ -49,6 +49,15 @@ function isPlaceholder(v: string | undefined): boolean {
 function appUrl(): string {
   const u = process.env.APP_URL || 'http://localhost:3000';
   return isPlaceholder(u) ? 'http://localhost:3000' : u.replace(/\/$/, '');
+}
+
+// Payment links are stored relative ("/pay/<id>") but every message template
+// variable must expand to a clickable public portal URL, so always absolutize
+// against APP_URL before rendering into an email / WhatsApp / SMS message.
+function absolutePaymentLink(link: string | undefined | null): string {
+  const raw = String(link || '');
+  if (/^https?:\/\//i.test(raw)) return raw;
+  return `${appUrl()}${raw.startsWith('/') ? '' : '/'}${raw}`;
 }
 
 interface TestOverrides {
@@ -482,7 +491,7 @@ async function requireUser(
 interface UsageRow {
   emails_sent: number;
   whatsapp_sent: number;
-  sms_sent: number;
+  SMS_sent: number;
   ai_generations: number;
   reminders_delivered: number;
   amount_recovered: number;
@@ -491,15 +500,15 @@ interface UsageRow {
 async function getUsage(uid: string, month: string): Promise<UsageRow> {
   const sb = getSupabase();
   if (!sb) {
-    return { emails_sent: 0, whatsapp_sent: 0, sms_sent: 0, ai_generations: 0, reminders_delivered: 0, amount_recovered: 0 };
+    return { emails_sent: 0, whatsapp_sent: 0, SMS_sent: 0, ai_generations: 0, reminders_delivered: 0, amount_recovered: 0 };
   }
   const { data } = await sb.from('usage').select('*').eq('user_id', uid).eq('month', month).maybeSingle();
-  if (!data) return { emails_sent: 0, whatsapp_sent: 0, sms_sent: 0, ai_generations: 0, reminders_delivered: 0, amount_recovered: 0 };
+  if (!data) return { emails_sent: 0, whatsapp_sent: 0, SMS_sent: 0, ai_generations: 0, reminders_delivered: 0, amount_recovered: 0 };
   const u = data as unknown as UsageRow;
   return {
     emails_sent: Number(u.emails_sent) || 0,
     whatsapp_sent: Number(u.whatsapp_sent) || 0,
-    sms_sent: Number(u.sms_sent) || 0,
+    SMS_sent: Number(u.SMS_sent) || 0,
     ai_generations: Number(u.ai_generations) || 0,
     reminders_delivered: Number(u.reminders_delivered) || 0,
     amount_recovered: Number(u.amount_recovered) || 0,
@@ -513,7 +522,7 @@ async function addUsage(uid: string, partial: Partial<UsageRow>): Promise<UsageR
   const next: UsageRow = {
     emails_sent: current.emails_sent + (partial.emails_sent || 0),
     whatsapp_sent: current.whatsapp_sent + (partial.whatsapp_sent || 0),
-    sms_sent: current.sms_sent + (partial.sms_sent || 0),
+    SMS_sent: current.SMS_sent + (partial.SMS_sent || 0),
     ai_generations: current.ai_generations + (partial.ai_generations || 0),
     reminders_delivered: current.reminders_delivered + (partial.reminders_delivered || 0),
     amount_recovered: current.amount_recovered + (partial.amount_recovered || 0),
@@ -529,7 +538,7 @@ async function addUsage(uid: string, partial: Partial<UsageRow>): Promise<UsageR
 // ==========================================
 // PLAN ENFORCEMENT (server-side, per action)
 // ==========================================
-type LimitKind = 'tracked_invoices' | 'emails' | 'whatsapp' | 'sms' | 'ai_generations';
+type LimitKind = 'tracked_invoices' | 'emails' | 'whatsapp' | 'SMS' | 'ai_generations';
 
 function assertPlanActive(user: { profile: UserProfile }): { ok: boolean; code?: string; message?: string } {
   if (!user.profile.subscription_tier || user.profile.subscription_status !== 'active') {
@@ -567,9 +576,9 @@ async function assertLimit(
   } else if (kind === 'whatsapp') {
     used = usage.whatsapp_sent;
     limit = plan.limits.whatsapp_per_month;
-  } else if (kind === 'sms') {
-    used = usage.sms_sent;
-    limit = plan.limits.sms_per_month;
+  } else if (kind === 'SMS') {
+    used = usage.SMS_sent;
+    limit = plan.limits.SMS_per_month;
   } else {
     used = usage.ai_generations;
     limit = plan.limits.ai_generations;
@@ -765,14 +774,14 @@ async function sendWhatsAppViaWhapi(opts: { to: string; message: string }) {
   return { provider: 'whapi', id: json.message_id || json.messages?.[0]?.id || `wa_${Date.now()}` };
 }
 
-async function sendSmsViaVonage(opts: { to: string; body: string }): Promise<{ provider: string; id: string }> {
+async function sendSMSViaVonage(opts: { to: string; body: string }): Promise<{ provider: string; id: string }> {
   const apiKey = effectiveKey('VONAGE_API_KEY');
   const apiSecret = effectiveKey('VONAGE_API_SECRET');
   const from = effectiveKey('VONAGE_FROM_NUMBER');
   if (!apiKey || !apiSecret || !from) {
     throw new ProviderError('SMS', 'SMS is not configured (VONAGE_API_KEY, VONAGE_API_SECRET, VONAGE_FROM_NUMBER).');
   }
-  const res = await fetch('https://rest.nexmo.com/sms/json', {
+  const res = await fetch('https://rest.nexmo.com/SMS/json', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ api_key: apiKey, api_secret: apiSecret, from, to: opts.to, text: opts.body }),
@@ -782,7 +791,7 @@ async function sendSmsViaVonage(opts: { to: string; body: string }): Promise<{ p
   if (!res.ok || (msg && msg.status !== '0')) {
     throw new Error(msg?.['error-text'] || json['error-text'] || 'Vonage SMS send failed');
   }
-  return { provider: 'vonage', id: msg?.['message-id'] || `sms_${Date.now()}` };
+  return { provider: 'vonage', id: msg?.['message-id'] || `SMS_${Date.now()}` };
 }
 
 async function scheduleQStashReminder(payload: unknown, delaySeconds = 0) {
@@ -850,7 +859,9 @@ async function ensurePayoneerPaymentLink(inv: {
     (sb ? (await sb.from('invoices').select('payment_link').eq('id', inv.id).maybeSingle()).data?.payment_link : '') ||
     '';
   if (cached && /^https?:\/\//.test(cached)) return cached;
-  return `/pay/${inv.id}`;
+  // Direct payment: the branded public portal link, always absolute so it is
+  // clickable from any email client or phone.
+  return absolutePaymentLink(`/pay/${inv.id}`);
 }
 
 async function createPlanCheckout(
@@ -1602,6 +1613,21 @@ app.post('/api/invoices/:id/toggle-pause', async (req, res) => {
   res.json({ success: true, invoice: normalizeInvoice(data) });
 });
 
+app.delete('/api/invoices/:id', async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const sb = getSupabase();
+  if (!sb) return dbError(res);
+  const { data: target } = await sb.from('invoices').select('id').eq('id', req.params.id).eq('user_id', user.profile.id).maybeSingle();
+  if (!target) return res.status(404).json({ error: 'NOT_FOUND', message: 'Invoice not found.' });
+  // Remove the invoice plus its reminder history so logs never reference a
+  // deleted record. Schedules keep working — an id that no longer resolves is
+  // simply skipped by the cron worker.
+  await sb.from('reminder_logs').delete().eq('invoice_id', target.id).eq('user_id', user.profile.id);
+  await sb.from('invoices').delete().eq('id', target.id).eq('user_id', user.profile.id);
+  res.json({ success: true });
+});
+
 // ==========================================
 // 5. SEQUENCES / TEMPLATES / LOGS / USAGE / SCHEDULING / INTEGRATIONS
 // ==========================================
@@ -1675,7 +1701,7 @@ app.post('/api/usage', async (req, res) => {
   if (!user) return;
   const partial = req.body || {};
   const applicable: Partial<UsageRow> = {};
-  for (const k of ['emails_sent', 'whatsapp_sent', 'sms_sent', 'ai_generations', 'reminders_delivered', 'amount_recovered']) {
+  for (const k of ['emails_sent', 'whatsapp_sent', 'SMS_sent', 'ai_generations', 'reminders_delivered', 'amount_recovered']) {
     if (typeof partial[k] === 'number' && partial[k] !== 0) (applicable as any)[k] = partial[k];
   }
   const usage = await addUsage(user.profile.id, applicable);
@@ -1714,15 +1740,20 @@ app.post('/api/scheduling', async (req, res) => {
 
 // ==========================================
 // MULTIPLE AUTOMATION SCHEDULES (per-account)
-// Each schedule targets a chosen set of invoices (or all), sends with ONE
-// selected message template (sequence selection removed), through its own
-// channel set (email / WhatsApp / SMS — any combination), at a fixed time of
-// day. Frequencies: once (runs a single time, then switches off),
-// urgent (multiple times per day — every 2 hours), daily, weekly, monthly,
-// yearly. QStash re-arms each run to the exact next occurrence so no send is
-// ever missed, and paid invoices are always skipped automatically.
+// Two kinds of schedule live in the same table:
+//  • kind = 'automation' — sends ONE selected message template on a cadence
+//    (once, every N minutes, every N hours, daily, weekly, monthly, yearly)
+//    at a fixed local time in any region's timezone. The lowest cadence
+//    (every 1 minute) is gated per plan via min_automation_interval_mins.
+//  • kind = 'recovery' — no timing to pick: reminders fire based on each
+//    invoice's due date, driven by the day offsets of the linked recovery
+//    flow's steps (e.g. "3 days before due", "on due date", "3 days overdue")
+//    via WhatsApp / email / SMS.
+// Every schedule targets one, many or all invoices. QStash re-arms each run
+// to the exact next occurrence so no send is ever missed, and paid invoices
+// are always skipped automatically.
 // ==========================================
-const AUTOMATION_FREQUENCIES = ['once', 'urgent', 'daily', 'weekly', 'monthly', 'yearly'];
+const AUTOMATION_FREQUENCIES = ['once', 'minutely', 'hourly', 'urgent', 'daily', 'weekly', 'monthly', 'yearly'];
 const SCHEDULE_FREQ_SECS: Record<string, number> = {
   urgent: 2 * 60 * 60,
   daily: 24 * 60 * 60,
@@ -1736,7 +1767,9 @@ function normalizeSchedule(r: any) {
     id: r.id,
     user_id: r.user_id,
     name: r.name || 'Automation Schedule',
+    kind: r.kind === 'recovery' ? 'recovery' : 'automation',
     frequency: r.frequency || 'daily',
+    interval_minutes: r.interval_minutes != null ? Number(r.interval_minutes) : undefined,
     time_of_day: r.time_of_day || '09:00',
     timezone: r.timezone || 'UTC',
     sequence_id: r.sequence_id || undefined,
@@ -1745,6 +1778,104 @@ function normalizeSchedule(r: any) {
     invoice_ids: Array.isArray(r.invoice_ids) ? r.invoice_ids : [],
     active: Boolean(r.active),
     created_at: r.created_at,
+  };
+}
+
+// Shared create/update validation for automation schedules. Returns either an
+// error response or the sanitized row values.
+async function validateSchedulePayload(
+  user: { profile: UserProfile },
+  s: any
+): Promise<{ error?: string; status?: number; message?: string; values?: Record<string, unknown> }> {
+  const kind: 'automation' | 'recovery' = s.kind === 'recovery' ? 'recovery' : 'automation';
+  const channels = Array.isArray(s.channels) && s.channels.length ? s.channels.filter((c: string) => ['email', 'whatsapp', 'SMS'].includes(c)) : ['email'];
+  const invoiceIds = Array.isArray(s.invoice_ids) ? s.invoice_ids.filter((x: unknown) => typeof x === 'string') : [];
+  const timezone = typeof s.timezone === 'string' && s.timezone.trim() ? s.timezone.trim() : Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+
+  if (kind === 'recovery') {
+    // Recovery schedules have NO user-selected timing: reminders follow the
+    // linked recovery flow's day offsets relative to each due date. The cron
+    // still needs a daily send window, so a fixed 09:00 local slot is used.
+    if (!s.sequence_id) {
+      return { error: 'SEQUENCE_REQUIRED', status: 400, message: 'Pick the recovery flow this schedule should follow.' };
+    }
+    const sb = getSupabase();
+    const { data: seq } = await sb!
+      .from('sequences')
+      .select('id, steps')
+      .eq('id', s.sequence_id)
+      .eq('user_id', user.profile.id)
+      .maybeSingle();
+    if (!seq) {
+      return { error: 'SEQUENCE_NOT_FOUND', status: 404, message: 'Recovery flow not found — pick one of your flows.' };
+    }
+    const steps = typeof seq.steps === 'string' ? JSON.parse(seq.steps || '[]') : seq.steps || [];
+    if (!Array.isArray(steps) || steps.length === 0) {
+      return { error: 'SEQUENCE_EMPTY', status: 400, message: 'That recovery flow has no steps — add at least one step first.' };
+    }
+    return {
+      values: {
+        kind,
+        name: s.name || 'Recovery Schedule',
+        frequency: 'daily',
+        interval_minutes: null,
+        time_of_day: '09:00',
+        timezone,
+        sequence_id: s.sequence_id,
+        template_id: null,
+        channels,
+        invoice_ids: invoiceIds,
+        active: s.active !== false,
+      },
+    };
+  }
+
+  // Template-driven automation: exactly one template is required.
+  if (!s.template_id) {
+    return { error: 'TEMPLATE_REQUIRED', status: 400, message: 'Select a message template for this automation.' };
+  }
+  const sb = getSupabase();
+  const { data: tmpl } = await sb!
+    .from('custom_email_templates')
+    .select('id')
+    .eq('id', s.template_id)
+    .eq('user_id', user.profile.id)
+    .maybeSingle();
+  if (!tmpl) {
+    return { error: 'TEMPLATE_NOT_FOUND', status: 404, message: 'Template not found — pick one of your message templates.' };
+  }
+
+  const freq = AUTOMATION_FREQUENCIES.includes(s.frequency) ? s.frequency : 'daily';
+  let intervalMinutes: number | null = null;
+  if (freq === 'minutely' || freq === 'hourly') {
+    const raw = Number(s.interval_minutes);
+    intervalMinutes = freq === 'hourly' ? Math.max(1, Math.round(raw || 1)) * 60 : Math.max(1, Math.round(raw || 30));
+    // Plan gate: the lowest allowed cadence (down to every 1 minute) is a
+    // per-plan limit so short intervals cannot hammer provider quotas.
+    const minAllowed = PLAN_BY_ID[user.profile.subscription_tier!]?.limits?.min_automation_interval_mins ?? 60;
+    if (intervalMinutes < minAllowed) {
+      return {
+        error: 'PLAN_LIMIT',
+        status: 402,
+        message: `Your ${user.profile.subscription_tier} plan allows automations as often as every ${minAllowed} minute${minAllowed === 1 ? '' : 's'}. Upgrade for faster cadences.`,
+      };
+    }
+  }
+
+  return {
+    values: {
+      kind,
+      name: s.name || 'Automation Schedule',
+      frequency: freq,
+      interval_minutes: intervalMinutes,
+      time_of_day: /^\d{2}:\d{2}$/.test(String(s.time_of_day || '')) ? s.time_of_day : '09:00',
+      timezone,
+      sequence_id: null,
+      template_id: s.template_id,
+      channels,
+      invoice_ids: invoiceIds,
+      active: s.active !== false,
+    },
   };
 }
 
@@ -1760,40 +1891,20 @@ app.get('/api/schedules', async (req, res) => {
 app.post('/api/schedules', async (req, res) => {
   const user = await requireUser(req, res);
   if (!user) return;
+  const active = assertPlanActive(user);
+  if (!active.ok) return res.status(402).json(active);
   const sb = getSupabase();
   if (!sb) return dbError(res);
-  const s = req.body || {};
 
-  const freq = AUTOMATION_FREQUENCIES.includes(s.frequency) ? s.frequency : 'daily';
-  if (!s.template_id) {
-    return res.status(400).json({ error: 'TEMPLATE_REQUIRED', message: 'Select a message template for this automation schedule.' });
-  }
-  const { data: tmpl } = await sb
-    .from('custom_email_templates')
-    .select('id')
-    .eq('id', s.template_id)
-    .eq('user_id', user.profile.id)
-    .maybeSingle();
-  if (!tmpl) {
-    return res.status(404).json({ error: 'TEMPLATE_NOT_FOUND', message: 'Template not found — pick one of your message templates.' });
+  const check = await validateSchedulePayload(user, req.body || {});
+  if (!check.values) {
+    return res.status(check.status || 400).json({ error: check.error, message: check.message });
   }
 
-  const id = s.id || `sched_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  const id = (req.body || {}).id || `sched_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
   const { data, error } = await sb
     .from('schedules')
-    .upsert({
-      id,
-      user_id: user.profile.id,
-      name: s.name || 'Automation Schedule',
-      frequency: freq,
-      time_of_day: s.time_of_day || '09:00',
-      timezone: s.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
-      sequence_id: null,
-      template_id: s.template_id,
-      channels: Array.isArray(s.channels) && s.channels.length ? s.channels : ['email'],
-      invoice_ids: Array.isArray(s.invoice_ids) && s.invoice_ids.length ? s.invoice_ids : [],
-      active: s.active !== false,
-    })
+    .upsert({ id, user_id: user.profile.id, ...check.values })
     .select('*')
     .single();
   if (error) return res.status(500).json({ error: 'SCHEDULE_SAVE_FAILED', message: error.message });
@@ -1805,35 +1916,18 @@ app.put('/api/schedules/:id', async (req, res) => {
   if (!user) return;
   const sb = getSupabase();
   if (!sb) return dbError(res);
-  const s = req.body || {};
 
-  const freq = AUTOMATION_FREQUENCIES.includes(s.frequency) ? s.frequency : 'daily';
-  if (!s.template_id) {
-    return res.status(400).json({ error: 'TEMPLATE_REQUIRED', message: 'Select a message template for this automation schedule.' });
-  }
-  const { data: tmpl } = await sb
-    .from('custom_email_templates')
-    .select('id')
-    .eq('id', s.template_id)
-    .eq('user_id', user.profile.id)
-    .maybeSingle();
-  if (!tmpl) {
-    return res.status(404).json({ error: 'TEMPLATE_NOT_FOUND', message: 'Template not found — pick one of your message templates.' });
+  const { data: existing } = await sb.from('schedules').select('*').eq('id', req.params.id).eq('user_id', user.profile.id).maybeSingle();
+  if (!existing) return res.status(404).json({ error: 'NOT_FOUND', message: 'Schedule not found.' });
+
+  const check = await validateSchedulePayload(user, req.body || {});
+  if (!check.values) {
+    return res.status(check.status || 400).json({ error: check.error, message: check.message });
   }
 
   const { data, error } = await sb
     .from('schedules')
-    .update({
-      name: s.name,
-      frequency: freq,
-      time_of_day: s.time_of_day,
-      timezone: s.timezone,
-      sequence_id: null,
-      template_id: s.template_id,
-      channels: Array.isArray(s.channels) && s.channels.length ? s.channels : ['email'],
-      invoice_ids: Array.isArray(s.invoice_ids) ? s.invoice_ids : [],
-      active: s.active,
-    })
+    .update(check.values)
     .eq('id', req.params.id)
     .eq('user_id', user.profile.id)
     .select('*')
@@ -1845,8 +1939,12 @@ app.put('/api/schedules/:id', async (req, res) => {
 // Seconds until the exact next run for a schedule, computed in the schedule's
 // own timezone. The cron re-arms itself to this delay after every run so
 // automation never misses a send.
-function nextRunDelaySeconds(sched: { frequency?: string; time_of_day?: string; timezone?: string }, now: Date): number {
+function nextRunDelaySeconds(sched: { frequency?: string; time_of_day?: string; timezone?: string; interval_minutes?: number }, now: Date): number {
   if (sched.frequency === 'urgent') return SCHEDULE_FREQ_SECS.urgent;
+  if (sched.frequency === 'minutely' || sched.frequency === 'hourly') {
+    const mins = Math.max(1, Number(sched.interval_minutes) || (sched.frequency === 'hourly' ? 60 : 30));
+    return mins * 60;
+  }
   const days = SCHEDULE_FREQ_SECS[sched.frequency || 'daily'] / 86400 || 1;
   const [h, m] = String(sched.time_of_day || '09:00').split(':').map(Number);
   if (Number.isNaN(h) || Number.isNaN(m)) return days * 86400;
@@ -2104,11 +2202,11 @@ app.get('/api/integrations', async (req, res) => {
       webhook_configured: false,
     });
   }
-  if (!existing.has('sms') && effectiveKey('VONAGE_API_KEY')) {
+  if (!existing.has('SMS') && effectiveKey('VONAGE_API_KEY')) {
     rows.push({
-      id: `int_pseudo_sms`,
+      id: `int_pseudo_SMS`,
       user_id: user.profile.id,
-      provider: 'sms',
+      provider: 'SMS',
       category: 'communication',
       is_active: true,
       name: 'Business SMS',
@@ -3028,6 +3126,7 @@ app.post('/api/custom-emails/send', async (req, res) => {
   try {
     // Canonical variable syntax is [client_name] — the fixed, finite variable
     // set. Every variable auto-fills with the invoice + agency data on send.
+    const payLink = await ensurePayoneerPaymentLink(inv).catch(() => absolutePaymentLink(inv.payment_link));
     const amount =
       (inv.currency && inv.currency !== 'USD' ? `${inv.currency} ` : '') +
       new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(Number(inv.amount_due));
@@ -3038,7 +3137,8 @@ app.post('/api/custom-emails/send', async (req, res) => {
         .replace(/\[amount_due\]/gi, amount)
         .replace(/\[currency\]/gi, inv.currency)
         .replace(/\[due_date\]/gi, inv.due_date)
-        .replace(/\[payment_link\]/gi, inv.payment_link)
+        .replace(/\[payment_link\]/gi, payLink)
+        .replace(/\[invoice_link\]/gi, payLink)
         .replace(/\[company_name\]/gi, user.profile.company_name)
         .replace(/\[your_name\]/gi, user.profile.company_name);
 
@@ -3122,12 +3222,12 @@ function appendSignature(html: string, signature: string): string {
   return `${html}<div style="margin-top:20px;padding-top:14px;border-top:1px solid #e5e5e5;color:#555555;font-size:13px;">${textToHtml(sig)}</div>`;
 }
 
-function defaultReminderText(inv: any, payLink: string, channel: 'whatsapp' | 'sms' | 'email'): string {
+function defaultReminderText(inv: any, payLink: string, channel: 'whatsapp' | 'SMS' | 'email'): string {
   const amount = `$${Number(inv.amount_due).toFixed(2)}`;
   if (channel === 'whatsapp') {
     return `Hello ${inv.client_name}, this is a payment reminder for invoice ${inv.external_invoice_id} for ${amount} ${inv.currency}, due on ${inv.due_date}. Please pay securely here: ${payLink}`;
   }
-  if (channel === 'sms') {
+  if (channel === 'SMS') {
     return `Hi ${inv.client_name}, invoice ${inv.external_invoice_id} for ${amount} ${inv.currency} (due ${inv.due_date}) is due. Pay securely here: ${payLink}`;
   }
   return `Hi ${inv.client_name},\n\nThis is a payment reminder for invoice ${inv.external_invoice_id} for ${amount} ${inv.currency}, due on ${inv.due_date}.\n\nYou can pay instantly and securely here:\n${payLink}\n\nThank you.`;
@@ -3140,10 +3240,10 @@ app.post('/api/invoices/:id/send', async (req, res) => {
   if (!active.ok) return res.status(402).json(active);
 
   const { channel, channels, message, templateId } = req.body || {};
-  const wanted: ('email' | 'whatsapp' | 'sms')[] =
+  const wanted: ('email' | 'whatsapp' | 'SMS')[] =
     Array.isArray(channels) && channels.length
-      ? channels.filter((c: string) => ['email', 'whatsapp', 'sms'].includes(c))
-      : (['email', 'whatsapp', 'sms'].includes(channel) ? [channel] : ['email']);
+      ? channels.filter((c: string) => ['email', 'whatsapp', 'SMS'].includes(c))
+      : (['email', 'whatsapp', 'SMS'].includes(channel) ? [channel] : ['email']);
   if (!wanted.length) return res.status(400).json({ error: 'NO_CHANNEL', message: 'Select at least one channel (email, WhatsApp or SMS).' });
 
   const sb = getSupabase();
@@ -3189,8 +3289,8 @@ app.post('/api/invoices/:id/send', async (req, res) => {
         continue;
       }
 
-      const limit = ch === 'sms'
-        ? await assertLimit(user.profile.id, user.profile.subscription_tier!, 'sms', { soft: true })
+      const limit = ch === 'SMS'
+        ? await assertLimit(user.profile.id, user.profile.subscription_tier!, 'SMS', { soft: true })
         : await assertLimit(user.profile.id, user.profile.subscription_tier!, ch === 'whatsapp' ? 'whatsapp' : 'emails');
       if (!limit.ok) {
         errors.push({ channel: ch, message: limit.message });
@@ -3206,11 +3306,11 @@ app.post('/api/invoices/:id/send', async (req, res) => {
           : message || defaultReminderText(inv, payLink, 'whatsapp');
         dispatch = await sendWhatsAppViaWhapi({ to: inv.client_phone, message: msg });
         preview = `${dispatch.provider.toUpperCase()} ${dispatch.id} → WhatsApp ${inv.client_phone}`;
-      } else if (ch === 'sms') {
+      } else if (ch === 'SMS') {
         const body = tmpl
           ? renderInvoiceText(tmpl.body, inv, profile, payLink)
-          : message || defaultReminderText(inv, payLink, 'sms');
-        dispatch = await sendSmsViaVonage({ to: inv.client_phone, body });
+          : message || defaultReminderText(inv, payLink, 'SMS');
+        dispatch = await sendSMSViaVonage({ to: inv.client_phone, body });
         preview = `${dispatch.provider.toUpperCase()} ${dispatch.id} → SMS ${inv.client_phone}`;
       } else {
         const subject = tmpl
@@ -3240,7 +3340,7 @@ app.post('/api/invoices/:id/send', async (req, res) => {
       });
       await addUsage(user.profile.id, {
         reminders_delivered: 1,
-        ...(ch === 'whatsapp' ? { whatsapp_sent: 1 } : ch === 'sms' ? { sms_sent: 1 } : { emails_sent: 1 }),
+        ...(ch === 'whatsapp' ? { whatsapp_sent: 1 } : ch === 'SMS' ? { SMS_sent: 1 } : { emails_sent: 1 }),
       });
       results.push({ channel: ch, logId, dispatch });
     } catch (err: any) {
@@ -3747,7 +3847,7 @@ async function dispatchInvoiceReminders(opts: {
   uid: string;
   tier: SubscriptionTier;
   inv: any;
-  channels: ('email' | 'whatsapp' | 'sms')[];
+  channels: ('email' | 'whatsapp' | 'SMS')[];
   stepTitle: string;
   rescheduleSecs: number;
   now: Date;
@@ -3771,9 +3871,9 @@ async function dispatchInvoiceReminders(opts: {
   const from = `${fromName} <${reminderMailAddress()}>`;
 
   for (const channel of channels) {
-    // Channel availability: email needs an address; whatsapp/sms need a phone.
+    // Channel availability: email needs an address; whatsapp/SMS need a phone.
     if (channel === 'whatsapp' && (!inv.client_phone || !effectiveKey('WHAPI_API_TOKEN'))) continue;
-    if (channel === 'sms' && (!inv.client_phone || !effectiveKey('VONAGE_API_KEY'))) continue;
+    if (channel === 'SMS' && (!inv.client_phone || !effectiveKey('VONAGE_API_KEY'))) continue;
     if (channel === 'email' && !inv.client_email) continue;
 
     // Email channel prefers the user's connected Gmail inbox; Resend is the
@@ -3792,8 +3892,8 @@ async function dispatchInvoiceReminders(opts: {
 
     // SMS is a soft limit: it never blocks the send, it just reminds the user
     // that the monthly quota is spent. WhatsApp/email hard-gate on upgrade.
-    const limit = channel === 'sms'
-      ? await assertLimit(uid, tier, 'sms', { soft: true })
+    const limit = channel === 'SMS'
+      ? await assertLimit(uid, tier, 'SMS', { soft: true })
       : await assertLimit(uid, tier, channel === 'whatsapp' ? 'whatsapp' : 'emails');
     if (!limit.ok) continue; // plan limit reached — skip silently, user fixed by upgrade
     if (limit.limitReached) {
@@ -3806,7 +3906,7 @@ async function dispatchInvoiceReminders(opts: {
         client_name: inv.client_name,
         client_email: inv.client_email,
         sequence_step_title: 'SMS quota reminder',
-        channel: 'sms',
+        channel: 'SMS',
         status: 'sent',
         sent_at: new Date().toISOString(),
         payload_preview: limit.message || 'SMS monthly quota reached.',
@@ -3817,20 +3917,22 @@ async function dispatchInvoiceReminders(opts: {
       // Direct payment: ensure (and cache) a branded payment link first.
       let dispatch: { provider: string; id: string };
       if (channel === 'whatsapp') {
-        const msg = template
-          ? renderInvoiceText(template.body, inv, renderProfile, payLink)
-          : `Hello ${inv.client_name}, invoice ${inv.external_invoice_id} for $${Number(inv.amount_due).toFixed(2)} is overdue. Pay securely here: ${payLink}`;
+        const msg =
+          template?.body
+            ? renderInvoiceText(template.body, inv, renderProfile, payLink)
+            : `Hello ${inv.client_name}, invoice ${inv.external_invoice_id} for $${Number(inv.amount_due).toFixed(2)} is overdue. Pay securely here: ${payLink}`;
         dispatch = await sendWhatsAppViaWhapi({ to: inv.client_phone, message: msg });
-      } else if (channel === 'sms') {
-        const body = template
-          ? renderInvoiceText(template.body, inv, renderProfile, payLink)
-          : `Hi ${inv.client_name}, invoice ${inv.external_invoice_id} for $${Number(inv.amount_due).toFixed(2)} is overdue. Pay securely here: ${payLink}`;
-        dispatch = await sendSmsViaVonage({ to: inv.client_phone, body });
+      } else if (channel === 'SMS') {
+        const body =
+          template?.body
+            ? renderInvoiceText(template.body, inv, renderProfile, payLink)
+            : `Hi ${inv.client_name}, invoice ${inv.external_invoice_id} for $${Number(inv.amount_due).toFixed(2)} is overdue. Pay securely here: ${payLink}`;
+        dispatch = await sendSMSViaVonage({ to: inv.client_phone, body });
       } else {
-        const subject = template
-          ? renderInvoiceText(template.subject || `Payment reminder: Invoice ${inv.external_invoice_id}`, inv, renderProfile, payLink)
+        const subject = template?.subject
+          ? renderInvoiceText(template.subject, inv, renderProfile, payLink)
           : `Payment reminder: Invoice ${inv.external_invoice_id}`;
-        const bodyText = template
+        const bodyText = template?.body
           ? renderInvoiceText(template.body, inv, renderProfile, payLink)
           : `<p>Hi ${inv.client_name},</p><p>Invoice ${inv.external_invoice_id} for $${Number(inv.amount_due).toFixed(2)} ${inv.currency} is ${diffDays > 0 ? `${diffDays} day(s) overdue` : 'due'}. Pay securely here:</p><p><a href="${payLink}">Pay now with card, bank, PayPal or wallet</a></p>`;
         const html = template ? appendSignature(textToHtml(bodyText), signature) : bodyText;
@@ -3889,7 +3991,7 @@ async function dispatchInvoiceReminders(opts: {
         .eq('id', inv.id);
       await addUsage(uid, {
         reminders_delivered: 1,
-        ...(channel === 'whatsapp' ? { whatsapp_sent: 1 } : channel === 'sms' ? { sms_sent: 1 } : { emails_sent: 1 }),
+        ...(channel === 'whatsapp' ? { whatsapp_sent: 1 } : channel === 'SMS' ? { SMS_sent: 1 } : { emails_sent: 1 }),
       });
       await scheduleQStashReminder({ invoice_id: inv.id }, rescheduleSecs).catch(() => {});
       results.push(newLog);
@@ -3980,16 +4082,66 @@ app.post('/api/cron/process-reminders', async (req, res) => {
     for (const sched of activeSchedules) {
       let targets = eligible;
       if (sched.invoice_ids && sched.invoice_ids.length) {
-        const wanted = new Set(sched.invoice_ids);
+        const wanted = new Set(sched.invoice_ids as string[]);
         targets = targets.filter((inv: any) => wanted.has(inv.id));
       }
       if (!targets.length) continue;
-      // QStash runs dispatch only inside the schedule's local send window;
-      // manual runs always fire immediately.
-      if (!manual && !scheduleIsDue(sched, now)) continue;
 
-      // A schedule always uses exactly one selected template. Without one it
-      // is skipped (the UI now requires a template at save time).
+      // Interval cadences (every N minutes / hours / urgent every 2h) fire on
+      // their own re-armed clock — the local time-of-day window does not apply.
+      // Fixed-cadence schedules dispatch only inside their local send window on
+      // QStash runs; manual runs always fire immediately.
+      const isIntervalFreq = ['minutely', 'hourly', 'urgent'].includes(sched.frequency);
+      if (!manual && !isIntervalFreq && !scheduleIsDue(sched, now)) continue;
+
+      const rescheduleSecs = nextRunDelaySeconds(sched, now);
+
+      if (sched.kind === 'recovery') {
+        // Recovery schedule: NO user timing — reminders follow the linked
+        // recovery flow's day offsets relative to each invoice's due date.
+        const { data: seqRow } = await sb.from('sequences').select('*').eq('id', sched.sequence_id).eq('user_id', uid).maybeSingle();
+        if (!seqRow) {
+          console.warn(`[Cron] Recovery schedule ${sched.id} has no valid flow — skipped.`);
+          continue;
+        }
+        const steps = typeof seqRow.steps === 'string' ? JSON.parse(seqRow.steps || '[]') : seqRow.steps || [];
+        if (!Array.isArray(steps) || !steps.length) continue;
+        const dayKey = now.toISOString().slice(0, 10);
+        for (const inv of targets as any[]) {
+          const dueDate = new Date(inv.due_date + 'T00:00:00');
+          const diffDays = Math.floor((now.getTime() - dueDate.getTime()) / 86400000);
+          const matchedSteps = steps.filter((st: any) => Number(st.days_relative_to_due) === diffDays);
+          for (const st of matchedSteps) {
+            const stepTitle = `Recovery — ${seqRow.name} — ${st.title || `Day ${diffDays > 0 ? `+${diffDays}` : diffDays}`}`;
+            // De-duplicate: never send the same recovery step twice in a day.
+            const { count: alreadySent } = await sb
+              .from('reminder_logs')
+              .select('id', { count: 'exact', head: true })
+              .eq('user_id', uid)
+              .eq('invoice_id', inv.id)
+              .eq('sequence_step_title', stepTitle)
+              .gte('sent_at', `${dayKey}T00:00:00.000Z`);
+            if ((alreadySent || 0) > 0) continue;
+            results.push(
+              ...(await dispatchInvoiceReminders({
+                uid,
+                tier,
+                inv,
+                channels: sched.channels,
+                stepTitle,
+                rescheduleSecs,
+                now,
+                template: { title: st.title, subject: st.template_subject, body: st.template_body },
+                profile: dispatchProfile,
+              }))
+            );
+          }
+        }
+        continue;
+      }
+
+      // Template-driven automation: exactly one selected template. Without one
+      // it is skipped (the API requires a template at save time).
       const { data: schedTmpl } = sched.template_id
         ? await sb.from('custom_email_templates').select('*').eq('id', sched.template_id).eq('user_id', uid).maybeSingle()
         : { data: null };
@@ -3998,7 +4150,6 @@ app.post('/api/cron/process-reminders', async (req, res) => {
         continue;
       }
       const stepTitle = `Automation — ${schedTmpl.title || sched.name}`;
-      const rescheduleSecs = nextRunDelaySeconds(sched, now);
       for (const inv of targets as any[]) {
         results.push(
           ...(await dispatchInvoiceReminders({
@@ -4026,9 +4177,9 @@ app.post('/api/cron/process-reminders', async (req, res) => {
       if (coversAll || coveredIds.has(inv.id)) continue; // handled by a schedule
 
       // Invoice-level channels. Default to email when none are set (legacy rows).
-      const channels: ('email' | 'whatsapp' | 'sms')[] =
+      const channels: ('email' | 'whatsapp' | 'SMS')[] =
         Array.isArray(inv.channels) && inv.channels.length
-          ? (inv.channels as ('email' | 'whatsapp' | 'sms')[])
+          ? (inv.channels as ('email' | 'whatsapp' | 'SMS')[])
           : ['email'];
 
       // Automation frequency (invoice-level): once → a single reminder, otherwise

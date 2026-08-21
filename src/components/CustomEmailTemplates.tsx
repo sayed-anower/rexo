@@ -17,7 +17,7 @@ import {
   FileText
 } from 'lucide-react';
 import { CustomEmailTemplate, Invoice } from '../types';
-import { renderPlaceholders } from '../lib/storage';
+import { renderPlaceholders, absolutePaymentUrl } from '../lib/storage';
 
 interface CustomEmailTemplatesProps {
   templates: CustomEmailTemplate[];
@@ -713,7 +713,7 @@ export function CustomEmailTemplates({
                       amount_due: selectedInvoice.amount_due,
                       currency: selectedInvoice.currency,
                       due_date: selectedInvoice.due_date,
-                      payment_link: selectedInvoice.payment_link,
+                      payment_link: absolutePaymentUrl(selectedInvoice.payment_link),
                       company_name: 'Your Studio',
                     })}
                   </div>
@@ -724,7 +724,7 @@ export function CustomEmailTemplates({
                       amount_due: selectedInvoice.amount_due,
                       currency: selectedInvoice.currency,
                       due_date: selectedInvoice.due_date,
-                      payment_link: selectedInvoice.payment_link,
+                      payment_link: absolutePaymentUrl(selectedInvoice.payment_link),
                       company_name: 'Your Studio',
                     })}
                   </div>

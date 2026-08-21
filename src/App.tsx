@@ -8,6 +8,7 @@ import {
   fetchCustomEmailTemplates,
   updateUserProfile,
   saveInvoice,
+  deleteInvoice,
   toggleInvoiceSequencePause,
   payInvoice,
   saveSequence,
@@ -268,6 +269,13 @@ export default function App() {
     const updated = await fetchInvoices();
     setInvoices(updated);
     showToast(`Recovery ${target.sequence_paused ? 'paused' : 'resumed'} for invoice.`);
+  };
+
+  const handleDeleteInvoice = async (id: string) => {
+    await deleteInvoice(id);
+    const updated = await fetchInvoices();
+    setInvoices(updated);
+    showToast('Invoice and its reminder history deleted.');
   };
 
   const handleTriggerManualReminder = async (id: string) => {
@@ -595,6 +603,7 @@ const handleApplyAiSteps = (newSteps: any[]) => {
               customTemplates={customTemplates}
               user={user}
               onSaveInvoice={(d) => handleSaveInvoice(d).catch((err) => { if (!handleGateError(err)) showToast(err.message); })}
+              onDeleteInvoice={(id) => handleDeleteInvoice(id).catch((err) => { if (!handleGateError(err)) showToast(err.message); })}
               onTogglePause={(id) => handleTogglePause(id).catch((err) => { if (!handleGateError(err)) showToast(err.message); })}
               onTriggerManualReminder={(id) =>
                 handleTriggerManualReminder(id).catch((err) => {

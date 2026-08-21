@@ -20,7 +20,7 @@ const CONNECTOR_ICONS: Record<string, string> = {
   quickbooks: '📊',
   xero: '🟢',
   bank: '🏦',
-  sms: '📱',
+  SMS: '📱',
   email: '✉️',
   whatsapp_business: '💬',
 };

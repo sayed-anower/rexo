@@ -69,7 +69,7 @@ export function paymentMethodFee(method: PaymentMethod, amount: number): number 
 export const UNIT_COSTS = {
   email: 0.0004, // Resend marginal cost per transactional email
   whatsapp: 0.015, // Whapi.cloud per WhatsApp message
-  sms: 0.02, // 2 cents per SMS reminder
+  SMS: 0.02, // 2 cents per SMS reminder
   ai_generation: 0.0015, // Gemini draft cost (blended)
   invoice_tracked: 0.02, // storage + QStash scheduling per tracked invoice
 };
@@ -79,9 +79,10 @@ export function buildPlanFeatures(def: PlanDefinition): PlanFeature[] {
     { id: 'invoices', label: `Track up to ${def.limits.tracked_invoices === -1 ? 'unlimited' : def.limits.tracked_invoices} invoices / mo`, included: true },
     { id: 'emails', label: `${def.limits.emails_per_month === -1 ? 'Unlimited' : `${def.limits.emails_per_month.toLocaleString()} emails`} per month`, included: true },
     { id: 'whatsapp', label: `WhatsApp reminders (${def.limits.whatsapp_per_month === -1 ? 'unlimited' : `${def.limits.whatsapp_per_month}/mo`})`, included: def.limits.whatsapp_per_month > 0 },
-    { id: 'sms', label: `SMS reminders (${def.limits.sms_per_month === -1 ? 'unlimited' : `${def.limits.sms_per_month}/mo`})`, included: def.limits.sms_per_month > 0 },
+    { id: 'SMS', label: `SMS reminders (${def.limits.SMS_per_month === -1 ? 'unlimited' : `${def.limits.SMS_per_month}/mo`})`, included: def.limits.SMS_per_month > 0 },
     { id: 'team', label: `${def.limits.team_seats} team seat${def.limits.team_seats === 1 ? '' : 's'}`, included: true },
     { id: 'ai', label: `AI email & sequence drafts`, included: def.limits.ai_generations > 0 },
+    { id: 'automation_cadence', label: `Automations as often as every ${def.limits.min_automation_interval_mins} min`, included: true },
     { id: 'custom_domain', label: 'White-label payment domain', included: def.limits.custom_domain },
     { id: 'white_label', label: 'Fully white-label portal', included: def.limits.white_label },
     { id: 'advanced_reports', label: 'Advanced reports & export', included: def.limits.advanced_reports },
@@ -138,8 +139,9 @@ export const PLANS: PlanDefinition[] = [
       team_seats: 1,
       emails_per_month: 300,
       whatsapp_per_month: 50,
-      sms_per_month: 50,
+      SMS_per_month: 50,
       ai_generations: 30,
+      min_automation_interval_mins: 60,
       custom_domain: false,
       white_label: false,
       advanced_reports: false,
@@ -160,8 +162,9 @@ export const PLANS: PlanDefinition[] = [
       team_seats: 3,
       emails_per_month: 2500,
       whatsapp_per_month: 400,
-      sms_per_month: 300,
+      SMS_per_month: 300,
       ai_generations: 200,
+      min_automation_interval_mins: 15,
       custom_domain: true,
       white_label: false,
       advanced_reports: true,
@@ -182,8 +185,9 @@ export const PLANS: PlanDefinition[] = [
       team_seats: 10,
       emails_per_month: 10000,
       whatsapp_per_month: 1500,
-      sms_per_month: 1000,
+      SMS_per_month: 1000,
       ai_generations: 800,
+      min_automation_interval_mins: 1,
       custom_domain: true,
       white_label: true,
       advanced_reports: true,
@@ -217,8 +221,9 @@ export const CUSTOM_PLAN: Omit<PlanDefinition, 'id'> & { id: 'custom' } = {
     team_seats: 50,
     emails_per_month: -1,
     whatsapp_per_month: -1,
-    sms_per_month: -1,
+    SMS_per_month: -1,
     ai_generations: -1,
+    min_automation_interval_mins: 1,
     custom_domain: true,
     white_label: true,
     advanced_reports: true,
@@ -228,7 +233,7 @@ export const CUSTOM_PLAN: Omit<PlanDefinition, 'id'> & { id: 'custom' } = {
     { id: 'invoices', label: 'Unlimited tracked invoices / mo', included: true },
     { id: 'emails', label: 'Unlimited emails per month', included: true },
     { id: 'whatsapp', label: 'Unlimited WhatsApp reminders', included: true },
-    { id: 'sms', label: 'Unlimited SMS reminders', included: true },
+    { id: 'SMS', label: 'Unlimited SMS reminders', included: true },
     { id: 'team', label: 'Up to 50 team seats', included: true },
     { id: 'ai', label: 'Unlimited AI email & sequence drafts', included: true },
     { id: 'custom_domain', label: 'White-label payment domain', included: true },

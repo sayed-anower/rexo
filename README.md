@@ -26,6 +26,8 @@ cp .env.example .env # Fill in your real API keys
 npm run dev          # Starts Express + Vite on http://localhost:3000
 ```
 
+> `PORT` (optional) overrides the listen port in production (`npm start`).
+
 ---
 
 ## ⚙️ Third-Party Integration Setup
@@ -66,8 +68,11 @@ npm run dev          # Starts Express + Vite on http://localhost:3000
 ## 📈 Feature Highlights
 
 ### 1. Unified Automation
-- Consolidated automation management (Reminders & Recovery).
-- Granular control: Schedule automations per invoice or globally.
+- Two schedule types on one page:
+  - **Automations** — send one message template on a cadence you pick: once, every N minutes or hours (plan-gated via `min_automation_interval_mins`, down to every 1 minute on Agency), daily, weekly, monthly or yearly, at an exact local time in any region/timezone (US Eastern by default).
+  - **Recovery Schedules** — no timing to choose; they follow a recovery flow's day offsets relative to each invoice's due date (e.g. "3 days before due", "on due date", "7 days overdue") via Email / WhatsApp / SMS.
+- List-first UI with overlay create/edit forms; each row offers edit, pause/resume and delete.
+- QStash re-arms every run to the exact next occurrence so no send is ever missed.
 - Escalating tones: Polite reminders shifting to urgent recovery based on due dates.
 
 ### 2. Accounting Sync
@@ -76,9 +81,18 @@ npm run dev          # Starts Express + Vite on http://localhost:3000
 - Native OAuth 2.0 flows for QuickBooks and Xero.
 
 ### 3. Secure Payments
-- Branded Public Payment Portal.
-- Live Payoneer payment links embedded in all messaging channels.
+- Branded Public Payment Portal (`/pay/<invoice-id>`).
+- Live Payoneer payment links embedded in all messaging channels — the `[payment_link]` template variable always expands to the full public URL (`APP_URL` + portal path), never a bare `/pay/...` path.
 - Support for Card, Bank Transfer, PayPal, Apple Pay, and Google Pay.
+
+### 4. Invoice Management
+- Create invoices manually or sync from QuickBooks/Xero.
+- Delete any invoice (with its reminder history) from the invoice page.
+- Multi-channel manual sends (Email + WhatsApp + SMS at once) with template or free-form text.
+
+### 5. Help & Support
+- In-app guidance on every page plus a Help center with FAQs.
+- Support email (`SUPPORT_EMAIL`) with a 24–48 hour reply promise.
 
 ---
 

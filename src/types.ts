@@ -69,7 +69,20 @@ export interface Integration {
 
 export type InvoiceStatus = 'unpaid' | 'paid' | 'overdue' | 'cancelled';
 
-export type AutomationFrequency = 'once' | 'urgent' | 'daily' | 'weekly' | 'monthly' | 'yearly';
+export type AutomationFrequency =
+  | 'once'
+  | 'minutely'
+  | 'hourly'
+  | 'urgent'
+  | 'daily'
+  | 'weekly'
+  | 'monthly'
+  | 'yearly';
+
+// A schedule is either a template-driven "automation" (fixed cadence + local
+// send time) or a "recovery" schedule (day-offset reminders relative to each
+// invoice's due date, driven by the steps of the linked recovery flow).
+export type ScheduleKind = 'automation' | 'recovery';
 
 export interface Invoice {
   id: string;
@@ -94,7 +107,7 @@ export interface Invoice {
   created_at: string;
 }
 
-export type ChannelType = 'email' | 'whatsapp' | 'sms';
+export type ChannelType = 'email' | 'whatsapp' | 'SMS';
 
 export interface SequenceStep {
   id: string;
@@ -159,7 +172,7 @@ export interface UsageStats {
   month: string; // e.g. "2026-08"
   emails_sent: number;
   whatsapp_sent: number;
-  sms_sent: number;
+  SMS_sent: number;
   ai_generations: number;
   reminders_delivered: number;
   amount_recovered: number; // USD recovered this month
@@ -170,8 +183,9 @@ export interface PlanLimits {
   team_seats: number;
   emails_per_month: number;
   whatsapp_per_month: number;
-  sms_per_month: number;
+  SMS_per_month: number;
   ai_generations: number;
+  min_automation_interval_mins: number; // lowest allowed automation cadence (minutes)
   custom_domain: boolean;
   white_label: boolean;
   advanced_reports: boolean;
@@ -189,10 +203,12 @@ export interface AutomationSchedule {
   id: string;
   user_id: string;
   name: string;
-  frequency: 'once' | 'urgent' | 'daily' | 'weekly' | 'monthly' | 'yearly';
+  kind: ScheduleKind; // 'automation' = template + cadence, 'recovery' = day-offset flow
+  frequency: AutomationFrequency;
+  interval_minutes?: number; // for minutely/hourly frequencies (e.g. every 15 min)
   time_of_day: string; // "09:00"
   timezone: string; // IANA timezone, e.g. "America/New_York"
-  sequence_id?: string;
+  sequence_id?: string; // recovery schedules: the recovery flow driving the day offsets
   template_id?: string;
   channels: ChannelType[];
   invoice_ids?: string[]; // empty/undefined = ALL invoices; otherwise the targeted invoices
