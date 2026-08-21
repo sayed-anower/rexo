@@ -90,7 +90,7 @@ export function HomePage({ onOpenAuth, onGoogleSignIn }: HomePageProps) {
               <ArrowRight className="w-4 h-4" />
             </button>
 
-            <button
+            {/*<button
               onClick={onGoogleSignIn}
               className="w-full sm:w-auto px-6 py-3.5 rounded-2xl bg-white dark:bg-surface hover:bg-surface2 dark:hover:bg-surface2 text-ink dark:text-white font-bold text-sm transition-all border border-line dark:border-line shadow-sm flex items-center justify-center gap-2"
             >
@@ -103,11 +103,12 @@ export function HomePage({ onOpenAuth, onGoogleSignIn }: HomePageProps) {
               <BadgeCheck className="w-4 h-4 text-primary dark:text-secondary" />
               <span>Sign in with Google</span>
             </button>
+            */}
           </div>
 
-          <p className="text-[11px] text-ink3">
+          {/*<p className="text-[11px] text-ink3">
             No free tier — create your account, then pick a plan (card, bank or PayPal) to start recovering.
-          </p>
+          </p>*/}
 
           {/* Social Proof Stats */}
           <div className="pt-6 grid grid-cols-2 sm:grid-cols-3 gap-4 border-t border-line dark:border-line max-w-xl mx-auto text-left">
@@ -139,7 +140,7 @@ export function HomePage({ onOpenAuth, onGoogleSignIn }: HomePageProps) {
       </section>
 
       {/* Core Features Grid */}
-      <section className="py-16 px-4 sm:px-6 max-w-7xl mx-auto w-full space-y-12">
+<section className="py-16 px-4 sm:px-6 max-w-7xl mx-auto w-full space-y-12">
         <div className="text-center space-y-2 max-w-2xl mx-auto">
           <h2 className="text-2xl sm:text-3xl font-extrabold text-ink dark:text-white">
             Everything You Need To Get Paid
@@ -149,57 +150,56 @@ export function HomePage({ onOpenAuth, onGoogleSignIn }: HomePageProps) {
           </p>
         </div>
 
-        {[
-          {
-            icon: <Mail className="w-5 h-5" />,
-            iconCls: 'bg-primary-soft text-primary dark:bg-surface2 dark:text-secondary',
-            title: 'Multi-Channel Reminders',
-            text: 'Courteous emails before the due date, firm follow-ups after, and urgent WhatsApp messages for overdue clients.',
-          },
-          {
-            icon: <CreditCard className="w-5 h-5" />,
-            iconCls: 'bg-emerald-100 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400',
-            title: 'Instant Payment Links',
-            text: 'Every reminder includes a secure payment link. Clients pay by card, PayPal, bank or wallet in a few clicks.',
-          },
-          {
-            icon: <Zap className="w-5 h-5" />,
-            iconCls: 'bg-amber-100 text-amber-600 dark:bg-amber-950 dark:text-amber-400',
-            title: 'Runs On Autopilot',
-            text: 'Reminders are sent automatically on your schedule. You just log in and watch payments come in.',
-          },
-          {
-            icon: <TrendingUp className="w-5 h-5" />,
-            iconCls: 'bg-sky-100 text-sky-600 dark:bg-sky-950 dark:text-sky-400',
-            title: 'Recovery Reports',
-            text: 'Track cash recovered, average days to payment, and reminder activity at a glance.',
-          },
-          {
-            icon: <BarChart3 className="w-5 h-5" />,
-            iconCls: 'bg-violet-100 text-violet-600 dark:bg-violet-950 dark:text-violet-400',
-            title: 'AI-Written Messages',
-            text: 'Let AI draft professional reminder templates in your tone. Always review, always on-brand.',
-          },
-          {
-            icon: <Clock className="w-5 h-5" />,
-            iconCls: 'bg-rose-100 text-rose-600 dark:bg-rose-950 dark:text-rose-400',
-            title: 'Never Forget Again',
-            text: 'Scheduled automation means no client slips through the cracks — even on holidays.',
-          },
-        ].map((f, i) => (
-          <div key={i} className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {[f].map((card, j) => (
-              <div key={j} className="p-6 rounded-3xl bg-white dark:bg-surface border border-line dark:border-line shadow-sm space-y-3">
-                <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-bold ${card.iconCls}`}>
-                  {card.icon}
-                </div>
-                <h3 className="font-extrabold text-ink dark:text-white text-base">{card.title}</h3>
-                <p className="text-xs text-ink2 dark:text-ink2 leading-relaxed">{card.text}</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[
+            {
+              icon: <Mail className="w-5 h-5" />,
+              iconCls: 'bg-primary-soft text-primary dark:bg-surface2 dark:text-secondary',
+              title: 'Multi-Channel Reminders',
+              text: 'Courteous emails before the due date, firm follow-ups after, and urgent WhatsApp messages for overdue clients.',
+            },
+            {
+              icon: <CreditCard className="w-5 h-5" />,
+              iconCls: 'bg-emerald-100 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400',
+              title: 'Instant Payment Links',
+              text: 'Every reminder includes a secure payment link. Clients pay by card, PayPal, bank or wallet in a few clicks.',
+            },
+            {
+              icon: <Zap className="w-5 h-5" />,
+              iconCls: 'bg-amber-100 text-amber-600 dark:bg-amber-950 dark:text-amber-400',
+              title: 'Runs On Autopilot',
+              text: 'Reminders are sent automatically on your schedule. You just log in and watch payments come in.',
+            },
+            {
+              icon: <TrendingUp className="w-5 h-5" />,
+              iconCls: 'bg-sky-100 text-sky-600 dark:bg-sky-950 dark:text-sky-400',
+              title: 'Recovery Reports',
+              text: 'Track cash recovered, average days to payment, and reminder activity at a glance.',
+            },
+            {
+              icon: <BarChart3 className="w-5 h-5" />,
+              iconCls: 'bg-violet-100 text-violet-600 dark:bg-violet-950 dark:text-violet-400',
+              title: 'AI-Written Messages',
+              text: 'Let AI draft professional reminder templates in your tone. Always review, always on-brand.',
+            },
+            {
+              icon: <Clock className="w-5 h-5" />,
+              iconCls: 'bg-rose-100 text-rose-600 dark:bg-rose-950 dark:text-rose-400',
+              title: 'Never Forget Again',
+              text: 'Scheduled automation means no client slips through the cracks — even on holidays.',
+            },
+          ].map((f, i) => (
+            <div key={i} className="p-6 rounded-3xl bg-white dark:bg-surface border border-line dark:border-line shadow-sm space-y-3">
+              <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-bold ${f.iconCls}`}>
+                {f.icon}
               </div>
-            ))}
-          </div>
-        ))}
+              <h3 className="font-extrabold text-ink dark:text-white text-base">{f.title}</h3>
+              <p className="text-xs text-ink2 dark:text-ink2 leading-relaxed">{f.text}</p>
+            </div>
+          ))}
+        </div>
       </section>
+
 
       {/* Pricing Section */}
       <section id="pricing" className="py-16 bg-white dark:bg-surface/60 border-t border-line dark:border-line px-4 sm:px-6">

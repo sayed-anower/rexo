@@ -22,7 +22,7 @@ export function HelpPage({ user }: HelpPageProps) {
   const guides = [
     {
       title: 'How do I set up Eron for my agency?',
-      body: '1. Sign in with Google or email.\n2. Open Connectors and connect QuickBooks or Xero so unpaid invoices are pulled in automatically.\n3. Create message templates on the Templates page (or start from the built-in ones).\n4. Open Automation and create your first automation or recovery schedule.\n5. Sit back — Eron sends reminders on schedule until you get paid.',
+      body: '1. Sign in with your buisness/user email.\n2. Open Connectors and connect QuickBooks or Xero so unpaid invoices are pulled in automatically.\n3. Create message templates on the Templates page (or start from the built-in ones).\n4. Open Automation and create your first automation or recovery schedule.\n5. Sit back — Eron sends reminders on schedule until you get paid.',
     },
     {
       title: 'How do Automations and Recovery Schedules differ?',

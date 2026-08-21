@@ -238,26 +238,6 @@ export function Sidebar({ activeTab, onTabChange, unpaidCount, user, onRefreshDa
             </div>
           </div>
         )}
-
-        {/* Current Plan Summary Callout */}
-        <div className="mt-6 p-4 rounded-2xl bg-gradient-to-br from-primary via-primary-strong to-primary-strong text-white border border-line shadow-lg hidden sm:block">
-          <div className="flex items-center gap-2 mb-2">
-            <Rocket className="w-4 h-4 text-amber-400" />
-            <span className="text-xs font-bold text-secondary">Your Plan</span>
-          </div>
-          <p className="text-xs text-secondary leading-relaxed font-normal">
-            You're on the{' '}
-            <span className="font-semibold text-white capitalize">{user.subscription_tier}</span> plan.
-            Reminders, connectors and AI drafting are all working for you.
-          </p>
-          <button
-            onClick={() => handleSelectTab('settings')}
-            className="mt-3 w-full py-2 px-3 rounded-lg bg-accent hover:bg-accent-hover text-white font-semibold text-xs transition-all flex items-center justify-center gap-1.5 shadow-md"
-          >
-            <span>Manage Plan</span>
-            <ArrowUpRight className="w-3.5 h-3.5" />
-          </button>
-        </div>
       </div>
     </aside>
   );
