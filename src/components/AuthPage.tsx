@@ -138,8 +138,8 @@ export function AuthPage({ initialMode = 'signin', onSuccess, onBackToHome }: Au
 
   return (
     <div className="min-h-screen bg-main dark:bg-main text-ink dark:text-ink flex flex-col justify-between transition-colors">
-      <div className="pt-8 pb-16 px-4 sm:px-6 max-w-5xl mx-auto w-full flex-1 flex flex-col justify-center">
-        <div className="mb-8">
+      <div className="pt-4 pb-20 px-2 max-w-xl mx-auto w-full flex-1 flex flex-col gap-5 items-center justify-center">
+        <div className="mb-2">
           <button
             onClick={onBackToHome}
             className="inline-flex items-center gap-2 text-xs font-bold text-ink2 hover:text-ink dark:text-ink2 dark:hover:text-white transition-colors"
@@ -149,7 +149,7 @@ export function AuthPage({ initialMode = 'signin', onSuccess, onBackToHome }: Au
           </button>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center justify-center max-w-[800px]">
+        <div className="w-full max-w-md bg-white dark:bg-surface border border-line dark:border-line/80 shadow-2xl shadow-accent/5 rounded-3xl p-4 my-auto">
           {/* Left Hero Card / Benefits */}
           <div className="lg:col-span-5 space-y-6">
             <div className="w-12 h-12 rounded-2xl bg-accent flex items-center justify-center text-white shadow-xl shadow-accent/30">
@@ -183,7 +183,7 @@ export function AuthPage({ initialMode = 'signin', onSuccess, onBackToHome }: Au
           </div>
 
           {/* Right Form Container */}
-          <div className="lg:col-span-7 p-6 sm:p-8 rounded-3xl bg-white dark:bg-surface border border-line dark:border-line shadow-xl">
+          <div className="lg:col-span-7 p-4 rounded-3xl bg-white dark:bg-surface border border-line dark:border-line shadow-xl mt-6">
             {/* Mode Switcher Tabs */}
             {!awaitingOtp && (
               <div className="flex border-b border-line dark:border-line mb-6">
@@ -443,42 +443,44 @@ export function AuthPage({ initialMode = 'signin', onSuccess, onBackToHome }: Au
       <div>
         <label className="block text-[10px] font-bold text-ink dark:text-ink2 mb-1">Card Number</label>
         <div className="relative">
-          <CreditCard className="w-4 h-4 absolute left-3 top-2.5 text-ink3 pointer-events-none" />
-          <input
-            type="text"
-            inputMode="numeric"
-            value={cardNumber}
-            onChange={(e) => setCardNumber(e.target.value.replace(/[^\d\s]/g, ''))}
-            placeholder="4111 1111 1111 1111"
-            maxLength={19}
-            className={inputClass}
-          />
-        </div>
-      </div>
-      <div>
-        <label className="block text-[10px] font-bold text-ink dark:text-ink2 mb-1">Expiry (MM/YY)</label>
-        <div className="relative">
-          <Lock className="w-4 h-4 absolute left-3 top-2.5 text-ink3 pointer-events-none" />
-          <input
-            type="text"
-            value={cardExpiry}
-            onChange={(e) => setCardExpiry(e.target.value.replace(/[^\d/]/g, ''))}
-            placeholder="08/28"
-            maxLength={5}
-            className={inputClass}
-          />
-        </div>
-      </div>
-    </div>
-  )}
-</div>
+          <CreditCard className="w-3.5 h-3.5 absolute left-3 top-3 text-ink3 pointer-events-none" />
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            value={cardNumber}
+                            onChange={(e) => setCardNumber(e.target.value.replace(/[^\d\s]/g, ''))}
+                            placeholder="4111 1111..."
+                            maxLength={19}
+                            className={inputClass}
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-ink dark:text-ink2 mb-1">Expiry</label>
+                        <div className="relative">
+                          <Lock className="w-3.5 h-3.5 absolute left-3 top-3 text-ink3 pointer-events-none" />
+                          <input
+                            type="text"
+                            value={cardExpiry}
+                            onChange={(e) => setCardExpiry(e.target.value.replace(/[^\d/]/g, ''))}
+                            placeholder="MM/YY"
+                            maxLength={5}
+                            className={inputClass}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
 
               {mode === 'forgot' && !awaitingOtp && (
                 <div>
-                  <label className="block text-xs font-semibold text-ink dark:text-ink2 mb-1">Registered Email Address</label>
+                  <label className="block text-xs font-bold text-ink dark:text-ink2 mb-1.5">
+                    Registered Email Address
+                  </label>
                   <div className="relative">
-                    <Mail className="w-4 h-4 absolute left-3 top-3 text-ink3" />
+                    <Mail className="w-4 h-4 absolute left-3.5 top-3 text-ink3" />
                     <input
                       type="email"
                       required
@@ -491,12 +493,15 @@ export function AuthPage({ initialMode = 'signin', onSuccess, onBackToHome }: Au
                 </div>
               )}
 
+              {/* OTP Input Step */}
               {awaitingOtp && (
-                <>
+                <div className="space-y-3.5 bg-accent/5 dark:bg-accent/10 p-4 rounded-2xl border border-accent/20">
                   <div>
-                    <label className="block text-xs font-semibold text-ink dark:text-ink2 mb-1">6-Digit Verification Code</label>
+                    <label className="block text-xs font-bold text-ink dark:text-ink2 mb-1.5">
+                      6-Digit Verification Code
+                    </label>
                     <div className="relative">
-                      <KeyRound className="w-4 h-4 absolute left-3 top-3 text-ink3" />
+                      <KeyRound className="w-4 h-4 absolute left-3.5 top-3 text-accent" />
                       <input
                         type="text"
                         inputMode="numeric"
@@ -505,18 +510,18 @@ export function AuthPage({ initialMode = 'signin', onSuccess, onBackToHome }: Au
                         value={otp}
                         onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
                         placeholder="••••••"
-                        className={`${inputClass} text-center tracking-[0.5em] text-base font-bold`}
+                        className={`${inputClass} text-center tracking-[0.6em] text-base font-bold bg-white dark:bg-surface`}
                       />
                     </div>
-                    <p className="mt-1.5 text-[10px] text-ink3">
-                      Sent to {email} — expires in 10 minutes, single use.
+                    <p className="mt-2 text-[11px] text-ink3 flex items-center justify-between">
+                      <span>Sent to {email}</span>
                       {cooldownSeconds > 0 ? (
-                        <span className="text-ink2"> Resend in {cooldownSeconds}s.</span>
+                        <span className="text-ink2">Resend in {cooldownSeconds}s</span>
                       ) : (
                         <button
                           type="button"
                           onClick={() => sendOtp(mode === 'forgot' ? 'reset' : 'signup')}
-                          className="ml-1 text-primary dark:text-secondary hover:underline font-semibold"
+                          className="text-accent hover:underline font-bold"
                         >
                           Resend code
                         </button>
@@ -527,9 +532,9 @@ export function AuthPage({ initialMode = 'signin', onSuccess, onBackToHome }: Au
                   {mode === 'forgot' && (
                     <>
                       <div>
-                        <label className="block text-xs font-semibold text-ink dark:text-ink2 mb-1">New Password</label>
+                        <label className="block text-xs font-bold text-ink dark:text-ink2 mb-1">New Password</label>
                         <div className="relative">
-                          <Lock className="w-4 h-4 absolute left-3 top-3 text-ink3" />
+                          <Lock className="w-4 h-4 absolute left-3.5 top-3 text-ink3" />
                           <input
                             type="password"
                             required
@@ -541,9 +546,9 @@ export function AuthPage({ initialMode = 'signin', onSuccess, onBackToHome }: Au
                         </div>
                       </div>
                       <div>
-                        <label className="block text-xs font-semibold text-ink dark:text-ink2 mb-1">Confirm New Password</label>
+                        <label className="block text-xs font-bold text-ink dark:text-ink2 mb-1">Confirm New Password</label>
                         <div className="relative">
-                          <Lock className="w-4 h-4 absolute left-3 top-3 text-ink3" />
+                          <Lock className="w-4 h-4 absolute left-3.5 top-3 text-ink3" />
                           <input
                             type="password"
                             required
@@ -556,13 +561,13 @@ export function AuthPage({ initialMode = 'signin', onSuccess, onBackToHome }: Au
                       </div>
                     </>
                   )}
-                </>
+                </div>
               )}
 
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full py-3.5 px-4 rounded-xl bg-accent hover:bg-accent-hover text-white font-extrabold text-xs sm:text-sm transition-all shadow-lg shadow-accent/30 flex items-center justify-center gap-2"
+                className="w-full py-3.5 px-4 rounded-xl bg-accent hover:bg-accent-hover active:scale-[0.99] text-white font-extrabold text-xs sm:text-sm transition-all shadow-lg shadow-accent/20 flex items-center justify-center gap-2 disabled:opacity-60"
               >
                 {loading ? (
                   <span>Processing...</span>
@@ -579,9 +584,8 @@ export function AuthPage({ initialMode = 'signin', onSuccess, onBackToHome }: Au
               </button>
             </form>
 
-            <p className="mt-4 text-[10px] text-ink3 text-center">
-              Sessions are stored in secure HttpOnly cookies with a 30-day expiry. No free tier —
-              you pick a plan (with card/bank/PayPal) before running any action.
+            <p className="mt-5 text-[11px] text-ink3 text-center leading-relaxed">
+              Sessions are secured with HttpOnly cookies (30-day persistence). Select an active subscription plan inside the portal.
             </p>
           </div>
         </div>
