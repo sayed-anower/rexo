@@ -48,7 +48,7 @@ export const INITIAL_CUSTOM_EMAIL_TEMPLATES: CustomEmailTemplate[] = [
   {
     id: 'tmpl_05',
     title: 'Founder Direct Executive Appeal',
-    sender_name: '[your_name] (Founder)',
+    sender_name: '[company_name]',
     sender_email: 'founder@yourcompany.com',
     subject: 'Personal Note regarding Invoice [external_invoice_id]',
     body: 'Hi [client_name],\n\nI am reaching out personally regarding Invoice [external_invoice_id] for [amount_due] [currency].\n\nAs a digital agency, timely cash flow is critical to keeping our team focused on your account. Could you please check with your accounts payable team to see when this payment can be sent?\n\nDirect payment portal: [payment_link]\n\nThanks,\n[your_name] | Founder',

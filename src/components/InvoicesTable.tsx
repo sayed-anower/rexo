@@ -23,7 +23,8 @@ import {
   Trash2
 } from 'lucide-react';
 import { Invoice, Sequence, CustomEmailTemplate, UserProfile, ChannelType, AutomationFrequency } from '../types';
-import { renderPlaceholders, sendInvoiceReminderMulti, absolutePaymentUrl } from '../lib/storage';
+import { renderPlaceholders, findUnknownVars, sendInvoiceReminderMulti, absolutePaymentUrl } from '../lib/storage';
+import { VariableValuesModal } from './VariableValuesModal';
 
 interface InvoicesTableProps {
   invoices: Invoice[];
@@ -34,9 +35,9 @@ interface InvoicesTableProps {
   onDeleteInvoice?: (id: string) => Promise<any>;
   onTogglePause: (id: string) => Promise<any>;
   onTriggerManualReminder: (id: string) => Promise<any>;
-  onSendViaChannel?: (invoiceId: string, channel: 'email' | 'whatsapp' | 'SMS', message?: string) => Promise<any>;
-  onSendMulti?: (invoiceId: string, channels: ChannelType[], message?: string, templateId?: string) => Promise<any>;
-  onSendCustomEmail?: (tmpl: CustomEmailTemplate, inv: Invoice) => Promise<any>;
+  onSendViaChannel?: (invoiceId: string, channel: 'email' | 'whatsapp' | 'SMS', message?: string, extraVars?: Record<string, string>) => Promise<any>;
+  onSendMulti?: (invoiceId: string, channels: ChannelType[], message?: string, templateId?: string, extraVars?: Record<string, string>) => Promise<any>;
+  onSendCustomEmail?: (tmpl: CustomEmailTemplate, inv: Invoice, extraVars?: Record<string, string>) => Promise<any>;
   onOpenPublicPortal: (invoiceId: string) => void;
 }
 
@@ -70,6 +71,8 @@ export function InvoicesTable({
   const [sendChannels, setSendChannels] = useState<ChannelType[]>(['email']);
   const [sendCustomMessage, setSendCustomMessage] = useState('');
   const [isTransmitting, setIsTransmitting] = useState(false);
+  const [pendingVars, setPendingVars] = useState<string[] | null>(null);
+  const [extraVarValues, setExtraVarValues] = useState<Record<string, string>>({});
 
   // New Invoice Form State
   const [newClientName, setNewClientName] = useState('');
@@ -151,6 +154,8 @@ export function InvoicesTable({
 
   const handleOpenSendModal = (inv: Invoice) => {
     setSendModalInvoice(inv);
+    setPendingVars(null);
+    setExtraVarValues({});
     if (customTemplates.length > 0) {
       setSelectedTemplateId(customTemplates[0].id);
     } else {
@@ -170,31 +175,61 @@ export function InvoicesTable({
 
   const handleExecuteSend = async () => {
     if (!sendModalInvoice) return;
+
+    // Custom variables (e.g. [my_var]) that Eron can't auto-fill: ask for a
+    // value before anything goes out. "Not A Variable" tokens stay as-is.
+    const selectedTmpl =
+      sendChannels.includes('email') && selectedTemplateId !== 'default_sequence'
+        ? customTemplates.find((t) => t.id === selectedTemplateId)
+        : null;
+    const unknown = findUnknownVars(
+      selectedTmpl?.subject,
+      selectedTmpl?.body,
+      sendChannels.some((c) => c !== 'email') ? sendCustomMessage : ''
+    );
+    if (unknown.length > 0 && !pendingVars) {
+      setPendingVars(unknown);
+      return;
+    }
+
+    await doExecuteSend(extraVarValues);
+  };
+
+  const closeSendModal = () => {
+    setSendModalInvoice(null);
+    setPendingVars(null);
+    setExtraVarValues({});
+    setSendChannels(['email']);
+    setSendCustomMessage('');
+  };
+
+  const doExecuteSend = async (vars: Record<string, string>) => {
+    if (!sendModalInvoice) return;
     setIsTransmitting(true);
     try {
+      const extraVars = Object.keys(vars).length ? vars : undefined;
       if (sendChannels.length > 1 && onSendMulti) {
         // Simultaneous multi-channel delivery (Email + WhatsApp + SMS).
         await onSendMulti(
           sendModalInvoice.id,
           sendChannels,
           sendCustomMessage || undefined,
-          selectedTemplateId !== 'default_sequence' ? selectedTemplateId : undefined
+          selectedTemplateId !== 'default_sequence' ? selectedTemplateId : undefined,
+          extraVars
         );
       } else if (sendChannels[0] !== 'email' && onSendViaChannel) {
-        await onSendViaChannel(sendModalInvoice.id, sendChannels[0], sendCustomMessage || undefined);
+        await onSendViaChannel(sendModalInvoice.id, sendChannels[0], sendCustomMessage || undefined, extraVars);
       } else if (selectedTemplateId === 'default_sequence' || !onSendCustomEmail) {
         await onTriggerManualReminder(sendModalInvoice.id);
       } else {
         const targetTmpl = customTemplates.find((t) => t.id === selectedTemplateId);
         if (targetTmpl) {
-          await onSendCustomEmail(targetTmpl, sendModalInvoice);
+          await onSendCustomEmail(targetTmpl, sendModalInvoice, extraVars);
         } else {
           await onTriggerManualReminder(sendModalInvoice.id);
         }
       }
-      setSendModalInvoice(null);
-      setSendChannels(['email']);
-      setSendCustomMessage('');
+      closeSendModal();
     } finally {
       setIsTransmitting(false);
     }
@@ -463,7 +498,7 @@ export function InvoicesTable({
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-primary-strong/60 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="relative w-full max-w-lg max-h-[80vh] overflow-y-auto rounded-3xl bg-white dark:bg-surface border border-line dark:border-line p-6 sm:p-8 shadow-2xl space-y-5">
             <button
-              onClick={() => { setSendModalInvoice(null); setSendChannels(['email']); setSendCustomMessage(''); }}
+              onClick={closeSendModal}
               className="absolute top-5 right-5 p-2 rounded-full text-ink3 hover:bg-surface2 dark:hover:bg-surface2"
             >
               <X className="w-5 h-5" />
@@ -622,7 +657,11 @@ export function InvoicesTable({
                             currency: sendModalInvoice.currency,
                             due_date: sendModalInvoice.due_date,
                             payment_link: absolutePaymentUrl(sendModalInvoice.payment_link),
+                            client_phone: sendModalInvoice.client_phone,
                             company_name: user?.company_name || 'Your Studio',
+                            company_email: user?.email,
+                            company_phone: user?.company_phone,
+                            ...extraVarValues,
                           })}
                         </div>
                         <div className="text-ink2 dark:text-ink2 whitespace-pre-line leading-relaxed font-sans text-[11px] pt-2 border-t border-line dark:border-line break-all">
@@ -633,7 +672,11 @@ export function InvoicesTable({
                             currency: sendModalInvoice.currency,
                             due_date: sendModalInvoice.due_date,
                             payment_link: absolutePaymentUrl(sendModalInvoice.payment_link),
+                            client_phone: sendModalInvoice.client_phone,
                             company_name: user?.company_name || 'Your Studio',
+                            company_email: user?.email,
+                            company_phone: user?.company_phone,
+                            ...extraVarValues,
                           })}
                         </div>
                       </>
@@ -646,7 +689,7 @@ export function InvoicesTable({
               <div className="pt-2 flex items-center justify-end gap-3 border-t border-line dark:border-line">
                 <button
                   type="button"
-                  onClick={() => { setSendModalInvoice(null); setSendChannels(['email']); setSendCustomMessage(''); }}
+                  onClick={closeSendModal}
                   className="px-4 py-2 rounded-xl text-ink2 dark:text-ink2 hover:bg-surface2 text-xs font-bold transition-all"
                 >
                   Cancel
@@ -880,6 +923,19 @@ export function InvoicesTable({
           </div>
         </div>
       )}
+
+      {/* Custom Variable Values Modal (user-added [my_var] tokens) */}
+{sendModalInvoice && pendingVars && pendingVars.length > 0 && (
+  <VariableValuesModal
+    vars={pendingVars}
+    isSending={isTransmitting} // Pass your parent's existing sending state
+    onCancel={() => setPendingVars(null)}
+    onConfirm={(values) => {
+      setExtraVarValues(values);
+      doExecuteSend(values);
+    }}
+  />
+)}
     </div>
   );
 }

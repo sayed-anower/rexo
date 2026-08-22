@@ -240,7 +240,7 @@ async function sendOtpEmail(email: string, purpose: OtpPurpose, code: string): P
     change: 'Use the code below to confirm your Eron password change.',
   };
   await sendEmailViaResend({
-    from: resendFrom('Eron'),
+    from: resendFrom('Eron', 'noreply'),
     to: email,
     subject: subjectByPurpose[purpose],
     html: `<p>Hi,</p><p>${messageByPurpose[purpose]}</p><p style="font-size:28px;font-weight:800;letter-spacing:6px;color:#E58233">${code}</p><p>This code expires in 10 minutes and can only be used once. If you didn't request it, you can safely ignore this email.</p>`,
@@ -720,17 +720,28 @@ async function sendEmailViaResend(opts: {
   return { provider: 'resend', id: json.id };
 }
 
-// Every outbound email is sent from env.RESEND_FROM_EMAIL (a Resend-verified
-// address). The agency's identity is carried by the display name and the
-// company signature appended to each message — never by a different sender
-// address, which Resend would reject.
-function resendFromAddress(): string {
-  return effectiveKey('RESEND_FROM_EMAIL') || 'onboarding@resend.dev';
+// Outbound sender policy: transactional/verification mail (OTP codes) goes
+// out from noreply@<domain of RESEND_FROM_EMAIL>, while client-facing
+// messages (invoice reminders, custom emails, receipts) go out from
+// agent@<domain of RESEND_FROM_EMAIL>. The domain must be verified in Resend;
+// RESEND_FROM_EMAIL supplies that domain.
+function resendMailDomain(): string {
+  const addr = effectiveKey('RESEND_FROM_EMAIL') || '';
+  const domain = String(addr).includes('@') ? String(addr).split('@').pop()! : '';
+  return domain || 'resend.dev';
 }
 
-function resendFrom(displayName?: string): string {
+export function otpFromAddress(): string {
+  return `noreply@${resendMailDomain()}`;
+}
+
+export function agentFromAddress(): string {
+  return `agent@${resendMailDomain()}`;
+}
+
+function resendFrom(displayName?: string, kind: 'agent' | 'noreply' = 'agent'): string {
   const name = String(displayName || '').trim().replace(/[<>]/g, '');
-  const addr = resendFromAddress();
+  const addr = kind === 'noreply' ? otpFromAddress() : agentFromAddress();
   return name ? `${name} <${addr}>` : addr;
 }
 
@@ -879,7 +890,8 @@ app.get('/api/health', (req, res) => {
       payoneerConfigured: Boolean(effectiveKey('PAYONEER_MERCHANT_ID')),
       qstashConfigured: Boolean(effectiveKey('QSTASH_TOKEN')),
       resendConfigured: Boolean(effectiveKey('RESEND_API_KEY')),
-      resendFrom: resendFromAddress(),
+      resendNoreplyFrom: otpFromAddress(),
+      resendAgentFrom: agentFromAddress(),
       whapiConfigured: Boolean(effectiveKey('WHAPI_API_TOKEN')),
       googleConfigured: Boolean(effectiveKey('GOOGLE_CLIENT_ID') && effectiveKey('GOOGLE_CLIENT_SECRET')),
       quickbooksConfigured: Boolean(effectiveKey('QUICKBOOKS_CLIENT_ID') && effectiveKey('QUICKBOOKS_CLIENT_SECRET')),
@@ -2983,7 +2995,7 @@ app.post('/api/custom-emails/send', async (req, res) => {
   const limit = await assertLimit(user.profile.id, user.profile.subscription_tier!, 'emails');
   if (!limit.ok) return res.status(402).json(limit);
 
-  const { templateId, invoiceId } = req.body || {};
+  const { templateId, invoiceId, extra_vars } = req.body || {};
   const sb = getSupabase();
   if (!sb) return dbError(res);
 
@@ -2992,23 +3004,31 @@ app.post('/api/custom-emails/send', async (req, res) => {
   if (!tmpl || !inv) return res.status(404).json({ error: 'NOT_FOUND', message: 'Template or invoice not found.' });
 
   try {
-    // Canonical variable syntax is [client_name] — the fixed, finite variable
-    // set. Every variable auto-fills with the invoice + agency data on send.
+    // Canonical variable syntax is [client_name] — every known variable
+    // auto-fills with the invoice + agency data ([your_name] has no data and
+    // renders ''), then user-supplied custom variables are substituted.
     const payLink = await ensurePayoneerPaymentLink(inv).catch(() => absolutePaymentLink(inv.payment_link));
     const amount =
       (inv.currency && inv.currency !== 'USD' ? `${inv.currency} ` : '') +
       new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(Number(inv.amount_due));
     const render = (s: string) =>
-      String(s)
-        .replace(/\[client_name\]/gi, inv.client_name)
-        .replace(/\[external_invoice_id\]/gi, inv.external_invoice_id)
-        .replace(/\[amount_due\]/gi, amount)
-        .replace(/\[currency\]/gi, inv.currency)
-        .replace(/\[due_date\]/gi, inv.due_date)
-        .replace(/\[payment_link\]/gi, payLink)
-        .replace(/\[invoice_link\]/gi, payLink)
-        .replace(/\[company_name\]/gi, user.profile.company_name)
-        .replace(/\[your_name\]/gi, user.profile.company_name);
+      blankUnfilledKnownVars(
+        applyExtraVars(
+          String(s ?? '')
+            .replace(/\[client_name\]/gi, inv.client_name || '')
+            .replace(/\[external_invoice_id\]/gi, inv.external_invoice_id || '')
+            .replace(/\[amount_due\]/gi, amount || '')
+            .replace(/\[currency\]/gi, inv.currency || '')
+            .replace(/\[due_date\]/gi, inv.due_date || '')
+            .replace(/\[payment_link\]/gi, payLink || '')
+            .replace(/\[invoice_link\]/gi, payLink || '')
+            .replace(/\[company_name\]/gi, user.profile.company_name || '')
+            .replace(/\[company_email\]/gi, (user.row as any).email || user.profile.email || '')
+            .replace(/\[company_phone\]/gi, (user.row as any).company_phone || '')
+            .replace(/\[client_phone\]/gi, inv.client_phone || ''),
+          extra_vars
+        )
+      );
 
     const dispatch = await sendEmailViaResend({
       // Always dispatched from the verified env.RESEND_FROM_EMAIL address.
@@ -3031,7 +3051,7 @@ app.post('/api/custom-emails/send', async (req, res) => {
       channel: 'email',
       status: 'sent',
       sent_at: new Date().toISOString(),
-      payload_preview: `Sender name "${tmpl.sender_name}" — from ${resendFromAddress()}. ${dispatch.provider.toUpperCase()} dispatch ${dispatch.id} sent to ${inv.client_email}.`,
+      payload_preview: `Sender name "${tmpl.sender_name}" — from ${agentFromAddress()}. ${dispatch.provider.toUpperCase()} dispatch ${dispatch.id} sent to ${inv.client_email}.`,
     });
     await addUsage(user.profile.id, { emails_sent: 1, reminders_delivered: 1 });
     res.json({ success: true, message: 'Custom email sent successfully', dispatch });
@@ -3050,31 +3070,77 @@ app.post('/api/custom-emails/send', async (req, res) => {
 // and emails append the user's own signature.
 // ==========================================
 
+// Canonical [var_name] variables. Known variables always resolve: any that
+// has no backing data renders '' so a raw placeholder can never be sent.
+// Anything else in brackets is a user-added custom variable whose value was
+// collected in the UI (extra_vars) or deliberately left untouched.
+const KNOWN_RENDER_VARS = [
+  'client_name',
+  'external_invoice_id',
+  'amount_due',
+  'currency',
+  'due_date',
+  'payment_link',
+  'invoice_link',
+  'company_name',
+  'your_name',
+  'company_email',
+  'company_phone',
+  'company_number',
+  'client_phone',
+];
+
+// Substitute the custom values the user supplied for their own [my_var]
+// tokens (matched case-insensitively). Unknown tokens without a supplied
+// value are left exactly as written ("Not A Variable").
+function applyExtraVars(text: string, extraVars?: Record<string, unknown>): string {
+  if (!extraVars || typeof extraVars !== 'object') return String(text ?? '');
+  const entries = Object.entries(extraVars)
+    .filter(([k]) => typeof k === 'string' && k.trim())
+    .map(([k, v]) => [k.toLowerCase(), String(v ?? '')] as const);
+  return String(text ?? '').replace(/\[([a-zA-Z0-9_]+)\]/g, (token, name: string) => {
+    const hit = entries.find(([k]) => k === name.toLowerCase());
+    return hit ? hit[1] : token;
+  });
+}
+
+// Safety net after all fills: any remaining *known* placeholder is blanked
+// instead of leaking "[your_name]"-style tokens into an outbound message.
+function blankUnfilledKnownVars(text: string): string {
+  return String(text ?? '').replace(/\[([a-zA-Z0-9_]+)\]/g, (token, name: string) =>
+    KNOWN_RENDER_VARS.includes(String(name).toLowerCase()) ? '' : token
+  );
+}
+
 function renderInvoiceText(
   text: string,
   inv: any,
   profile: { company_name: string; company_email?: string; company_phone?: string },
-  payLink: string
+  payLink: string,
+  extraVars?: Record<string, unknown>
 ): string {
   const amount =
     (inv.currency && inv.currency !== 'USD' ? `${inv.currency} ` : '') +
     new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(
       Number(inv.amount_due)
     );
-  return String(text)
-    .replace(/\[client_name\]/gi, inv.client_name)
-    .replace(/\[external_invoice_id\]/gi, inv.external_invoice_id)
-    .replace(/\[amount_due\]/gi, amount)
-    .replace(/\[currency\]/gi, inv.currency)
-    .replace(/\[due_date\]/gi, inv.due_date)
-    .replace(/\[payment_link\]/gi, payLink)
-    .replace(/\[invoice_link\]/gi, payLink)
-    .replace(/\[company_name\]/gi, profile.company_name)
-    .replace(/\[your_name\]/gi, profile.company_name)
+  // Fill every known variable with real data; [your_name] has no personal-name
+  // data behind it, so it resolves to ''. Then apply user-supplied custom
+  // variables and blank anything known that is still unfilled.
+  const rendered = String(text ?? '')
+    .replace(/\[client_name\]/gi, inv.client_name || '')
+    .replace(/\[external_invoice_id\]/gi, inv.external_invoice_id || '')
+    .replace(/\[amount_due\]/gi, amount || '')
+    .replace(/\[currency\]/gi, inv.currency || '')
+    .replace(/\[due_date\]/gi, inv.due_date || '')
+    .replace(/\[payment_link\]/gi, payLink || '')
+    .replace(/\[invoice_link\]/gi, payLink || '')
+    .replace(/\[company_name\]/gi, profile.company_name || '')
     .replace(/\[company_email\]/gi, profile.company_email || '')
     .replace(/\[company_phone\]/gi, profile.company_phone || '')
     .replace(/\[company_number\]/gi, profile.company_phone || '')
     .replace(/\[client_phone\]/gi, inv.client_phone || '');
+  return blankUnfilledKnownVars(applyExtraVars(rendered, extraVars));
 }
 
 function textToHtml(text: string): string {
@@ -3123,7 +3189,7 @@ app.post('/api/invoices/:id/send', async (req, res) => {
   const active = assertPlanActive(user);
   if (!active.ok) return res.status(402).json(active);
 
-  const { channel, channels, message, templateId } = req.body || {};
+  const { channel, channels, message, templateId, extra_vars } = req.body || {};
   const wanted: ('email' | 'whatsapp' | 'SMS')[] =
     Array.isArray(channels) && channels.length
       ? channels.filter((c: string) => ['email', 'whatsapp', 'SMS'].includes(c))
@@ -3189,11 +3255,17 @@ app.post('/api/invoices/:id/send', async (req, res) => {
       let dispatch: { provider: string; id: string };
       let preview: string;
 
+      // Free-form messages can reference variables too — run them through the
+      // same fill pipeline as templates.
+      const renderMessage = (s: string) => blankUnfilledKnownVars(applyExtraVars(s, extra_vars));
+
       if (ch === 'whatsapp') {
         const msg = appendTextSignature(
           tmpl
-            ? renderInvoiceText(tmpl.body, inv, profile, payLink)
-            : message || defaultReminderText(inv, payLink, 'whatsapp'),
+            ? renderInvoiceText(tmpl.body, inv, profile, payLink, extra_vars)
+            : message
+            ? renderMessage(message)
+            : defaultReminderText(inv, payLink, 'whatsapp'),
           signature
         );
         dispatch = await sendWhatsAppViaWhapi({ to: inv.client_phone, message: msg });
@@ -3201,19 +3273,19 @@ app.post('/api/invoices/:id/send', async (req, res) => {
       } else if (ch === 'SMS') {
         const body = appendTextSignature(
           tmpl
-            ? renderInvoiceText(tmpl.body, inv, profile, payLink)
-            : message || defaultReminderText(inv, payLink, 'SMS'),
+            ? renderInvoiceText(tmpl.body, inv, profile, payLink, extra_vars)
+            : message
+            ? renderMessage(message)
+            : defaultReminderText(inv, payLink, 'SMS'),
           signature
         );
         dispatch = await sendSMSViaVonage({ to: inv.client_phone, body });
         preview = `${dispatch.provider.toUpperCase()} ${dispatch.id} → SMS ${inv.client_phone}`;
       } else {
         const subject = tmpl
-          ? renderInvoiceText(tmpl.subject || `Payment reminder: Invoice ${inv.external_invoice_id}`, inv, profile, payLink)
-          : message
-          ? `Payment reminder: Invoice ${inv.external_invoice_id}`
+          ? renderInvoiceText(tmpl.subject || `Payment reminder: Invoice ${inv.external_invoice_id}`, inv, profile, payLink, extra_vars)
           : `Payment reminder: Invoice ${inv.external_invoice_id}`;
-        const bodyText = tmpl ? renderInvoiceText(tmpl.body, inv, profile, payLink) : message || defaultReminderText(inv, payLink, 'email');
+        const bodyText = tmpl ? renderInvoiceText(tmpl.body, inv, profile, payLink, extra_vars) : message ? renderMessage(message) : defaultReminderText(inv, payLink, 'email');
         const html = appendSignature(textToHtml(bodyText), signature);
         dispatch = await sendEmailViaResend({ from, to: inv.client_email, subject, html });
         preview = `${dispatch.provider.toUpperCase()} ${dispatch.id} → ${inv.client_email}`;

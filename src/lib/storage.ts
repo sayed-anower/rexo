@@ -74,27 +74,76 @@ export interface PlaceholderContext {
   client_phone?: string;
 }
 
+// The canonical variable format is [var_name] (lowercase snake case) — a
+// fixed, finite set the user can reference in templates. Anything else in
+// brackets is treated as a custom variable and the user is asked for its
+// value before a message is sent (or it is left untouched when they mark it
+// "Not A Variable"). Known variables with no backing data render empty so no
+// raw placeholder ever leaks into an outgoing message.
+export const KNOWN_TEMPLATE_VARS = [
+  'client_name',
+  'external_invoice_id',
+  'amount_due',
+  'currency',
+  'due_date',
+  'payment_link',
+  'invoice_link',
+  'company_name',
+  'your_name',
+  'company_email',
+  'company_phone',
+  'company_number',
+  'client_phone',
+] as const;
+
+const VAR_TOKEN_RE = /\[([a-zA-Z0-9_]+)\]/g;
+
+export function findUnknownVars(...texts: (string | undefined | null)[]): string[] {
+  const known = new Set(KNOWN_TEMPLATE_VARS.map((v) => v.toLowerCase()));
+  const found = new Set<string>();
+  for (const text of texts) {
+    const s = String(text || '');
+    let m: RegExpExecArray | null;
+    VAR_TOKEN_RE.lastIndex = 0;
+    while ((m = VAR_TOKEN_RE.exec(s))) {
+      if (!known.has(m[1].toLowerCase())) found.add(m[1]);
+    }
+  }
+  return Array.from(found);
+}
+
+// "my_var" -> "My Var" — used as the human label when asking for a value.
+export function prettifyVarName(name: string): string {
+  return String(name)
+    .replace(/[_-]+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w))
+    .join(' ');
+}
+
 export function renderPlaceholders(text: string, ctx: PlaceholderContext): string {
   const amount =
     ctx.amount_due != null
       ? (ctx.currency && ctx.currency !== 'USD' ? `${ctx.currency} ` : '') + formatMoney(ctx.amount_due)
       : '';
 
-  // Canonical variable format is [client_name] (lowercase snake case) — a
-  // fixed, finite set the user can reference in templates but cannot extend.
-  // All variables auto-fill with the invoice + agency data on send.
+  // All known variables auto-fill with the invoice + agency data on send; a
+  // known variable without data renders '' so nothing unfilled can be sent.
   return (text || '')
-    .replace(/\[client_name\]/gi, ctx.client_name || '[client_name]')
-    .replace(/\[external_invoice_id\]/gi, ctx.external_invoice_id || '[external_invoice_id]')
-    .replace(/\[amount_due\]/gi, amount || '[amount_due]')
-    .replace(/\[currency\]/gi, ctx.currency || '[currency]')
-    .replace(/\[due_date\]/gi, ctx.due_date || '[due_date]')
-    .replace(/\[payment_link\]/gi, ctx.payment_link || '[payment_link]')
-    .replace(/\[company_name\]/gi, ctx.company_name || '[company_name]')
-    .replace(/\[your_name\]/gi, ctx.your_name || '[your_name]')
-    .replace(/\[company_email\]/gi, ctx.company_email || '[company_email]')
-    .replace(/\[company_phone\]/gi, ctx.company_phone || '[company_phone]')
-    .replace(/\[client_phone\]/gi, ctx.client_phone || '[client_phone]');
+    .replace(/\[client_name\]/gi, ctx.client_name || '')
+    .replace(/\[external_invoice_id\]/gi, ctx.external_invoice_id || '')
+    .replace(/\[amount_due\]/gi, amount)
+    .replace(/\[currency\]/gi, ctx.currency || '')
+    .replace(/\[due_date\]/gi, ctx.due_date || '')
+    .replace(/\[payment_link\]/gi, ctx.payment_link || '')
+    .replace(/\[invoice_link\]/gi, ctx.payment_link || '')
+    .replace(/\[company_name\]/gi, ctx.company_name || '')
+    .replace(/\[your_name\]/gi, ctx.your_name || '')
+    .replace(/\[company_email\]/gi, ctx.company_email || '')
+    .replace(/\[company_phone\]/gi, ctx.company_phone || '')
+    .replace(/\[company_number\]/gi, ctx.company_phone || '')
+    .replace(/\[client_phone\]/gi, ctx.client_phone || '');
 }
 
 export function formatMoney(value: number): string {
@@ -269,11 +318,11 @@ export async function sendInvoiceReminder(
   invoiceId: string,
   channel: 'email' | 'whatsapp' | 'SMS',
   message?: string,
-  options?: { templateId?: string }
+  options?: { templateId?: string; extraVars?: Record<string, string> }
 ): Promise<{ success: boolean; channel: string; errors?: { channel: string; message: string }[] }> {
   return apiFetch(`/api/invoices/${invoiceId}/send`, {
     method: 'POST',
-    body: JSON.stringify({ channel, message, templateId: options?.templateId }),
+    body: JSON.stringify({ channel, message, templateId: options?.templateId, extra_vars: options?.extraVars }),
   });
 }
 
@@ -281,11 +330,12 @@ export async function sendInvoiceReminderMulti(
   invoiceId: string,
   channels: ('email' | 'whatsapp' | 'SMS')[],
   message?: string,
-  templateId?: string
+  templateId?: string,
+  extraVars?: Record<string, string>
 ): Promise<{ success: boolean; message: string; channels: string[]; errors?: { channel: string; message: string }[] }> {
   return apiFetch(`/api/invoices/${invoiceId}/send`, {
     method: 'POST',
-    body: JSON.stringify({ channels, message, templateId }),
+    body: JSON.stringify({ channels, message, templateId, extra_vars: extraVars }),
   });
 }
 
@@ -434,11 +484,12 @@ export async function deleteCustomEmailTemplate(templateId: string): Promise<Cus
 
 export async function sendCustomEmailToInvoice(
   template: CustomEmailTemplate,
-  invoice: Invoice
+  invoice: Invoice,
+  extraVars?: Record<string, string>
 ): Promise<{ dispatch: { provider: string; id: string } }> {
   return apiFetch('/api/custom-emails/send', {
     method: 'POST',
-    body: JSON.stringify({ templateId: template.id, invoiceId: invoice.id }),
+    body: JSON.stringify({ templateId: template.id, invoiceId: invoice.id, extra_vars: extraVars }),
   });
 }
 

@@ -1,7 +1,1 @@
-The email sending showing failed because resend doesn't allow all email to send mail.
-Why is so many testing route are there being used?
-Remove all test/ something and use api/...
-Make sure all email will be send from env.RESEND_FROM_EMAIL, but we will add the company signeture.
-There will be a user company signeture in email/whatsapp message/sms
-Make sure email is sending via resend, whatsapp message is sending via whapi api & sms is sending via vonage api & all sending systems are working fine.
-Add all real routes for works.
+opencode -s ses_fd5d843ceffee04iK7tkWvOiAU

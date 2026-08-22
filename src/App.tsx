@@ -367,8 +367,12 @@ export default function App() {
     showToast('Email template deleted.');
   };
 
-  const handleSendCustomEmail = async (tmpl: CustomEmailTemplate, inv: Invoice) => {
-    await sendCustomEmailToInvoice(tmpl, inv);
+  const handleSendCustomEmail = async (
+    tmpl: CustomEmailTemplate,
+    inv: Invoice,
+    extraVars?: Record<string, string>
+  ) => {
+    await sendCustomEmailToInvoice(tmpl, inv, extraVars);
     await recordUsage({ emails_sent: 1, reminders_delivered: 1 });
     const updatedUsage = await fetchUsage();
     setUsage(updatedUsage);
@@ -646,19 +650,19 @@ const handleApplyAiSteps = (newSteps: any[]) => {
                   if (!handleGateError(err)) showToast(err.message);
                 })
               }
-              onSendCustomEmail={(t, i) =>
-                handleSendCustomEmail(t, i).catch((err) => {
+              onSendCustomEmail={(t, i, extraVars) =>
+                handleSendCustomEmail(t, i, extraVars).catch((err) => {
                   if (!handleGateError(err)) showToast(err.message);
                 })
               }
-              onSendViaChannel={(id, channel, message) =>
-                sendInvoiceReminder(id, channel, message).catch((err) => {
+              onSendViaChannel={(id, channel, message, extraVars) =>
+                sendInvoiceReminder(id, channel, message, { extraVars }).catch((err) => {
                   if (!handleGateError(err)) showToast(err.message);
                   throw err;
                 })
               }
-              onSendMulti={async (id, channels, message, templateId) => {
-                const res = await sendInvoiceReminderMulti(id, channels, message, templateId);
+              onSendMulti={async (id, channels, message, templateId, extraVars) => {
+                const res = await sendInvoiceReminderMulti(id, channels, message, templateId, extraVars);
                 if (!res.success) throw new Error(res.message);
                 if (res.errors?.length) {
                   showToast(res.errors.map((e) => `${e.channel}: ${e.message}`).join(' · '));
@@ -699,10 +703,11 @@ const handleApplyAiSteps = (newSteps: any[]) => {
             <CustomEmailTemplates
               templates={customTemplates}
               invoices={invoices}
+              user={user}
               onSaveTemplate={handleSaveCustomEmailTemplate}
               onDeleteTemplate={handleDeleteCustomEmailTemplate}
-              onSendCustomEmail={(t, i) =>
-                handleSendCustomEmail(t, i).catch((err) => {
+              onSendCustomEmail={(t, i, extraVars) =>
+                handleSendCustomEmail(t, i, extraVars).catch((err) => {
                   if (!handleGateError(err)) showToast(err.message);
                 })
               }

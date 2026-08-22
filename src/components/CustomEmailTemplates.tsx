@@ -16,21 +16,24 @@ import {
   ChevronRight,
   FileText
 } from 'lucide-react';
-import { CustomEmailTemplate, Invoice } from '../types';
-import { renderPlaceholders, absolutePaymentUrl } from '../lib/storage';
+import { CustomEmailTemplate, Invoice, UserProfile } from '../types';
+import { renderPlaceholders, absolutePaymentUrl, findUnknownVars } from '../lib/storage';
+import { VariableValuesModal } from './VariableValuesModal';
 
 interface CustomEmailTemplatesProps {
   templates: CustomEmailTemplate[];
   invoices: Invoice[];
+  user?: UserProfile;
   onSaveTemplate: (tmpl: Partial<CustomEmailTemplate>) => Promise<void>;
   onDeleteTemplate: (id: string) => Promise<void>;
-  onSendCustomEmail: (template: CustomEmailTemplate, invoice: Invoice) => Promise<void>;
+  onSendCustomEmail: (template: CustomEmailTemplate, invoice: Invoice, extraVars?: Record<string, string>) => Promise<void>;
   onGenerateAiEmail: (prompt: string, tone: string, senderName: string, senderEmail: string) => Promise<any>;
 }
 
 export function CustomEmailTemplates({
   templates,
   invoices,
+  user,
   onSaveTemplate,
   onDeleteTemplate,
   onSendCustomEmail,
@@ -56,6 +59,23 @@ export function CustomEmailTemplates({
   const [targetTemplate, setTargetTemplate] = useState<CustomEmailTemplate | null>(null);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string>(invoices[0]?.id || '');
   const [isSending, setIsSending] = useState<boolean>(false);
+  const [pendingVars, setPendingVars] = useState<string[] | null>(null);
+  const [extraVarValues, setExtraVarValues] = useState<Record<string, string>>({});
+
+  // Live-preview context: invoice + agency data, plus any custom variable
+  // values the user supplied before sending.
+  const buildPreviewCtx = (inv: Invoice) => ({
+    external_invoice_id: inv.external_invoice_id,
+    client_name: inv.client_name,
+    amount_due: inv.amount_due,
+    currency: inv.currency,
+    due_date: inv.due_date,
+    payment_link: absolutePaymentUrl(inv.payment_link),
+    client_phone: inv.client_phone,
+    company_name: user?.company_name || 'Your Studio',
+    company_email: user?.email,
+    company_phone: user?.company_phone,
+  });
 
   const [activeField, setActiveField] = useState<'subject' | 'body'>('body');
 
@@ -129,6 +149,8 @@ export function CustomEmailTemplates({
 
   const handleOpenSendModal = (tmpl: CustomEmailTemplate) => {
     setTargetTemplate(tmpl);
+    setPendingVars(null);
+    setExtraVarValues({});
     if (invoices.length > 0 && !selectedInvoiceId) {
       setSelectedInvoiceId(invoices[0].id);
     }
@@ -140,10 +162,26 @@ export function CustomEmailTemplates({
     const inv = invoices.find((i) => i.id === selectedInvoiceId);
     if (!inv) return;
 
+    // Custom variables the app cannot auto-fill: ask for their values first.
+    const unknown = findUnknownVars(targetTemplate.subject, targetTemplate.body);
+    if (unknown.length > 0 && !pendingVars) {
+      setPendingVars(unknown);
+      return;
+    }
+    await doSend(inv, extraVarValues);
+  };
+
+  const doSend = async (
+    inv: Invoice,
+    vars: Record<string, string>
+  ) => {
+    if (!targetTemplate) return;
+
     setIsSending(true);
     try {
-      await onSendCustomEmail(targetTemplate, inv);
+      await onSendCustomEmail(targetTemplate, inv, Object.keys(vars).length ? vars : undefined);
       setIsSendModalOpen(false);
+      setPendingVars(null);
     } finally {
       setIsSending(false);
     }
@@ -708,24 +746,14 @@ export function CustomEmailTemplates({
                   </span>
                   <div className="font-bold text-ink dark:text-white">
                     Subject: {renderPlaceholders(targetTemplate.subject, {
-                      external_invoice_id: selectedInvoice.external_invoice_id,
-                      client_name: selectedInvoice.client_name,
-                      amount_due: selectedInvoice.amount_due,
-                      currency: selectedInvoice.currency,
-                      due_date: selectedInvoice.due_date,
-                      payment_link: absolutePaymentUrl(selectedInvoice.payment_link),
-                      company_name: 'Your Studio',
+                      ...buildPreviewCtx(selectedInvoice),
+                      ...extraVarValues,
                     })}
                   </div>
                   <div className="text-ink2 dark:text-ink2 whitespace-pre-line leading-relaxed font-sans text-[11px] pt-1 border-t border-line dark:border-line break-all">
                     {renderPlaceholders(targetTemplate.body, {
-                      client_name: selectedInvoice.client_name,
-                      external_invoice_id: selectedInvoice.external_invoice_id,
-                      amount_due: selectedInvoice.amount_due,
-                      currency: selectedInvoice.currency,
-                      due_date: selectedInvoice.due_date,
-                      payment_link: absolutePaymentUrl(selectedInvoice.payment_link),
-                      company_name: 'Your Studio',
+                      ...buildPreviewCtx(selectedInvoice),
+                      ...extraVarValues,
                     })}
                   </div>
                 </div>
@@ -759,6 +787,22 @@ export function CustomEmailTemplates({
             </div>
           </div>
         </div>
+      )}
+
+      {/* ========================================================== */}
+      {/* MODAL 4: CUSTOM VARIABLE VALUES (user-added [my_var]) */}
+      {/* ========================================================== */}
+      {isSendModalOpen && pendingVars && pendingVars.length > 0 && (
+        <VariableValuesModal
+          vars={pendingVars}
+          onCancel={() => setPendingVars(null)}
+          onConfirm={(values) => {
+            setExtraVarValues(values);
+            const inv = invoices.find((i) => i.id === selectedInvoiceId);
+            if (!inv) return;
+            doSend(inv, values);
+          }}
+        />
       )}
     </div>
   );
