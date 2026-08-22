@@ -3,42 +3,26 @@
   
   <!-- Homepage -->
   <url>
-    <loc>https://www.mywebsite.com/</loc>
+    <loc>https://www.eronflow.top/</loc>
     <lastmod>2026-06-01</lastmod>
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
   </url>
-
-  <!-- About Page -->
-  <url>
-    <loc>https://www.mywebsite.com/about</loc>
-    <lastmod>2026-05-15</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.8</priority>
-  </url>
-
-  <!-- Services / Features Page -->
-  <url>
-    <loc>https://www.mywebsite.com/services</loc>
-    <lastmod>2026-05-20</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-
-  <!-- Blog Index -->
-  <url>
-    <loc>https://www.mywebsite.com/blog</loc>
-    <lastmod>2026-06-05</lastmod>
-    <changefreq>daily</changefreq>
-    <priority>0.7</priority>
-  </url>
-
+  
   <!-- Contact Page -->
   <url>
-    <loc>https://www.mywebsite.com/contact</loc>
-    <lastmod>2026-01-10</lastmod>
+    <loc>https://www.eronflow.top/help</loc>
+    <lastmod>2026-08-22</lastmod>
     <changefreq>yearly</changefreq>
     <priority>0.5</priority>
+  </url>
+
+  <!-- Signup Page -->
+  <url>
+    <loc>https://www.eronflow.top/app/signup</loc>
+    <lastmod>2026-08-22</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
   </url>
 
 </urlset>

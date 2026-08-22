@@ -64,7 +64,6 @@ test('GET /api/health reports an ok status with real provider flags', async () =
   assert.strictEqual(json.db, false);
   assert.strictEqual(json.dbReady, false);
   assert.strictEqual(json.dbReason, 'SUPABASE_NOT_CONFIGURED');
-  assert.strictEqual(json.testMode, false);
   for (const flag of [
     'supabaseConfigured',
     'payoneerConfigured',
@@ -117,11 +116,11 @@ test('GET /api/billing/plans returns 4 plans (3 tiers + custom) with included/ex
   assert.strictEqual(json.gatewayFeeFlat, 0.45);
 });
 
-test('GET /api/test-mode reports the test-mode switch (no mocks)', async () => {
-  const { status, json } = await request('GET', '/api/test-mode');
-  assert.strictEqual(status, 200);
-  assert.strictEqual(json.enabled, false);
-    assert.ok(Array.isArray(json.testCards));
+test('Test-only routes are removed — everything runs on real /api routes', async () => {
+  for (const path of ['/api/test-mode', '/api/test/send-email', '/api/test/payment-intent']) {
+    const { status } = await request('GET', path);
+    assert.strictEqual(status, 404, `${path} must not exist anymore`);
+  }
 });
 
 test('Signup requires the database (503 NO_DB, never a mock account)', async () => {
@@ -148,10 +147,10 @@ test('POST /api/auth/logout clears the session cookie', async () => {
   assert.ok(setCookie.includes('Max-Age=0'));
 });
 
-test('Provider endpoints return PROVIDER_NOT_CONFIGURED instead of fake data', async () => {
-  const { status, json } = await request('POST', '/api/test/payment-intent', { amount: 10 });
-  assert.strictEqual(status, 401); // auth required first
-  assert.strictEqual(json.error, 'UNAUTHENTICATED');
+test('Payment intent endpoint needs a database (public portal route, no mocks)', async () => {
+  const { status, json } = await request('POST', '/api/payments/create-payment-intent', { invoice_id: 'inv_x', method: 'card' });
+  assert.strictEqual(status, 503); // public portal route — DB required, never fake data
+  assert.strictEqual(json.error, 'NO_DB');
 });
 
 test('Billing math: full-month charge equals the exact plan price (no tax or gateway fee added)', async () => {

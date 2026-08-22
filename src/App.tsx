@@ -44,6 +44,7 @@ import { PublicPaymentPortal } from './components/PublicPaymentPortal';
 import { SettingsBilling } from './components/SettingsBilling';
 import { Connectors } from './components/Connectors';
 import { HelpPage } from './components/HelpPage';
+import { Footer } from './components/Footer';
 import { ChangePasswordModal } from './components/ChangePasswordModal';
 import { AiSequenceModal } from './components/AiSequenceModal';
 import { HomePage } from './components/HomePage';
@@ -80,6 +81,7 @@ type Route =
   | { name: 'signin' }
   | { name: 'signup' }
   | { name: 'invite'; token: string }
+  | { name: 'help' }
   | { name: 'app'; tab: NavigationTab }
   | { name: 'pay'; invoiceId: string };
 
@@ -94,6 +96,7 @@ function routeFromPath(path: string): Route {
   }
   if (path === '/signin') return { name: 'signin' };
   if (path === '/signup') return { name: 'signup' };
+  if (path === '/help') return { name: 'help' };
   const tab = PATH_TO_TAB[path];
   if (tab) return { name: 'app', tab };
   return { name: 'home' };
@@ -113,7 +116,6 @@ export default function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [portalInvoice, setPortalInvoice] = useState<Invoice | null>(null);
   const [portalAgency, setPortalAgency] = useState<{ company_name: string; logo_url?: string; brand_color?: string } | null>(null);
-  const [portalTestMode, setPortalTestMode] = useState(false);
 
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [sequences, setSequences] = useState<Sequence[]>([]);
@@ -174,7 +176,6 @@ export default function App() {
         if (cancelled) return;
         setPortalInvoice(data.invoice);
         setPortalAgency(data.agency);
-        setPortalTestMode(data.testMode);
       } catch {
         if (!cancelled) showToast('Invoice not found.');
       } finally {
@@ -425,10 +426,45 @@ const handleApplyAiSteps = (newSteps: any[]) => {
             ? { company_name: portalAgency.company_name, logo_url: portalAgency.logo_url, brand_color: portalAgency.brand_color }
             : { company_name: 'Client Billing' }
         }
-        testMode={portalTestMode}
         invoiceId={route.invoiceId}
         onBackToApp={() => navigate('/')}
       />
+    );
+  }
+
+  // While the session check is still pending, never guess the route.
+  // Rendering the public home here is what caused the "root page glimpse"
+  // on direct hits to /app/* and /help URLs.
+  if (!authChecked) {
+    return (
+      <div className="min-h-screen bg-main dark:bg-main text-ink dark:text-ink flex flex-col items-center justify-center font-sans transition-colors">
+        <RefreshCw className="w-6 h-6 text-accent animate-spin" />
+        <p className="mt-3 text-xs font-bold text-ink3">Loading…</p>
+      </div>
+    );
+  }
+
+  // --- Public Help route (available to everyone, logged in or not) ---
+  if (route.name === 'help') {
+    return (
+      <div className="min-h-screen bg-main dark:bg-main text-ink dark:text-ink flex flex-col font-sans transition-colors">
+        {toastMessage && <Toast message={toastMessage} />}
+        <Navbar
+          user={user}
+          isLoggedIn={isLoggedIn}
+          onOpenAuth={(mode) => navigate(mode === 'signup' ? '/signup' : '/signin')}
+          onLogout={handleLogout}
+          onNavigateToBilling={() => navigate('/app/settings')}
+          onNavigateHome={() => navigate('/')}
+        />
+        <main className="flex-1 max-w-4xl mx-auto w-full p-4 sm:p-6 lg:p-8">
+          <HelpPage user={user} />
+        </main>
+        <Footer
+          onNavigateHome={() => navigate('/')}
+          onOpenAuth={isLoggedIn ? undefined : (mode) => navigate(mode === 'signup' ? '/signup' : '/signin')}
+        />
+      </div>
     );
   }
 
@@ -477,7 +513,7 @@ const handleApplyAiSteps = (newSteps: any[]) => {
         />
       );
     }
-
+    
     return (
       <div className="min-h-screen bg-main dark:bg-main text-ink dark:text-ink flex flex-col font-sans transition-colors">
         {toastMessage && <Toast message={toastMessage} />}

@@ -13,11 +13,12 @@ import { UserProfile } from '../types';
 import { SUPPORT_EMAIL } from '../data/plans';
 
 interface HelpPageProps {
-  user: UserProfile;
+  user: UserProfile | null;
 }
 
 export function HelpPage({ user }: HelpPageProps) {
   const [expanded, setExpanded] = useState<number | null>(0);
+  const companyName = user?.company_name || 'Eron';
 
   const guides = [
     {
@@ -108,7 +109,7 @@ export function HelpPage({ user }: HelpPageProps) {
         </p>
         <div className="flex flex-wrap items-center gap-3">
           <a
-            href={`mailto:${SUPPORT_EMAIL}?subject=Help request from ${encodeURIComponent(user.company_name)}`}
+            href={`mailto:${SUPPORT_EMAIL}?subject=Help request from ${encodeURIComponent(companyName)}`}
             className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-accent hover:bg-accent-hover text-white font-bold text-xs transition-all shadow-md"
           >
             <Mail className="w-4 h-4" />

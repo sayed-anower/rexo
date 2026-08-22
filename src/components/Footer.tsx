@@ -1,5 +1,6 @@
 import React from 'react';
 import { Lock, Heart } from 'lucide-react';
+import { navigate } from '../App';
 
 interface FooterProps {
   onNavigateHome?: () => void;
@@ -75,6 +76,14 @@ export function Footer({ onNavigateHome, onOpenAuth }: FooterProps) {
           Account
         </h4>
         <ul className="space-y-2 text-xs">
+          <li>
+            <button
+              onClick={() => navigate('/help')}
+              className="hover:text-slate-900 dark:hover:text-white transition-colors"
+            >
+              Help &amp; Support
+            </button>
+          </li>
           {onOpenAuth && (
             <>
               <li>

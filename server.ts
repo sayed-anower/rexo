@@ -60,45 +60,7 @@ function absolutePaymentLink(link: string | undefined | null): string {
   return `${appUrl()}${raw.startsWith('/') ? '' : '/'}${raw}`;
 }
 
-interface TestOverrides {
-  enabled: boolean;
-  payoneerMerchantId?: string;
-  resendKey?: string;
-  resendFrom?: string;
-  reminderMail?: string;
-  whapiToken?: string;
-  googleClientId?: string;
-  googleClientSecret?: string;
-  qstashToken?: string;
-  updatedAt?: string;
-}
-
-let testOverrides: TestOverrides = { enabled: false };
-
 function keyFor(envName: string): string | undefined {
-  const map: Record<string, string> = {
-    PAYONEER_MERCHANT_ID: 'payoneerMerchantId',
-    RESEND_API_KEY: 'resendKey',
-    RESEND_FROM_EMAIL: 'resendFrom',
-    REMINDER_MAIL: 'reminderMail',
-    WHAPI_API_TOKEN: 'whapiToken',
-    GOOGLE_CLIENT_ID: 'googleClientId',
-    GOOGLE_CLIENT_SECRET: 'googleClientSecret',
-    QSTASH_TOKEN: 'qstashToken',
-    QUICKBOOKS_CLIENT_ID: 'quickbooksClientId',
-    QUICKBOOKS_CLIENT_SECRET: 'quickbooksClientSecret',
-    QUICKBOOKS_WEBHOOK_TOKEN: 'quickbooksWebhookToken',
-    XERO_CLIENT_ID: 'xeroClientId',
-    XERO_CLIENT_SECRET: 'xeroClientSecret',
-    XERO_WEBHOOK_KEY: 'xeroWebhookKey',
-    VONAGE_API_KEY: 'vonageApiKey',
-    VONAGE_API_SECRET: 'vonageApiSecret',
-    VONAGE_FROM_NUMBER: 'vonageFromNumber',
-  };
-  if (testOverrides.enabled) {
-    const v = (testOverrides as unknown as Record<string, unknown>)[map[envName]];
-    if (typeof v === 'string' && v) return v;
-  }
   return process.env[envName];
 }
 
@@ -111,11 +73,9 @@ function providerUnavailable(res: express.Response, provider: string): express.R
   return res.status(503).json({
     error: 'PROVIDER_NOT_CONFIGURED',
     provider,
-    message: `${provider} is not configured. Add a real (test or live) API key in .env or the Test Mode panel. No mock/demo fallback is used.`,
+    message: `${provider} is not configured. Add a real (test or live) API key in .env. No mock/demo fallback is used.`,
   });
 }
-
-const TEST_CARDS: { last4: string; label: string }[] = [];
 
 // ==========================================
 // SUPABASE PERSISTENCE
@@ -280,7 +240,7 @@ async function sendOtpEmail(email: string, purpose: OtpPurpose, code: string): P
     change: 'Use the code below to confirm your Eron password change.',
   };
   await sendEmailViaResend({
-    from: resendFromEmail(),
+    from: resendFrom('Eron'),
     to: email,
     subject: subjectByPurpose[purpose],
     html: `<p>Hi,</p><p>${messageByPurpose[purpose]}</p><p style="font-size:28px;font-weight:800;letter-spacing:6px;color:#E58233">${code}</p><p>This code expires in 10 minutes and can only be used once. If you didn't request it, you can safely ignore this email.</p>`,
@@ -745,19 +705,33 @@ async function sendEmailViaResend(opts: {
     body: JSON.stringify(opts),
   });
   const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(json?.message || 'Resend API send failed');
+  if (!res.ok) {
+    const msg = String(json?.message || 'Resend API send failed');
+    // Resend rejects sends from unverified domains / to arbitrary addresses
+    // while a domain is unverified. Surface exactly what fixes it instead of
+    // a bare failure.
+    if (res.status === 403 || res.status === 422 || /testing emails|verify/i.test(msg)) {
+      throw new Error(
+        `${msg}. Resend only delivers from verified domains — verify your domain at resend.com/domains and set RESEND_FROM_EMAIL to an address on it.`
+      );
+    }
+    throw new Error(msg);
+  }
   return { provider: 'resend', id: json.id };
 }
 
-// The shared "from" address for every reminder email. REMINDER_MAIL is the
-// platform's own mailbox (e.g. reminder@eron.com) used for all automated
-// invoice emails; RESEND_FROM_EMAIL remains a per-deployment override.
-function resendFromEmail(): string {
-  const mail =
-    keyFor('REMINDER_MAIL') ||
-    keyFor('RESEND_FROM_EMAIL') ||
-    'Reminders <reminders@youragency.com>';
-  return mail;
+// Every outbound email is sent from env.RESEND_FROM_EMAIL (a Resend-verified
+// address). The agency's identity is carried by the display name and the
+// company signature appended to each message — never by a different sender
+// address, which Resend would reject.
+function resendFromAddress(): string {
+  return effectiveKey('RESEND_FROM_EMAIL') || 'onboarding@resend.dev';
+}
+
+function resendFrom(displayName?: string): string {
+  const name = String(displayName || '').trim().replace(/[<>]/g, '');
+  const addr = resendFromAddress();
+  return name ? `${name} <${addr}>` : addr;
 }
 
 async function sendWhatsAppViaWhapi(opts: { to: string; message: string }) {
@@ -770,7 +744,7 @@ async function sendWhatsAppViaWhapi(opts: { to: string; message: string }) {
     body: JSON.stringify({ to: opts.to, body: opts.message }),
   });
   const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(json?.error?.message || 'Whapi API send failed');
+  if (!res.ok) throw new Error(json?.error?.message || json?.error || 'Whapi API send failed');
   return { provider: 'whapi', id: json.message_id || json.messages?.[0]?.id || `wa_${Date.now()}` };
 }
 
@@ -888,7 +862,7 @@ app.use('/api/webhooks/xero', express.raw({ type: '*/*' }));
 app.use(express.json());
 
 // ==========================================
-// 1. HEALTH & TEST-MODE
+// 1. HEALTH
 // ==========================================
 app.get('/api/health', (req, res) => {
   res.json({
@@ -900,12 +874,12 @@ app.get('/api/health', (req, res) => {
     dbReady: dbReady?.ready ?? false,
     dbReason: dbReady?.ready ? undefined : dbReady?.reason,
     dbMessage: dbReady?.ready ? undefined : dbReady?.message,
-    testMode: testOverrides.enabled,
     env: {
       supabaseConfigured: Boolean(getSupabase()),
       payoneerConfigured: Boolean(effectiveKey('PAYONEER_MERCHANT_ID')),
       qstashConfigured: Boolean(effectiveKey('QSTASH_TOKEN')),
       resendConfigured: Boolean(effectiveKey('RESEND_API_KEY')),
+      resendFrom: resendFromAddress(),
       whapiConfigured: Boolean(effectiveKey('WHAPI_API_TOKEN')),
       googleConfigured: Boolean(effectiveKey('GOOGLE_CLIENT_ID') && effectiveKey('GOOGLE_CLIENT_SECRET')),
       quickbooksConfigured: Boolean(effectiveKey('QUICKBOOKS_CLIENT_ID') && effectiveKey('QUICKBOOKS_CLIENT_SECRET')),
@@ -921,112 +895,6 @@ app.get('/api/health', (req, res) => {
 app.get('/api/db/migration', (req, res) => {
   res.setHeader('Content-Type', 'text/plain; charset=utf-8');
   res.send(MIGRATION_SQL);
-});
-
-app.get('/api/test-mode', (req, res) => {
-  res.json({
-    enabled: testOverrides.enabled,
-    effective: {
-      payoneer: Boolean(effectiveKey('PAYONEER_MERCHANT_ID')),
-      resend: Boolean(effectiveKey('RESEND_API_KEY')),
-      resendFrom: resendFromEmail(),
-      whapi: Boolean(effectiveKey('WHAPI_API_TOKEN')),
-      qstash: Boolean(effectiveKey('QSTASH_TOKEN')),
-      google: Boolean(effectiveKey('GOOGLE_CLIENT_ID') && effectiveKey('GOOGLE_CLIENT_SECRET')),
-      quickbooks: Boolean(effectiveKey('QUICKBOOKS_CLIENT_ID') && effectiveKey('QUICKBOOKS_CLIENT_SECRET')),
-      xero: Boolean(effectiveKey('XERO_CLIENT_ID') && effectiveKey('XERO_CLIENT_SECRET')),
-      vonage: Boolean(
-        effectiveKey('VONAGE_API_KEY') && effectiveKey('VONAGE_API_SECRET') && effectiveKey('VONAGE_FROM_NUMBER')
-      ),
-      gemini: Boolean(effectiveKey('GEMINI_API_KEY')),
-    },
-    testCards: TEST_CARDS,
-    testEmails: ['alex+test@resend.dev', 'delivered@resend.dev'],
-    providersUrl: {
-      payoneerDashboard: 'https://www.payoneer.com/dashboard/',
-      resendDashboard: 'https://resend.com/emails',
-    },
-  });
-});
-
-app.post('/api/test-mode', async (req, res) => {
-  const user = await requireUser(req, res);
-  if (!user) return;
-  const body = req.body || {};
-  testOverrides = {
-    enabled: Boolean(body.enabled),
-    payoneerMerchantId: body.payoneerMerchantId || undefined,
-    resendKey: body.resendKey || undefined,
-    resendFrom: body.resendFrom || undefined,
-    reminderMail: body.reminderMail || undefined,
-    whapiToken: body.whapiToken || undefined,
-    googleClientId: body.googleClientId || undefined,
-    googleClientSecret: body.googleClientSecret || undefined,
-    qstashToken: body.qstashToken || undefined,
-    updatedAt: new Date().toISOString(),
-  };
-  res.json({ enabled: testOverrides.enabled, testMode: testOverrides });
-});
-
-app.post('/api/test/send-email', async (req, res) => {
-  const user = await requireUser(req, res);
-  if (!user) return;
-  const { to, subject, body, templateId } = req.body;
-
-  if (!to || !to.includes('@')) {
-    return res.status(400).json({ error: 'A valid recipient email is required for a real send.' });
-  }
-
-  const active = assertPlanActive(user);
-  if (!active.ok) return res.status(402).json(active);
-
-  let html = body || '<p>Test email sent from Eron Test Mode.</p>';
-  if (templateId) {
-    const sb = getSupabase();
-    const { data: tmpl } = sb
-      ? await sb.from('custom_email_templates').select('*').eq('id', templateId).eq('user_id', user.profile.id).maybeSingle()
-      : { data: null };
-    if (tmpl) html = (tmpl.body as string).replace(/\n/g, '<br/>');
-  }
-
-  try {
-    const dispatch = await sendEmailViaResend({
-      from: keyFor('RESEND_FROM_EMAIL') || 'Reminders <reminders@youragency.com>',
-      to,
-      subject: subject || 'Eron Test Email',
-      html,
-    });
-    const sb = getSupabase();
-    if (sb) {
-      await sb.from('reminder_logs').insert({
-        id: `log_test_${Date.now()}`,
-        user_id: user.profile.id,
-        invoice_id: null,
-        invoice_number: 'TEST',
-        client_name: 'Test Mode',
-        client_email: to,
-        sequence_step_title: 'Test Email (Real Resend Send)',
-        channel: 'email',
-        status: 'sent',
-        sent_at: new Date().toISOString(),
-        payload_preview: `Real ${dispatch.provider} dispatch ${dispatch.id} sent to ${to}.`,
-      });
-    }
-    await addUsage(user.profile.id, { emails_sent: 1, reminders_delivered: 1 });
-    res.json({ success: true, message: `Test email sent for real via ${dispatch.provider}: ${dispatch.id}`, dispatch });
-  } catch (err: any) {
-    console.error('[Test] email send failed:', err.message);
-    res.status(502).json({ success: false, error: 'SEND_FAILED', message: err.message });
-  }
-});
-
-app.post('/api/test/payment-intent', async (req, res) => {
-  const user = await requireUser(req, res);
-  if (!user) return;
-  const { amount, currency } = req.body;
-  const cents = Math.round(Number(amount || 10) * 100);
-  const fee = paymentMethodFee('card' as PaymentMethod, cents / 100);
-  res.json({ success: true, url: `/pay/test_${Date.now()}`, provider: 'payoneer', intent_id: `test_${Date.now()}`, amount: cents / 100, fee, currency: currency?.toLowerCase() || 'usd', method: 'card' });
 });
 
 // ==========================================
@@ -3143,10 +3011,13 @@ app.post('/api/custom-emails/send', async (req, res) => {
         .replace(/\[your_name\]/gi, user.profile.company_name);
 
     const dispatch = await sendEmailViaResend({
-      from: `${tmpl.sender_name} <${tmpl.sender_email}>`,
+      // Always dispatched from the verified env.RESEND_FROM_EMAIL address.
+      // The template's sender name is only the display name; the agency
+      // identity is completed by the company signature appended below.
+      from: resendFrom(tmpl.sender_name || user.profile.company_name),
       to: inv.client_email,
       subject: render(tmpl.subject),
-      html: render(tmpl.body).replace(/\n/g, '<br/>'),
+      html: appendSignature(textToHtml(render(tmpl.body)), companySignature(user.profile)),
     });
 
     await sb.from('reminder_logs').insert({
@@ -3160,7 +3031,7 @@ app.post('/api/custom-emails/send', async (req, res) => {
       channel: 'email',
       status: 'sent',
       sent_at: new Date().toISOString(),
-      payload_preview: `Sender: "${tmpl.sender_name}" <${tmpl.sender_email}>. ${dispatch.provider.toUpperCase()} dispatch ${dispatch.id} sent to ${inv.client_email}.`,
+      payload_preview: `Sender name "${tmpl.sender_name}" — from ${resendFromAddress()}. ${dispatch.provider.toUpperCase()} dispatch ${dispatch.id} sent to ${inv.client_email}.`,
     });
     await addUsage(user.profile.id, { emails_sent: 1, reminders_delivered: 1 });
     res.json({ success: true, message: 'Custom email sent successfully', dispatch });
@@ -3178,12 +3049,6 @@ app.post('/api/custom-emails/send', async (req, res) => {
 // free-form message. Every channel carries the invoice details + payment link
 // and emails append the user's own signature.
 // ==========================================
-
-function reminderMailAddress(): string {
-  const raw = resendFromEmail();
-  const m = raw.match(/<([^>]+)>/);
-  return m ? m[1] : raw;
-}
 
 function renderInvoiceText(
   text: string,
@@ -3220,6 +3085,25 @@ function appendSignature(html: string, signature: string): string {
   const sig = String(signature || '').trim();
   if (!sig) return html;
   return `${html}<div style="margin-top:20px;padding-top:14px;border-top:1px solid #e5e5e5;color:#555555;font-size:13px;">${textToHtml(sig)}</div>`;
+}
+
+// The user's company signature appended to every email, WhatsApp message and
+// SMS. When no custom signature has been saved on the profile a sensible one
+// is built from the company name (+ phone) so every channel is always signed.
+function companySignature(profile?: { company_name?: string; company_phone?: string; email_signature?: string }): string {
+  const custom = String(profile?.email_signature || '').trim();
+  if (custom) return custom;
+  const lines = ['Best regards,', String(profile?.company_name || '').trim()].filter(Boolean);
+  const phone = String(profile?.company_phone || '').trim();
+  if (phone) lines.push(phone);
+  return lines.join('\n');
+}
+
+// Plain-text variant for WhatsApp / SMS (no HTML in those channels).
+function appendTextSignature(text: string, signature: string): string {
+  const sig = String(signature || '').trim();
+  if (!sig) return text;
+  return `${String(text).trimEnd()}\n\n—\n${sig}`;
 }
 
 function defaultReminderText(inv: any, payLink: string, channel: 'whatsapp' | 'SMS' | 'email'): string {
@@ -3271,9 +3155,14 @@ app.post('/api/invoices/:id/send', async (req, res) => {
     company_email: user.profile.email,
     company_phone: (user.row as any).company_phone || '',
   };
-  const signature = user.profile.email_signature || '';
+  // Every channel is signed with the user's company signature.
+  const signature = companySignature({
+    company_name: user.profile.company_name,
+    company_phone: (user.row as any).company_phone || '',
+    email_signature: user.profile.email_signature,
+  });
   const fromName = tmpl?.sender_name || user.profile.company_name || 'Eron';
-  const from = `${fromName} <${reminderMailAddress()}>`;
+  const from = resendFrom(fromName);
 
   const results: any[] = [];
   const errors: { channel: string; message: string }[] = [];
@@ -3301,15 +3190,21 @@ app.post('/api/invoices/:id/send', async (req, res) => {
       let preview: string;
 
       if (ch === 'whatsapp') {
-        const msg = tmpl
-          ? renderInvoiceText(tmpl.body, inv, profile, payLink)
-          : message || defaultReminderText(inv, payLink, 'whatsapp');
+        const msg = appendTextSignature(
+          tmpl
+            ? renderInvoiceText(tmpl.body, inv, profile, payLink)
+            : message || defaultReminderText(inv, payLink, 'whatsapp'),
+          signature
+        );
         dispatch = await sendWhatsAppViaWhapi({ to: inv.client_phone, message: msg });
         preview = `${dispatch.provider.toUpperCase()} ${dispatch.id} → WhatsApp ${inv.client_phone}`;
       } else if (ch === 'SMS') {
-        const body = tmpl
-          ? renderInvoiceText(tmpl.body, inv, profile, payLink)
-          : message || defaultReminderText(inv, payLink, 'SMS');
+        const body = appendTextSignature(
+          tmpl
+            ? renderInvoiceText(tmpl.body, inv, profile, payLink)
+            : message || defaultReminderText(inv, payLink, 'SMS'),
+          signature
+        );
         dispatch = await sendSMSViaVonage({ to: inv.client_phone, body });
         preview = `${dispatch.provider.toUpperCase()} ${dispatch.id} → SMS ${inv.client_phone}`;
       } else {
@@ -3744,37 +3639,6 @@ app.post('/api/payments/create-payment-intent', async (req, res) => {
 
   const fee = paymentMethodFee((method || 'card') as PaymentMethod, Number(invoice.amount_due));
 
-  // Test mode simulates the Payoneer checkout: the payment completes
-  // immediately and the invoice is marked paid so the portal shows the
-  // receipt. Live mode has no hosted checkout configured yet — the portal
-  // returns a clear error instead of an endless redirect.
-  if (testOverrides.enabled) {
-    await sb.from('invoices').update({ status: 'paid', sequence_paused: true }).eq('id', invoice.id);
-    await sb.from('reminder_logs').insert({
-      id: `log_portal_${Date.now()}`,
-      user_id: invoice.user_id,
-      invoice_id: invoice.id,
-      invoice_number: invoice.external_invoice_id,
-      client_name: invoice.client_name,
-      client_email: invoice.client_email,
-      sequence_step_title: 'Invoice Paid via Portal',
-      channel: 'email',
-      status: 'sent',
-      sent_at: new Date().toISOString(),
-      payload_preview: `Test-mode payment received: $${Number(invoice.amount_due).toFixed(2)} ${invoice.currency} via ${method || 'card'}.`,
-    });
-    await addUsage(invoice.user_id, { reminders_delivered: 1, amount_recovered: Number(invoice.amount_due) });
-    return res.json({
-      completed: true,
-      provider: 'payoneer',
-      intent_id: `payoneer_${Date.now()}`,
-      amount: Number(invoice.amount_due),
-      fee,
-      currency: invoice.currency,
-      method: method || 'card',
-    });
-  }
-
   return res.status(503).json({
     error: 'PROVIDER_NOT_CONFIGURED',
     message: 'Live checkout is not configured on this deployment yet. Please contact the agency to arrange payment.',
@@ -3797,7 +3661,6 @@ app.get('/api/portal/invoice/:id', async (req, res) => {
           brand_color: (agency as unknown as DbRow).brand_color || '#E58233',
         }
       : { company_name: 'Client Billing' },
-    testMode: testOverrides.enabled,
   });
 });
 
@@ -3866,9 +3729,9 @@ async function dispatchInvoiceReminders(opts: {
     company_email: profile?.company_email || '',
     company_phone: profile?.company_phone || '',
   };
-  const signature = profile?.email_signature || '';
+  const signature = companySignature(profile);
   const fromName = template?.sender_name || profile?.company_name || 'Eron';
-  const from = `${fromName} <${reminderMailAddress()}>`;
+  const from = resendFrom(fromName);
 
   for (const channel of channels) {
     // Channel availability: email needs an address; whatsapp/SMS need a phone.
@@ -3917,16 +3780,20 @@ async function dispatchInvoiceReminders(opts: {
       // Direct payment: ensure (and cache) a branded payment link first.
       let dispatch: { provider: string; id: string };
       if (channel === 'whatsapp') {
-        const msg =
+        const msg = appendTextSignature(
           template?.body
             ? renderInvoiceText(template.body, inv, renderProfile, payLink)
-            : `Hello ${inv.client_name}, invoice ${inv.external_invoice_id} for $${Number(inv.amount_due).toFixed(2)} is overdue. Pay securely here: ${payLink}`;
+            : `Hello ${inv.client_name}, invoice ${inv.external_invoice_id} for $${Number(inv.amount_due).toFixed(2)} is overdue. Pay securely here: ${payLink}`,
+          signature
+        );
         dispatch = await sendWhatsAppViaWhapi({ to: inv.client_phone, message: msg });
       } else if (channel === 'SMS') {
-        const body =
+        const body = appendTextSignature(
           template?.body
             ? renderInvoiceText(template.body, inv, renderProfile, payLink)
-            : `Hi ${inv.client_name}, invoice ${inv.external_invoice_id} for $${Number(inv.amount_due).toFixed(2)} is overdue. Pay securely here: ${payLink}`;
+            : `Hi ${inv.client_name}, invoice ${inv.external_invoice_id} for $${Number(inv.amount_due).toFixed(2)} is overdue. Pay securely here: ${payLink}`,
+          signature
+        );
         dispatch = await sendSMSViaVonage({ to: inv.client_phone, body });
       } else {
         const subject = template?.subject
@@ -3935,7 +3802,7 @@ async function dispatchInvoiceReminders(opts: {
         const bodyText = template?.body
           ? renderInvoiceText(template.body, inv, renderProfile, payLink)
           : `<p>Hi ${inv.client_name},</p><p>Invoice ${inv.external_invoice_id} for $${Number(inv.amount_due).toFixed(2)} ${inv.currency} is ${diffDays > 0 ? `${diffDays} day(s) overdue` : 'due'}. Pay securely here:</p><p><a href="${payLink}">Pay now with card, bank, PayPal or wallet</a></p>`;
-        const html = template ? appendSignature(textToHtml(bodyText), signature) : bodyText;
+        const html = appendSignature(textToHtml(bodyText), signature);
         if (gmailInt?.access_token) {
           try {
             dispatch = await sendGmailViaApi({ to: inv.client_email, subject, html, accessToken: gmailInt.access_token });

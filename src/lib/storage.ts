@@ -228,7 +228,6 @@ export async function payInvoice(invoiceId: string): Promise<Invoice> {
 export async function fetchPortalInvoice(invoiceId: string): Promise<{
   invoice: Invoice;
   agency: { company_name: string; logo_url?: string; brand_color?: string };
-  testMode: boolean;
 }> {
   return apiFetch(`/api/portal/invoice/${invoiceId}`);
 }
@@ -621,44 +620,7 @@ export async function fetchAppConnectors(): Promise<AppConnectorInfo[]> {
   });
 }
 
-// 12. TEST MODE (real test keys + real test sends — no mocks)
-export interface TestModeStatus {
-  enabled: boolean;
-  effective: Record<string, boolean | string | null>;
-  testCards: { last4: string; label: string }[];
-  testEmails: string[];
-  providersUrl: Record<string, string>;
-}
-
-export async function fetchTestMode(): Promise<TestModeStatus> {
-  return apiFetch('/api/test-mode');
-}
-
-export async function saveTestMode(overrides: {
-  enabled: boolean;
-  payoneerMerchantId?: string;
-  resendKey?: string;
-  resendFrom?: string;
-  whapiToken?: string;
-  googleClientId?: string;
-  googleClientSecret?: string;
-  qstashToken?: string;
-}): Promise<{ enabled: boolean }> {
-  return apiFetch('/api/test-mode', { method: 'POST', body: JSON.stringify(overrides) });
-}
-
-export async function sendTestEmail(opts: { to: string; subject?: string; body?: string; templateId?: string }): Promise<any> {
-  return apiFetch('/api/test/send-email', { method: 'POST', body: JSON.stringify(opts) });
-}
-
-export async function createTestPaymentIntent(amount: number, currency: string = 'usd'): Promise<any> {
-  return apiFetch('/api/test/payment-intent', {
-    method: 'POST',
-    body: JSON.stringify({ amount, currency }),
-  });
-}
-
-// 13. PAYMENT PORTAL (real provider checkout)
+// 12. PAYMENT PORTAL (real provider checkout)
 export async function createInvoicePaymentSession(
   invoiceId: string,
   method: 'card' | 'bank' | 'paypal' | 'wallet'

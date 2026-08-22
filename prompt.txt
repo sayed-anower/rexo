@@ -1,15 +1,7 @@
-Fix problems & make it absolutly ready for production.
-Problems:
-1. In message templates, there is a variable for [payment_link], where is showing invalid link like /pay/... instead it will show env var APP_URL + public portal link for direct payment..
-2. In invoice page, there should be a delete btn for delete invoices.
-3. "Save Invoice & Attach Sequence" btn should be disabled at processing when user createing a new invoice.
-4. In Automation page, the ui feels very unprofessional & less user freindly and not fully functionable. Here is a comprehensive plan for Automation page:
-There will be some info about automation, then a button to create new, if user click that, there will be a form to change something as user wants. User can change the form, user can select one or multiple invoices to automated email/wa msg/sms send, user can set timing base on any region, and send messages based on regions (us default region) & timing, user can select any time, and user selects when to send like once, every day/month/year, or based on hours or minute, lowest is after every 1 minute untill reach the limit, add a limit in plans, and user must select a template.
-There is another kind of scheduled automation, if user select a msg template then normal automation but if select any recovery schedule then there user can't select timing, it sends reminder based days like 3 days remain, send this kind of msg via wa (whatsapp) msg/email/sms.
-After editing the form, user save and it shows as like a list with name, others info + three icons to edit, delete, pause.
-The form is a overlay form that shows at the middle when creates new or edit.
-Also there will be a list of schedules with 2 icons edit or delete. If we switch then show schedules or automations.
-Don't show schedules or automations info by default, just show a list. And user can edit them and save by btn, btn disabled when processing.
-Make sure the ui looks clean, professional.
-Make the ui easier for user, when I enter the web, it feels I gotta become a master to use it, it should feels very easy and add infos about what and how to do in current pages + help pages and say that we have support email that replies in 24 to 48 hours.
-5. Add all project details in README.md.
+The email sending showing failed because resend doesn't allow all email to send mail.
+Why is so many testing route are there being used?
+Remove all test/ something and use api/...
+Make sure all email will be send from env.RESEND_FROM_EMAIL, but we will add the company signeture.
+There will be a user company signeture in email/whatsapp message/sms
+Make sure email is sending via resend, whatsapp message is sending via whapi api & sms is sending via vonage api & all sending systems are working fine.
+Add all real routes for works.

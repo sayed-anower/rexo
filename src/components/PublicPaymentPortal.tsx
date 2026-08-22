@@ -27,7 +27,6 @@ interface PortalAgency {
 interface PublicPaymentPortalProps {
   invoice: Invoice | null;
   agencyProfile: PortalAgency;
-  testMode: boolean;
   invoiceId: string;
   loading?: boolean;
   onBackToApp?: () => void;
@@ -36,7 +35,6 @@ interface PublicPaymentPortalProps {
 export function PublicPaymentPortal({
   invoice,
   agencyProfile,
-  testMode,
   invoiceId,
   loading = false,
   onBackToApp
@@ -46,7 +44,6 @@ export function PublicPaymentPortal({
   const [paid, setPaid] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showTestCards, setShowTestCards] = useState(testMode);
 
   const isPaid = paid || invoice?.status === 'paid';
 
@@ -143,7 +140,7 @@ function feeRateLabel(def: PaymentMethodFee): string {
               onClick={onBackToApp}
               className="text-xs font-bold text-primary dark:text-secondary hover:underline flex items-center gap-1"
             >
-              ← Return to Eron Dashboard
+              Open Dashboard
             </button>
             <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-primary-soft text-primary dark:bg-surface2 dark:text-secondary">
               Client Portal
@@ -282,29 +279,6 @@ function feeRateLabel(def: PaymentMethodFee): string {
                   );
                 })}
               </div>
-
-              {testMode && (
-                <div className="p-3 rounded-xl bg-surface2 dark:bg-surface2/50 border border-line dark:border-line text-[11px] text-ink2 space-y-1">
-                  <p className="font-bold text-ink flex items-center gap-1.5">
-                    <AlertTriangle className="w-3.5 h-3.5 text-warn" /> Test mode is active on this portal
-                  </p>
-                  <p>Test cards: <span className="font-mono text-ink">4242 4242 4242 4242</span> (succeeds) &middot;{' '}
-                    <span className="font-mono text-ink">4000 0000 0000 0002</span> (declined).</p>
-                  <button
-                    type="button"
-                    onClick={() => setShowTestCards(!showTestCards)}
-                    className="text-primary font-semibold hover:underline"
-                  >
-                    {showTestCards ? 'Hide' : 'Show more'} test credentials
-                  </button>
-                  {showTestCards && (
-                    <ul className="list-disc pl-4 space-y-0.5">
-                      <li>Bank transfer: use any routing/account number</li>
-                      <li>PayPal sandbox: paypal-test@example.com</li>
-                    </ul>
-                  )}
-                </div>
-              )}
 
               {error && (
                 <div className="p-3 rounded-xl bg-red-50 dark:bg-red-950/60 border border-red-200 dark:border-red-800 text-xs text-red-800 dark:text-red-300 flex items-start gap-2">

@@ -1,17 +1,25 @@
 # Allow all standard search engines to index the public site
 User-agent: *
-Disallow: /dashboard/
+Disallow: /app/*
 Allow: /
+Allow: /help
+Allow: /app/signup
 
 # Optional: Specifically block aggressive AI scrapers and bots from sensitive areas
 User-agent: GPTBot
-Disallow: /dashboard/
+Disallow: /app/*
+Allow: /help
+Allow: /app/signup
 
 User-agent: ChatGPT-User
-Disallow: /dashboard/
+Disallow: /app/*
+Allow: /help
+Allow: /app/signup
 
 User-agent: ClaudeBot
-Disallow: /dashboard/
+Disallow: /app/*
+Allow: /help
+Allow: /app/signup
 
 # Reference your XML sitemap (replace with your actual domain and sitemap path)
-Sitemap: https://www.example.com/sitemap.xml
+Sitemap: https://www.eronflow.top/sitemap.xml
