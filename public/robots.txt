@@ -1,0 +1,34 @@
+User-agent: *
+Disallow: /app/*
+Allow: /
+Allow: /help
+Allow: /privacy
+Allow: /terms
+Allow: /about
+Allow: /docs
+
+User-agent: GPTBot
+Disallow: /app/*
+Allow: /help
+Allow: /privacy
+Allow: /terms
+Allow: /about
+Allow: /docs
+
+User-agent: ChatGPT-User
+Disallow: /app/*
+Allow: /help
+Allow: /privacy
+Allow: /terms
+Allow: /about
+Allow: /docs
+
+User-agent: ClaudeBot
+Disallow: /app/*
+Allow: /help
+Allow: /privacy
+Allow: /terms
+Allow: /about
+Allow: /docs
+
+Sitemap: https://www.eronflow.top/sitemap.xml

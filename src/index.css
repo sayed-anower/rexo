@@ -1,0 +1,132 @@
+@import "tailwindcss";
+
+/*
+  Enable class-based dark mode for Tailwind CSS v4.
+  Tailwind v4 defaults to `prefers-color-scheme` media queries. Our
+  ThemeToggle component toggles the `dark` class on <html>, so we register
+  a custom `dark` variant that matches that class anywhere in the tree.
+*/
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ============================================================
+   EronFlow Brand Palette (Professional Blue Theme)
+   These raw tokens drive the entire UI. Tailwind theme colors
+   (defined below in @theme) resolve through var() to these, so
+   light/dark mode flipping happens in one place.
+   ============================================================ */
+:root {
+  /* Brand Palette (Trustworthy Corporate Blue Family) */
+  --color-primary: #2563EB;
+  --color-primary-hover: #1D4ED8;
+  --color-primary-strong: #1E40AF;
+  --color-primary-soft: #EFF6FF;
+  --color-secondary: #3B82F6;
+  --color-secondary-soft: #DBEAFE;
+  --color-accent: #0284C7;
+  --color-accent-hover: #0369A1;
+  --color-accent-light: #38BDF8;
+  --color-accent-tint: #F0F9FF;
+
+  /* Light Mode UI Theme (Slate & Cool Whites) */
+  --bg-main: #F8FAFC;
+  --bg-surface: #FFFFFF;
+  --bg-surface-elevated: #F1F5F9;
+  --border-color: #E2E8F0;
+
+  --text-primary: #0F172A;
+  --text-secondary: #475569;
+  --text-inverse: #FFFFFF;
+}
+
+/* Automatic Dark Mode UI Theme (OS preference) */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg-main: #0B1120;
+    --bg-surface: #0F172A;
+    --bg-surface-elevated: #1E293B;
+    --border-color: #334155;
+
+    --text-primary: #F8FAFC;
+    --text-secondary: #94A3B8;
+    --text-inverse: #0F172A;
+
+    --color-primary: #3B82F6;
+    --color-primary-hover: #60A5FA;
+    --color-secondary: #2563EB;
+    --color-accent: #38BDF8;
+    --color-accent-hover: #60A5FA;
+  }
+}
+
+/* Manual Dark Mode Class Override (ThemeToggle toggles `.dark`) */
+[data-theme="dark"],
+.dark {
+  --bg-main: #0B1120;
+  --bg-surface: #0F172A;
+  --bg-surface-elevated: #1E293B;
+  --border-color: #334155;
+
+  --text-primary: #F8FAFC;
+  --text-secondary: #94A3B8;
+  --text-inverse: #0F172A;
+
+  --color-primary: #3B82F6;
+  --color-primary-hover: #60A5FA;
+  --color-secondary: #2563EB;
+  --color-accent: #38BDF8;
+  --color-accent-hover: #60A5FA;
+}
+
+/* ============================================================
+   Tailwind Theme Mapping
+   Utilities like bg-main, text-ink, border-line, bg-primary,
+   text-accent now resolve to the tokens above (and flip with theme).
+   ============================================================ */
+@theme {
+  /* Brand primaries */
+  --color-primary: var(--color-primary);
+  --color-primary-hover: var(--color-primary-hover);
+  --color-primary-strong: var(--color-primary-strong);
+  --color-primary-soft: var(--color-primary-soft);
+  --color-secondary: var(--color-secondary);
+  --color-secondary-soft: var(--color-secondary-soft);
+
+  /* Accent (CTA) blue */
+  --color-accent: var(--color-accent);
+  --color-accent-hover: var(--color-accent-hover);
+  --color-accent-soft: var(--color-accent-light);
+  --color-accent-tint: var(--color-accent-tint);
+
+  /* Surfaces & text */
+  --color-main: var(--bg-main);
+  --color-surface: var(--bg-surface);
+  --color-surface2: var(--bg-surface-elevated);
+  --color-line: var(--border-color);
+  --color-ink: var(--text-primary);
+  --color-ink2: var(--text-secondary);
+  --color-ink3: #64748B;
+  --color-ink-invert: var(--text-inverse);
+
+  /* Semantic status colors (kept accessible on both themes) */
+  --color-ok: #16A34A;
+  --color-ok-soft: #DCFCE7;
+  --color-warn: #D97706;
+  --color-warn-soft: #FEF3C7;
+  --color-danger: #DC2626;
+  --color-danger-soft: #FEE2E2;
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+.footer-tags {
+  background-color: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.18);
+  color: #E0F2FE;
+}
+
+.footer-tags.light {
+  background-color: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.25);
+  color: #fff;
+}

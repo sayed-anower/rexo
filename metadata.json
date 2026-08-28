@@ -1,0 +1,6 @@
+{
+  "name": "EronFlow",
+  "description": "Automated Payment Recovery & Invoice Reminders SaaS for B2B Digital Agencies",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
