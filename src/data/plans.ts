@@ -149,9 +149,9 @@ export const PLANS: PlanDefinition[] = [
       tracked_invoices: 150,
       team_seats: 1,
       emails_per_month: 300,
-      whatsapp_per_month: 50,
+      whatsapp_per_month: 100,
       SMS_per_month: 50,
-      ai_generations: 50,
+      ai_generations: 20,
       min_automation_interval_mins: 60,
       custom_domain: false,
       white_label: false,
@@ -159,8 +159,8 @@ export const PLANS: PlanDefinition[] = [
       priority_automation: false,
     },
     false,
-    true,
-    199
+    false,
+    149
   ),
   plan(
     'pro',
@@ -182,7 +182,7 @@ export const PLANS: PlanDefinition[] = [
       priority_automation: false,
     },
     true, // Most Popular
-    true,
+    false,
     399
   ),
   plan(
@@ -205,7 +205,7 @@ export const PLANS: PlanDefinition[] = [
       priority_automation: true,
     },
     false,
-    true,
+    false,
     699
   ),
 ];

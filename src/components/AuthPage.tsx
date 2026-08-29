@@ -9,6 +9,7 @@ import {
 } from '../lib/storage';
 import { UserProfile } from '../types';
 import { navigate } from '../App';
+import { PHONE_DIAL_CODES } from '../data/phoneDialCodes';
 
 interface AuthPageProps {
   initialMode?: 'signin' | 'signup' | 'forgot';
@@ -20,22 +21,6 @@ const inputClass =
   "w-full pl-9 pr-3 py-2.5 text-xs rounded-lg border border-line dark:border-line bg-main dark:bg-surface2/50 text-ink dark:text-white placeholder:text-ink3 focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent transition-all";
 
 const OTP_COOLDOWN_MS = 60 * 1000;
-
-// ISO 3166-1 alpha-2 codes and phone dial codes
-const COUNTRY_LIST: { code: string; name: string; dialCode: string }[] = [
-  { code: 'AF', name: 'Afghanistan', dialCode: '+93' },
-  { code: 'AL', name: 'Albania', dialCode: '+355' },
-  { code: 'DZ', name: 'Algeria', dialCode: '+213' },
-  { code: 'AR', name: 'Argentina', dialCode: '+54' },
-  { code: 'AU', name: 'Australia', dialCode: '+61' },
-  { code: 'BD', name: 'Bangladesh', dialCode: '+880' },
-  { code: 'CA', name: 'Canada', dialCode: '+1' },
-  { code: 'FR', name: 'France', dialCode: '+33' },
-  { code: 'DE', name: 'Germany', dialCode: '+49' },
-  { code: 'IN', name: 'India', dialCode: '+91' },
-  { code: 'GB', name: 'United Kingdom', dialCode: '+44' },
-  { code: 'US', name: 'United States', dialCode: '+1' },
-];
 
 export function AuthPage({ initialMode = 'signin', onSuccess }: AuthPageProps) {
   const [mode, setMode] = useState<'signin' | 'signup' | 'forgot'>(initialMode);
@@ -57,9 +42,9 @@ export function AuthPage({ initialMode = 'signin', onSuccess }: AuthPageProps) {
   // Auto-update dial code when country changes (if available)
   const handleCountryChange = (countryCode: string) => {
     setSignupCountry(countryCode);
-    const matched = COUNTRY_LIST.find((c) => c.code === countryCode);
+    const matched = PHONE_DIAL_CODES.find((c) => c.code === countryCode);
     if (matched) {
-      setDialCode(matched.dialCode);
+      setDialCode(matched.dial.startsWith('+') ? matched.dial : `+${matched.dial}`);
     }
   };
 
@@ -103,8 +88,8 @@ export function AuthPage({ initialMode = 'signin', onSuccess }: AuthPageProps) {
         const cleanDigits = phoneNumber.replace(/\D/g, '');
         if (cleanDigits.length < 6) throw new Error('Enter a valid phone number.');
         
-        // Full combined E.164-style phone number sent to DB (e.g. +8801700000000)
-        const fullPhone = `${dialCode}${cleanDigits}`;
+        // Full combined E.164-style phone number sent to DB
+        const fullPhone = `${dialCode.startsWith('+') ? dialCode : `+${dialCode}`}${cleanDigits}`;
 
         if (!acceptTerms) throw new Error('You must accept the Terms of Service and Privacy Policy to continue.');
 
@@ -296,9 +281,9 @@ export function AuthPage({ initialMode = 'signin', onSuccess }: AuthPageProps) {
                     className={`${inputClass} appearance-none pr-6 cursor-pointer`}
                   >
                     <option value="">Select country…</option>
-                    {COUNTRY_LIST.map((c) => (
+                    {PHONE_DIAL_CODES.map((c) => (
                       <option key={c.code} value={c.code}>
-                        {c.name}
+                        {c.country}
                       </option>
                     ))}
                   </select>
@@ -317,9 +302,9 @@ export function AuthPage({ initialMode = 'signin', onSuccess }: AuthPageProps) {
                       onChange={(e) => setDialCode(e.target.value)}
                       className="w-full py-2.5 px-2 text-xs rounded-lg border border-line dark:border-line bg-main dark:bg-surface2/50 text-ink dark:text-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent transition-all cursor-pointer font-medium"
                     >
-                      {COUNTRY_LIST.map((c) => (
-                        <option key={`${c.code}-${c.dialCode}`} value={c.dialCode}>
-                          {c.dialCode} ({c.code})
+                      {PHONE_DIAL_CODES.map((c) => (
+                        <option key={`${c.code}-${c.dial}`} value={c.dial.startsWith('+') ? c.dial : `+${c.dial}`}>
+                          {c.dial.startsWith('+') ? c.dial : `+${c.dial}`} ({c.code})
                         </option>
                       ))}
                     </select>

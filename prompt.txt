@@ -1,1 +1,7 @@
-opencode -s ses_fb805a347ffebBA6FTpnI3767m 
+Why does connect xero showing invalid redirect uri? Fix it or Tell me in fix.md file that how to fix it?
+Create a file in test folder, if I run it, it will ask for name, email, plan etc info, after putting those, it creates an user in any plan for test exactly like a paid user. I can run a test user like `npm run create-test-user`
+In settings, if user want to cancel plan, simply redirect to mail us with a subject& body, user can't cancel plan at all from settings.
+The calculator in settings for calculate how many email, messages sent is not counting.
+Add a btn disable at processing in message template and squence, etc save.
+In forms like add invoices and others form, make sure by default select is always US time in automation & US country code in invoice forms and others.
+Make sure that we are taking enough info at Adding new payment method as payoneer expect & payment gateway, apis, etc is working fine. if payoneer allows most banks, then let the user add most banks, not only swift bank or something.

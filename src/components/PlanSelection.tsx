@@ -61,11 +61,10 @@ export function PlanSelection({ user, onPlanChosen, onRefreshStatus }: PlanSelec
       <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 py-10 sm:py-14 space-y-8">
         <div className="text-center space-y-3 max-w-2xl mx-auto">
           <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-accent-tint dark:bg-surface2 border border-accent/30 text-accent text-xs font-bold">
-            <Sparkles className="w-4 h-4" />
-            Welcome, {user.company_name} — please choose your plan
+            Welcome, {user.company_name}
           </div>
           <h1 className="text-2xl sm:text-4xl font-black text-ink dark:text-white tracking-tight">
-            Sorry, we have no free tier. Pick a plan to start recovering payments.
+            No free tier available. Pick a plan to start.
           </h1>
           <p className="text-sm text-ink2 leading-relaxed max-w-xl mx-auto">
             Your account is created (no charge). The moment you choose a plan and complete a secure
@@ -109,7 +108,7 @@ export function PlanSelection({ user, onPlanChosen, onRefreshStatus }: PlanSelec
                       </p>
                     ) : proration[plan.id]?.firstPurchase ? (
                       <p className="text-[10px] text-ink3 mt-2 text-center">
-                        First month: ${proration[plan.id].total.toFixed(2)} — no tax or fees added
+                        Charged Only: ${proration[plan.id].total.toFixed(2)} — no tax or fees added
                       </p>
                     ) : null
                   }

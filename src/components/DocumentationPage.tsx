@@ -135,7 +135,7 @@ export function DocumentationPage() {
   const [expandedItem, setExpandedItem] = useState<string | null>(null);
 
   return (
-    <div className="space-y-6 mt-6">
+    <div className="space-y-6 my-6">
       {/* Header */}
       <div className="p-6 rounded-3xl bg-white dark:bg-surface border border-line dark:border-line shadow-sm">
         <div className="flex items-center gap-2 mb-1">

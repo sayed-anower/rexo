@@ -26,56 +26,17 @@ import {
 import { INITIAL_SEQUENCES, INITIAL_CUSTOM_EMAIL_TEMPLATES } from './src/data/initialData';
 import { MIGRATION_SQL } from './src/data/migration';
 import { SubscriptionTier, UserProfile } from './src/types';
+import {
+  isPlaceholder,
+  appUrl,
+  absolutePaymentLink,
+  effectiveKey,
+  providerUnavailable,
+} from './src/mod/helpers';
+
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
-
-// ==========================================
-// HELPERS: CONFIG, KEYS & PLACEHOLDER DETECTION
-// ==========================================
-function isPlaceholder(v: string | undefined): boolean {
-  if (!v) return true;
-  const t = v.trim().toLowerCase();
-  return (
-    t === '' ||
-    t.includes('your-') ||
-    t.startsWith('my_') ||
-    t.includes('my_app') ||
-    t === 'sk_test_123456' ||
-    t === 'whsec_123456'
-  );
-}
-
-function appUrl(): string {
-  const u = process.env.APP_URL || 'http://localhost:3000';
-  return isPlaceholder(u) ? 'http://localhost:3000' : u.replace(/\/$/, '');
-}
-
-// Payment links are stored relative ("/pay/<id>") but every message template
-// variable must expand to a clickable public portal URL, so always absolutize
-// against APP_URL before rendering into an email / WhatsApp / SMS message.
-function absolutePaymentLink(link: string | undefined | null): string {
-  const raw = String(link || '');
-  if (/^https?:\/\//i.test(raw)) return raw;
-  return `${appUrl()}${raw.startsWith('/') ? '' : '/'}${raw}`;
-}
-
-function keyFor(envName: string): string | undefined {
-  return process.env[envName];
-}
-
-function effectiveKey(envName: string): string | undefined {
-  const v = keyFor(envName);
-  return isPlaceholder(v) ? undefined : v;
-}
-
-function providerUnavailable(res: express.Response, provider: string): express.Response {
-  return res.status(503).json({
-    error: 'PROVIDER_NOT_CONFIGURED',
-    provider,
-    message: `${provider} is not configured. Add a real (test or live) API key in .env. No mock/demo fallback is used.`,
-  });
-}
 
 // ==========================================
 // SUPABASE PERSISTENCE
@@ -669,11 +630,9 @@ function getGeminiClient(): GoogleGenAI | null {
 // (gemini-flash-latest / gemini-3-flash-preview / gemini-pro-latest) that
 // always failed first and added pointless latency to every request.
 const GEMINI_MODEL_FALLBACKS = [
-  'gemini-2.0-flash-lite',
-  'gemini-2.0-flash',
-  'gemini-1.5-flash',
-  'gemini-2.5-flash',
-  'gemini-1.5-pro',
+  'gemini-3.5-flash-lite',
+  'gemini-3.6-flash',
+  'gemini-3.1-flash-lite'
 ];
 
 // Flash models don't use long "thinking" by default, but we pin thinkingBudget

@@ -141,7 +141,7 @@ export function HomePage({ onOpenAuth, onGoogleSignIn }: HomePageProps) {
             <span className="px-3 py-1.5 rounded-xl bg-main dark:bg-surface2 border border-line dark:border-line">QuickBooks</span>
             <span className="px-3 py-1.5 rounded-xl bg-main dark:bg-surface2 border border-line dark:border-line">Xero</span>
             <span className="px-3 py-1.5 rounded-xl bg-main dark:bg-surface2 border border-line dark:border-line">WhatsApp</span>
-            <span className="px-3 py-1.5 rounded-xl bg-main dark:bg-surface2 border border-line dark:border-line">Slack</span>
+            <span className="px-3 py-1.5 rounded-xl bg-main dark:bg-surface2 border border-line dark:border-line">Email</span>
           </div>
         </div>
       </section>

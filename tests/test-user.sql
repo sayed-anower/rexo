@@ -15,8 +15,8 @@ INSERT INTO public.users (
   created_at
 ) 
 VALUES (
-  'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', -- Fixed test UUID
-  'sayed.anower.17.2@gmail.com',
+  'a0eebc99-9c0b-4ef9-bb6d-6bb9bd380a11', -- Fixed test UUID
+  'hhope.org@gmail.com',
   '$2a$10$wT.46tSg4Q8kR8yRzGgBdeWj2/bQ3fB8zQYjC4C3p2tL5Vv.N1u1O',
   'Acme Agency Studio',
   '+12025550143',
