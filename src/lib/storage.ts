@@ -720,6 +720,20 @@ export const APP_CONNECTORS = [
     category: 'accounting',
     description: 'Connect Xero to track and recover unpaid invoices from your accounting ledger.',
   },
+  {
+    id: 'conn_stripe',
+    provider: 'stripe',
+    name: 'Stripe',
+    category: 'payments',
+    description: 'Connect Stripe to accept card payments from clients and receive payouts directly to your Stripe account.',
+  },
+  {
+    id: 'conn_paypal',
+    provider: 'paypal',
+    name: 'PayPal',
+    category: 'payments',
+    description: 'Connect PayPal to accept payments from clients worldwide via PayPal, cards, and local methods.',
+  },
   /* {
     id: 'conn_whatsapp',
     provider: 'whatsapp',

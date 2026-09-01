@@ -23,6 +23,8 @@ const CONNECTOR_ICONS: Record<string, string> = {
   SMS: '📱',
   email: '✉️',
   whatsapp_business: '💬',
+  stripe: '💳',
+  paypal: '💰',
 };
 
 const WEBHOOK_PROVIDERS: Record<string, string> = {
@@ -83,6 +85,7 @@ export function Connectors({ onConnect, onDisconnect, onSync }: ConnectorsProps)
 
   const banking = connectors.filter((c) => c.category === 'banking');
   const accounting = connectors.filter((c) => c.category === 'accounting');
+  const payments = connectors.filter((c) => c.category === 'payments');
   const communication = connectors.filter((c) => c.category === 'communication');
 
   const renderGroup = (title: string, items: AppConnectorInfo[]) => {
@@ -202,6 +205,7 @@ export function Connectors({ onConnect, onDisconnect, onSync }: ConnectorsProps)
 
       <div className="space-y-8">
         {renderGroup('Banking & Payments', banking)}
+        {renderGroup('Payment Providers', payments)}
         {renderGroup('Accounting & Invoicing', accounting)}
         {renderGroup('Communication & Messaging', communication)}
 

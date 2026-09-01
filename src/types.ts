@@ -73,7 +73,9 @@ export type IntegrationProvider =
   | 'whatsapp'
   | 'slack'
   | 'google'
-  | 'facebook';
+  | 'facebook'
+  | 'stripe'
+  | 'paypal';
 
 export interface Integration {
   id: string;
@@ -263,7 +265,7 @@ export interface AppConnectorInfo {
   id: string;
   provider: IntegrationProvider;
   name: string;
-  category: 'accounting' | 'communication' | 'email' | 'signin' | 'banking';
+  category: 'accounting' | 'communication' | 'email' | 'signin' | 'banking' | 'payments';
   description: string;
   connected: boolean;
   account_name?: string;

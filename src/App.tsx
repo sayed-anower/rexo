@@ -52,6 +52,7 @@ import { AuthPage } from './components/AuthPage';
 import { InvitePage } from './components/InvitePage';
 import { PlanSelection } from './components/PlanSelection';
 import { PrivacyPolicyPage, TermsOfServicePage, AboutPage } from './components/LegalPages';
+import { PricingPage } from './components/PricingPage';
 import { DocumentationPage } from './components/DocumentationPage';
 import { CheckCircle2, RefreshCw } from 'lucide-react';
 
@@ -87,6 +88,7 @@ type Route =
   | { name: 'privacy' }
   | { name: 'terms' }
   | { name: 'about' }
+  | { name: 'pricing' }
   | { name: 'docs' }
   | { name: 'app'; tab: NavigationTab }
   | { name: 'pay'; invoiceId: string };
@@ -106,6 +108,7 @@ function routeFromPath(path: string): Route {
   if (path === '/privacy') return { name: 'privacy' };
   if (path === '/terms') return { name: 'terms' };
   if (path === '/about') return { name: 'about' };
+  if (path === '/pricing') return { name: 'pricing' };
   if (path === '/docs') return { name: 'docs' };
   const tab = PATH_TO_TAB[path];
   if (tab) return { name: 'app', tab };
@@ -538,6 +541,33 @@ const handleApplyAiSteps = (newSteps: any[]) => {
         />
         <main className="flex-1 max-w-4xl mx-auto w-full px-4 sm:px-6 lg:p-8">
           <DocumentationPage />
+        </main>
+        <Footer
+          onNavigateHome={() => navigate('/')}
+          onOpenAuth={isLoggedIn ? undefined : (mode) => navigate(mode === 'signup' ? '/signup' : '/signin')}
+        />
+      </div>
+    );
+  }
+
+  // --- Public pricing route ---
+  if (route.name === 'pricing') {
+    return (
+      <div className="min-h-screen bg-main dark:bg-main text-ink dark:text-ink flex flex-col font-sans transition-colors">
+        {toastMessage && <Toast message={toastMessage} />}
+        <Navbar
+          user={user}
+          isLoggedIn={isLoggedIn}
+          onOpenAuth={(mode) => navigate(mode === 'signup' ? '/signup' : '/signin')}
+          onLogout={handleLogout}
+          onNavigateToBilling={() => navigate('/app/settings')}
+          onNavigateHome={() => navigate('/')}
+          onNavigate={navigate}
+        />
+        <main className="flex-1 max-w-6xl mx-auto w-full px-4 sm:px-6 lg:p-8">
+          <PricingPage
+            onOpenAuth={(mode) => navigate(mode === 'signup' ? '/signup' : '/signin')}
+          />
         </main>
         <Footer
           onNavigateHome={() => navigate('/')}

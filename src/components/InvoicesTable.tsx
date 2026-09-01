@@ -23,7 +23,7 @@ import {
   Trash2,
   Pencil
 } from 'lucide-react';
-import { Invoice, Sequence, CustomEmailTemplate, UserProfile } from '../types';
+import { Invoice, Sequence, CustomEmailTemplate, UserProfile, ChannelType } from '../types';
 import { renderPlaceholders, findUnknownVars, sendInvoiceReminderMulti, absolutePaymentUrl } from '../lib/storage';
 import { PHONE_DIAL_CODES, DIAL_CODE_MAP } from '../data/phoneDialCodes';
 import { VariableValuesModal } from './VariableValuesModal';

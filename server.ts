@@ -3855,6 +3855,48 @@ app.post('/api/billing/checkout', async (req, res) => {
   const plan = PLAN_BY_ID[tier as SubscriptionTier];
   if (!plan) return res.status(400).json({ error: 'VALIDATION', message: 'Unknown plan.' });
 
+  // Paddle Checkout: use Paddle as merchant of record for subscription billing
+  if (paddleConfig()) {
+    const priceId = PADDLE_PRICE_IDS[tier];
+    if (!priceId) {
+      return res.status(400).json({ error: 'PADDLE_CONFIG', message: `No Paddle price ID configured for plan "${tier}". Set PADDLE_PRICE_${tier.toUpperCase()} in .env.` });
+    }
+    try {
+      const sb = getSupabase()!;
+      const intentId = `paddle_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const payload = {
+        items: [{ priceId, quantity: 1 }],
+        customer: { email: user.profile.email, name: user.profile.company_name },
+        customData: { user_id: user.profile.id, tier: plan.id, intent_id: intentId },
+        redirectUrl: `${appUrl()}/app/settings?billing=paid&plan=${plan.id}`,
+        cancelUrl: `${appUrl()}/app/settings`,
+      };
+      const apiRes = await paddleApi('/checkout/sessions', 'POST', payload);
+      if (!apiRes.ok || !apiRes.json?.data?.id) {
+        throw new Error(apiRes.json?.error?.message || `Paddle checkout could not be created (${apiRes.status}).`);
+      }
+      const checkoutUrl = apiRes.json.data.url;
+      await sb.from('payment_intents').upsert({
+        id: intentId,
+        invoice_id: null,
+        user_id: user.profile.id,
+        provider: 'paddle',
+        status: 'pending',
+        amount: plan.price,
+        fee: 0,
+        currency: 'USD',
+        purpose: 'subscription',
+        tier: plan.id,
+        raw: apiRes.json.data,
+      });
+      await recordBillingEvent({ userId: user.profile.id, type: 'checkout_created', tier: plan.id, provider: 'paddle' });
+      return res.json({ success: true, url: checkoutUrl, external: true, provider: 'paddle', mode: 'hosted', plan: plan.id, amount: plan.price });
+    } catch (err: any) {
+      console.error('[Billing] Paddle checkout failed:', err.message);
+      return res.status(502).json({ error: 'CHECKOUT_FAILED', message: err.message || 'Paddle checkout failed.' });
+    }
+  }
+
   // Real Payoneer Checkout: once payout/checkout variables are present the
   // charge is real — the user pays from their selected card / bank / PayPal
   // on Payoneer's hosted page and the plan activates automatically on
@@ -4547,6 +4589,63 @@ async function payoneerApi(path: string, method: 'GET' | 'POST', body?: unknown)
 
 const PAYONEER_SUCCESS_STATUSES = new Set(['COMPLETED', 'APPROVED', 'CAPTURED', 'PROCESSED', 'SETTLED', 'SUCCESS']);
 
+// ==========================================
+// PADDLE PAYMENT PROCESSING
+// ==========================================
+interface PaddleConfig {
+  vendorId: string;
+  apiKey: string;
+  baseUrl: string;
+  clientToken: string;
+  webhookSecret: string;
+}
+
+function paddleConfig(): PaddleConfig | null {
+  const vendorId = effectiveKey('PADDLE_VENDOR_ID');
+  const apiKey = effectiveKey('PADDLE_API_KEY');
+  const clientToken = effectiveKey('PADDLE_CLIENT_TOKEN');
+  const webhookSecret = effectiveKey('PADDLE_WEBHOOK_SECRET');
+  if (!vendorId || !apiKey) return null;
+  return {
+    vendorId,
+    apiKey,
+    baseUrl: process.env.PADDLE_API_BASE || 'https://api.paddle.com',
+    clientToken: clientToken || '',
+    webhookSecret: webhookSecret || '',
+  };
+}
+
+async function paddleApi(path: string, method: 'GET' | 'POST', body?: unknown): Promise<{ ok: boolean; status: number; json: any }> {
+  const cfg = paddleConfig();
+  if (!cfg) throw new ProviderError('PADDLE', 'Paddle is not configured (set PADDLE_VENDOR_ID + PADDLE_API_KEY).');
+  const res = await fetch(`${cfg.baseUrl}${path}`, {
+    method,
+    headers: {
+      'Authorization': `Bearer ${cfg.apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: method === 'POST' && body != null ? JSON.stringify(body) : undefined,
+  });
+  const json = await res.json().catch(() => ({}));
+  return { ok: res.ok, status: res.status, json };
+}
+
+function verifyPaddleWebhook(body: string, signature: string, secret: string): boolean {
+  try {
+    const expected = crypto.createHmac('sha256', secret).update(body).digest('hex');
+    return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
+  } catch {
+    return false;
+  }
+}
+
+// Paddle subscription price IDs for each plan
+const PADDLE_PRICE_IDS: Record<string, string> = {
+  starter: process.env.PADDLE_PRICE_STARTER || '',
+  pro: process.env.PADDLE_PRICE_PRO || '',
+  agency: process.env.PADDLE_PRICE_AGENCY || '',
+};
+
 async function markInvoicePaid(invId: string, uid: string, inv: any, note: string): Promise<boolean> {
   const sb = getSupabase();
   if (!sb) return false;
@@ -4741,6 +4840,79 @@ app.post('/api/webhooks/payoneer', async (req, res) => {
     }
     await sb.from('payment_intents').update({ status: 'paid' }).eq('id', requestId);
   }
+  res.json({ received: true });
+});
+
+// Paddle Webhook Handler
+app.post('/api/webhooks/paddle', async (req, res) => {
+  const cfg = paddleConfig();
+  const raw = typeof req.body === 'string' || Buffer.isBuffer(req.body) ? String(req.body) : JSON.stringify(req.body || {});
+  
+  // Verify webhook signature if secret is configured
+  if (cfg?.webhookSecret) {
+    const signature = String(req.headers['paddle-signature'] || '');
+    if (!verifyPaddleWebhook(raw, signature, cfg.webhookSecret)) {
+      console.error('[Paddle Webhook] Invalid signature');
+      return res.status(401).json({ error: 'INVALID_SIGNATURE' });
+    }
+  }
+
+  let event: any;
+  try {
+    event = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  } catch {
+    return res.status(400).json({ error: 'BAD_JSON' });
+  }
+
+  const sb = getSupabase();
+  if (!sb) return dbError(res);
+
+  const eventType = String(event?.event_type || '').toUpperCase();
+  const eventData = event?.data || {};
+
+  console.log(`[Paddle Webhook] Event: ${eventType}`, eventData?.id || '');
+
+  // Subscription payment succeeded → activate the plan
+  if (eventType === 'SUBSCRIPTION_PAYMENT_SUCCEEDED' || eventType === 'TRANSACTION_COMPLETED') {
+    const subscriptionId = String(eventData?.subscription?.id || eventData?.subscription_id || '');
+    const customData = eventData?.custom_data || {};
+    const userId = customData.user_id;
+    const tier = customData.tier as SubscriptionTier;
+
+    if (userId && tier) {
+      await applyPaidTier(userId, tier);
+      // Update payment intent status
+      const intentId = customData.intent_id;
+      if (intentId) {
+        await sb.from('payment_intents').update({ status: 'paid', raw: eventData }).eq('id', intentId);
+      }
+      await recordBillingEvent({ userId, type: 'charge', amount: PLAN_BY_ID[tier]?.price || 0, tier, provider: 'paddle' });
+      console.log(`[Paddle Webhook] Plan activated: ${tier} for user ${userId}`);
+    }
+  }
+
+  // Subscription updated (plan change)
+  if (eventType === 'SUBSCRIPTION_UPDATED') {
+    const subscriptionId = String(eventData?.id || '');
+    const customData = eventData?.custom_data || {};
+    const userId = customData.user_id;
+    const tier = customData.tier as SubscriptionTier;
+    if (userId && tier) {
+      await applyPaidTier(userId, tier);
+      console.log(`[Paddle Webhook] Subscription updated: ${tier} for user ${userId}`);
+    }
+  }
+
+  // Subscription cancelled
+  if (eventType === 'SUBSCRIPTION_CANCELLED') {
+    const customData = eventData?.custom_data || {};
+    const userId = customData.user_id;
+    if (userId) {
+      await sb.from('users').update({ subscription_status: 'cancelled' }).eq('id', userId);
+      console.log(`[Paddle Webhook] Subscription cancelled for user ${userId}`);
+    }
+  }
+
   res.json({ received: true });
 });
 

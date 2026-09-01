@@ -1,6 +1,8 @@
 // ==========================================
 // HELPERS: CONFIG, KEYS & PLACEHOLDER DETECTION
 // ==========================================
+import type { Response } from 'express';
+
 export function isPlaceholder(v: string | undefined): boolean {
   if (!v) return true;
   const t = v.trim().toLowerCase();
@@ -33,7 +35,7 @@ export function effectiveKey(envName: string): string | undefined {
   return isPlaceholder(v) ? undefined : v;
 }
 
-export function providerUnavailable(res: express.Response, provider: string): express.Response {
+export function providerUnavailable(res: Response, provider: string): Response {
   return res.status(503).json({
     error: 'PROVIDER_NOT_CONFIGURED',
     provider,

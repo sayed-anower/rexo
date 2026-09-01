@@ -1,7 +1,12 @@
 Why does connect xero showing invalid redirect uri? Fix it or Tell me in fix.md file that how to fix it?
 Create a file in test folder, if I run it, it will ask for name, email, plan etc info, after putting those, it creates an user in any plan for test exactly like a paid user. I can run a test user like `npm run create-test-user`
-In settings, if user want to cancel plan, simply redirect to mail us with a subject& body, user can't cancel plan at all from settings.
-The calculator in settings for calculate how many email, messages sent is not counting.
+In settings, if user want to cancel plan, simply redirect to mail us with a subject & body, user can't cancel plan at all from settings.
+The calculator in settings for calculate how many email, messages sent is not counting correcly. Make sure refund & another calculators are working.
 Add a btn disable at processing in message template and squence, etc save.
 In forms like add invoices and others form, make sure by default select is always US time in automation & US country code in invoice forms and others.
-Make sure that we are taking enough info at Adding new payment method as payoneer expect & payment gateway, apis, etc is working fine. if payoneer allows most banks, then let the user add most banks, not only swift bank or something.
+Make sure that we are taking enough info for payment & others.
+Create an Pricing Page (for paddle verification), /pricing with clear details about our service, refund policy, etc and add privacy-policy, terms, etc links in footer.
+Remove the card adding or something, if no need, add stripe & paypal connectors in App Connectors that directly redirect to user's stripe, paypal. (read PAY.md)
+User pay our subscription fee with paddle via card or others. Add a paddle api for it. Make sure payment is working 100% fine for my subscription & debt/invoice pay.
+Make sure that I can directly ship it for production after just adding payment gateway & OAuth APIs, tell me what & how to do in SETUP.md comprehensively like what will be redirect/webhooks/etc url.
+opencode -s ses_fa2fe5f5cffe7XxNSvMptZkho4

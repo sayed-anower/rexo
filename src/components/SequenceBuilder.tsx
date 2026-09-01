@@ -14,6 +14,7 @@ import {
   HelpCircle,
   FileText,
   PenLine,
+  RefreshCw,
   X
 } from 'lucide-react';
 import { Sequence, SequenceStep, ChannelType, CustomEmailTemplate } from '../types';
@@ -44,6 +45,7 @@ export function SequenceBuilder({ sequences, customTemplates = [], onSaveSequenc
   const [editingSteps, setEditingSteps] = useState<SequenceStep[]>(activeSequence?.steps || []);
   const [sequenceName, setSequenceName] = useState(activeSequence?.name || 'B2B Escalation Flow');
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
 
   const draftActive = Boolean(aiDraft && aiDraft.steps.length > 0);
@@ -105,31 +107,37 @@ export function SequenceBuilder({ sequences, customTemplates = [], onSaveSequenc
   };
 
   const handleSaveAll = async () => {
-    if (draftActive) {
+    if (saving) return;
+    setSaving(true);
+    try {
+      if (draftActive) {
+        const updatedSeq: Sequence = {
+          id: `seq_ai_${Date.now()}`,
+          user_id: activeSequence?.user_id || '',
+          name: sequenceName || 'AI Recovery Flow',
+          description: 'AI-generated recovery flow',
+          is_default: false,
+          created_at: new Date().toISOString(),
+          steps: editingSteps,
+        };
+        await onSaveSequence(updatedSeq);
+        if (onClearAiDraft) onClearAiDraft();
+        setSavedSuccess(true);
+        setTimeout(() => setSavedSuccess(false), 2000);
+        return;
+      }
+      if (!activeSequence) return;
       const updatedSeq: Sequence = {
-        id: `seq_ai_${Date.now()}`,
-        user_id: activeSequence?.user_id || '',
-        name: sequenceName || 'AI Recovery Flow',
-        description: 'AI-generated recovery flow',
-        is_default: false,
-        created_at: new Date().toISOString(),
+        ...activeSequence,
+        name: sequenceName,
         steps: editingSteps,
       };
       await onSaveSequence(updatedSeq);
-      if (onClearAiDraft) onClearAiDraft();
       setSavedSuccess(true);
       setTimeout(() => setSavedSuccess(false), 2000);
-      return;
+    } finally {
+      setSaving(false);
     }
-    if (!activeSequence) return;
-    const updatedSeq: Sequence = {
-      ...activeSequence,
-      name: sequenceName,
-      steps: editingSteps,
-    };
-    await onSaveSequence(updatedSeq);
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 2000);
   };
 
   const handleDeleteSequence = async (id: string) => {
@@ -198,10 +206,25 @@ export function SequenceBuilder({ sequences, customTemplates = [], onSaveSequenc
 
           <button
             onClick={handleSaveAll}
-            className="flex-1 sm:flex-initial px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-all shadow-md flex items-center justify-center gap-2"
+            disabled={saving}
+            className="flex-1 sm:flex-initial px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {savedSuccess ? <Check className="w-4 h-4 shrink-0" /> : <Save className="w-4 h-4 shrink-0" />}
-            <span>{savedSuccess ? 'Saved!' : 'Save Sequence'}</span>
+            {saving ? (
+              <>
+                <RefreshCw className="w-4 h-4 shrink-0 animate-spin" />
+                <span>Saving…</span>
+              </>
+            ) : savedSuccess ? (
+              <>
+                <Check className="w-4 h-4 shrink-0" />
+                <span>Saved!</span>
+              </>
+            ) : (
+              <>
+                <Save className="w-4 h-4 shrink-0" />
+                <span>Save Sequence</span>
+              </>
+            )}
           </button>
         </div>
       </div>

@@ -56,9 +56,12 @@ export function Footer({ onNavigateHome, onOpenAuth }: FooterProps) {
             </button>
           </li>
           <li>
-            <a href="#pricing" className="hover:text-slate-900 dark:hover:text-white transition-colors">
+            <button
+              onClick={() => navigate('/pricing')}
+              className="hover:text-slate-900 dark:hover:text-white transition-colors"
+            >
               Pricing
-            </a>
+            </button>
           </li>
           <li>
             <a href="#faq" className="hover:text-slate-900 dark:hover:text-white transition-colors">

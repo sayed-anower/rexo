@@ -10,7 +10,8 @@
     "preview": "node dist/server.cjs",
     "test": "tsx --test tests/*.test.ts",
     "clean": "rm -rf dist server.cjs",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "create-test-user": "tsx scripts/create-test-user.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

@@ -33,7 +33,6 @@ import {
   fetchPlanLimits,
   fetchProration,
   fetchRefundPreview,
-  cancelSubscription,
   fetchBillingEvents,
   fetchTeamInvites,
   createTeamInvite,
@@ -85,8 +84,6 @@ export function SettingsBilling({
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [upgradingTier, setUpgradingTier] = useState<string | null>(null);
   const [proration, setProration] = useState<Record<string, any>>({});
-  const [cancelOpen, setCancelOpen] = useState(false);
-  const [cancelling, setCancelling] = useState(false);
   const [refundPreview, setRefundPreview] = useState<any>(null);
   const [events, setEvents] = useState<BillingEvent[]>([]);
   const [eventsLoading, setEventsLoading] = useState(true);
@@ -238,24 +235,6 @@ export function SettingsBilling({
       onToast(e.message || 'Checkout could not be created.');
     } finally {
       setUpgradingTier(null);
-    }
-  };
-
-  const handleCancel = async () => {
-    setCancelling(true);
-    try {
-      const res = await cancelSubscription();
-      onToast(
-        res.success
-          ? 'Plan cancelled successfully. For refund requests, please email support.'
-          : 'Plan cancelled.'
-      );
-      setCancelOpen(false);
-      await onRefreshStatus();
-    } catch (e: any) {
-      onToast(e.message || 'Cancel failed.');
-    } finally {
-      setCancelling(false);
     }
   };
 
@@ -591,58 +570,26 @@ export function SettingsBilling({
             </div>
           </div>
 
-          {/* Cancel plan */}
+          {/* Cancel plan — redirects to support email */}
           <div className="p-6 rounded-3xl bg-white dark:bg-surface border border-line dark:border-line shadow-sm max-w-2xl mx-auto">
             <div className="flex items-center gap-2 mb-1">
               <Clock3 className="w-5 h-5 text-primary dark:text-secondary" />
               <h3 className="text-base font-bold text-ink dark:text-white">Cancel plan</h3>
             </div>
             <p className="text-xs text-ink2 dark:text-ink2 mb-4">
-              Cancel anytime. Your plan limits stop applying immediately. If you need a refund, please contact our support team at{' '}
-              <a href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Refund request')}`} className="font-bold text-primary dark:text-secondary hover:underline">{SUPPORT_EMAIL}</a>.
+              To cancel your plan or request a refund, please contact our support team. We'll process your request within 24–48 hours.
             </p>
 
-            <button
-              onClick={() => setCancelOpen(true)}
-              disabled={cancelling}
-              className="px-4 py-2.5 rounded-xl bg-red-50 dark:bg-red-950/60 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 font-bold text-xs transition-colors hover:bg-red-100 dark:hover:bg-red-950"
+            <a
+              href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(`Plan Cancellation — ${currentPlan?.name || 'Current Plan'}`)}&body=${encodeURIComponent(
+                `Hi EronFlow Support,\n\nI'd like to cancel my ${currentPlan?.name || 'current'} plan.\n\nAccount email: ${user.email}\nCompany: ${user.company_name}\n\nPlease confirm the cancellation and any applicable refund.\n\nThank you.`
+              )}`}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-red-50 dark:bg-red-950/60 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 font-bold text-xs transition-colors hover:bg-red-100 dark:hover:bg-red-950"
             >
-              Cancel my plan
-            </button>
+              <Mail className="w-4 h-4" />
+              Cancel via email — {SUPPORT_EMAIL}
+            </a>
           </div>
-
-          {cancelOpen && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-              <div className="w-full max-w-md p-6 rounded-3xl bg-white dark:bg-surface border border-line dark:border-line shadow-2xl space-y-4">
-                <div className="flex items-start gap-2.5">
-                  <AlertTriangle className="w-5 h-5 text-warn shrink-0 mt-0.5" />
-                  <div>
-                    <h3 className="text-sm font-bold text-ink dark:text-white">Cancel your {currentPlan?.name} plan?</h3>
-                    <p className="text-xs text-ink2 mt-1 leading-relaxed">
-                      Your plan will be cancelled and plan limits stop applying immediately. For refund requests, please email{' '}
-                      <a href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Refund request')}`} className="font-bold text-primary dark:text-secondary hover:underline">{SUPPORT_EMAIL}</a>.
-                    </p>
-                  </div>
-                </div>
-                <div className="flex justify-end gap-2">
-                  <button
-                    onClick={() => setCancelOpen(false)}
-                    disabled={cancelling}
-                    className="px-4 py-2 rounded-xl border border-line dark:border-line text-xs font-bold text-ink2 hover:text-ink"
-                  >
-                    Keep my plan
-                  </button>
-                  <button
-                    onClick={handleCancel}
-                    disabled={cancelling}
-                    className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold disabled:opacity-60"
-                  >
-                    {cancelling ? 'Cancelling…' : 'Cancel plan'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
 
           {/* Billing history */}
           {eventsLoading ? (
