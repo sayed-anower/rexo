@@ -32,13 +32,13 @@ export interface PlanDefinition {
   features: PlanFeature[];
 }
 
-export const GATEWAY_FEE_RATE = 0.0399; // Payoneer card processing share (3.99%)
-export const GATEWAY_FEE_FLAT = 0.45; // Payoneer card processing share ($0.45)
+export const GATEWAY_FEE_RATE = 0; // No extra gateway fee — Paddle is merchant of record, user pays exactly plan price
+export const GATEWAY_FEE_FLAT = 0; // No flat fee — plan price is the exact charge
 export const PLATFORM_TAX_RATE = 0; // No merchant-of-record tax on subscriptions
 export const BILLING_PERIOD_DAYS = 30;
 
-// Fees charged by Payoneer per payment method on the client portal.
-// EronFlow never takes a cut — the fee is paid to Payoneer.
+// Fees for client portal payments via connected Stripe/PayPal.
+// Payer pays exactly the invoice amount — no platform markup. Stripe/PayPal fees are handled directly by the connected account.
 // `level` labels how expensive the method is for the payer: card = high,
 // bank transfer = low, others = high/low.
 export type PaymentMethod = 'card' | 'bank' | 'paypal' | 'wallet';
@@ -52,10 +52,10 @@ export interface PaymentMethodFee {
 }
 
 export const PAYMENT_METHOD_FEES: Record<PaymentMethod, PaymentMethodFee> = {
-  card: { rate: 0.0399, flat: 0.45, level: 'high', label: 'Card payments (Payoneer)' },
-  bank: { rate: 0.01, flat: 0, cap: 5, level: 'low', label: 'Bank transfer (Payoneer)' },
-  paypal: { rate: 0.0399, flat: 0.45, level: 'high', label: 'PayPal (via Payoneer)' },
-  wallet: { rate: 0.0399, flat: 0.45, level: 'high', label: 'Wallets & local methods (Payoneer)' },
+  card: { rate: 0, flat: 0, level: 'high', label: 'Card (via Stripe)' },
+  bank: { rate: 0, flat: 0, cap: 0, level: 'low', label: 'Bank transfer (via Stripe)' },
+  paypal: { rate: 0, flat: 0, level: 'high', label: 'PayPal (via PayPal)' },
+  wallet: { rate: 0, flat: 0, level: 'high', label: 'Wallets & local methods (via Stripe)' },
 };
 
 export function paymentMethodFee(method: PaymentMethod, amount: number): number {

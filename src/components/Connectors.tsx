@@ -196,7 +196,7 @@ export function Connectors({ onConnect, onDisconnect, onSync }: ConnectorsProps)
 
       {/* Description */}
       <p className="mt-1 text-sm text-[var(--text-secondary)] max-w-2xl leading-relaxed">
-        Connect your bank account, accounting apps and communication channels. EronFlow pulls unpaid invoices and sends reminders on your behalf — all branded as your company.
+        Connect Stripe or PayPal to let clients pay you directly — 100% goes to your account. Paddle handles EronFlow subscriptions (no extra fee). QuickBooks/Xero pull invoices, messaging sends branded reminders.
       </p>
     </div>
   </div>

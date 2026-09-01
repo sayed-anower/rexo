@@ -23,7 +23,7 @@ export interface UserProfile {
 
 export interface PaymentInstrument {
   id: string;
-  kind: 'card' | 'bank' | 'paypal';
+  kind: 'card' | 'bank' | 'paypal' | 'paddle';
   label: string;
   holder_name?: string;
   account_country?: string;
@@ -42,7 +42,7 @@ export interface PayeeInfo {
   name?: string;
   country?: string;
   email?: string;
-  payout_method?: 'payoneer' | 'bank' | 'card';
+  payout_method?: 'paddle' | 'bank' | 'card';
   bank_name?: string;
   bank_iban?: string; // masked (first 4 •••• last 4)
   bank_swift?: string;
@@ -284,7 +284,7 @@ export interface OpExTierData {
   qstash_cost: number;
   supabase_cost: number;
   hosting_cost: number;
-  payoneer_fees: number;
+  paddle_fees: number;
   total_opex: number;
   gross_mrr: number;
   net_profit: number;

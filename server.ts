@@ -349,7 +349,7 @@ function serializeProfile(row: DbRow): UserProfile {
       name: row.payee_name || undefined,
       country: row.payee_country || undefined,
       email: row.payee_email || undefined,
-      payout_method: (row.payout_method as 'payoneer' | 'bank' | 'card') || undefined,
+      payout_method: (row.payout_method as 'paddle' | 'bank' | 'card') || undefined,
       bank_name: row.bank_name || undefined,
       bank_iban: maskIban(row.bank_iban),
       bank_swift: row.bank_swift || undefined,
@@ -921,7 +921,7 @@ function verifyQStashSignature(req: express.Request): boolean {
   return false;
 }
 
-async function ensurePayoneerPaymentLink(inv: {
+async function ensurePortalPaymentLink(inv: {
   id: string;
   external_invoice_id: string;
   amount_due: number;
@@ -934,8 +934,6 @@ async function ensurePayoneerPaymentLink(inv: {
     (sb ? (await sb.from('invoices').select('payment_link').eq('id', inv.id).maybeSingle()).data?.payment_link : '') ||
     '';
   if (cached && /^https?:\/\//.test(cached)) return cached;
-  // Direct payment: the branded public portal link, always absolute so it is
-  // clickable from any email client or phone.
   return absolutePaymentLink(`/pay/${inv.id}`);
 }
 
@@ -943,24 +941,24 @@ async function createPlanCheckout(
   profile: UserProfile,
   plan: PlanDefinition
 ): Promise<{ url: string; provider: string }> {
-  const merchantId = effectiveKey('PAYONEER_MERCHANT_ID');
+  const merchantId = effectiveKey('PADDLE_VENDOR_ID');
   if (!merchantId) {
     throw new ProviderError(
       'BILLING',
-      `Payoneer is not configured. Set PAYONEER_MERCHANT_ID in .env.`
+      `Paddle is not configured. Set PADDLE_VENDOR_ID in .env.`
     );
   }
-  return { url: `${appUrl()}/app/settings?billing=checkout&plan=${plan.id}`, provider: 'payoneer' };
+  return { url: `${appUrl()}/app/settings?billing=checkout&plan=${plan.id}`, provider: 'paddle' };
 }
 
 async function cancelWithProvider(profile: UserProfile): Promise<{ provider: string; ok: boolean; note?: string }> {
-  return { provider: 'payoneer', ok: true, note: 'Subscription cancelled. No external provider to cancel.' };
+  return { provider: 'paddle', ok: true, note: 'Subscription cancelled. No external provider to cancel.' };
 }
 
 // Raw & JSON body parsing (webhook signature verification needs the raw body)
 app.use('/api/webhooks/quickbooks', express.raw({ type: '*/*' }));
 app.use('/api/webhooks/xero', express.raw({ type: '*/*' }));
-app.use('/api/webhooks/payoneer', express.raw({ type: '*/*' }));
+app.use('/api/webhooks/paddle', express.raw({ type: '*/*' }));
 app.use(
   express.json({
     // Capture the raw bytes so QStash signature verification signs exactly what
@@ -986,8 +984,8 @@ app.get('/api/health', (req, res) => {
     dbMessage: dbReady?.ready ? undefined : dbReady?.message,
     env: {
       supabaseConfigured: Boolean(getSupabase()),
-      payoneerConfigured: Boolean(effectiveKey('PAYONEER_MERCHANT_ID')),
-      payoneerCheckoutConfigured: Boolean(payoneerApiConfig()),
+      paddleConfigured: Boolean(effectiveKey('PADDLE_VENDOR_ID')),
+      paddleCheckoutConfigured: Boolean(paddleApiConfig()),
       qstashConfigured: Boolean(effectiveKey('QSTASH_TOKEN')),
       resendConfigured: Boolean(effectiveKey('RESEND_API_KEY')),
       resendNoreplyFrom: otpFromAddress(),
@@ -1012,7 +1010,7 @@ app.get('/api/db/migration', (req, res) => {
 // ==========================================
 
 // ------------------------------------------------------------
-// PAYEE VERIFICATION (Payoneer / bank / card payout information)
+// PAYEE VERIFICATION (Paddle / bank / card payout information)
 // Collected at signup and editable later. Card numbers are never stored —
 // only brand, last 4 and expiry. IBANs are masked in the profile. Returns the
 // sanitized, ready-to-store payee object plus any validation errors.
@@ -1069,13 +1067,13 @@ function validatePayee(p: any): { ok: boolean; errors: Record<string, string>; p
   const name = String(p.name || '').trim();
   const country = String(p.country || '').trim().toUpperCase();
   const email = String(p.email || '').trim().toLowerCase();
-  const method = ['payoneer', 'bank', 'card'].includes(p.payout_method) ? p.payout_method : '';
+  const method = ['paddle', 'bank', 'card'].includes(p.payout_method) ? p.payout_method : '';
   const cardNumber = String(p.card_number || '').replace(/\s+/g, '');
 
   if (name.length < 2) errors.name = 'Full legal name is required.';
   if (!/^[A-Z]{2}$/.test(country)) errors.country = 'Country is required (2-letter code, e.g. US, DE).';
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.email = 'A valid payout email is required.';
-  if (!method) errors.payout_method = 'Choose a payout method (Payoneer, bank transfer or card).';
+  if (!method) errors.payout_method = 'Choose a payout method (Paddle, bank transfer or card).';
 
   if (method === 'bank') {
     if (!String(p.bank_name || '').trim()) errors.bank_name = 'Bank name is required.';
@@ -1549,7 +1547,7 @@ app.post('/api/invoices', async (req, res) => {
   const { data, error } = await sb.from('invoices').upsert(row).select('*').single();
   if (error) return res.status(500).json({ error: 'INVOICE_SAVE_FAILED', message: error.message });
   const saved = { ...data, payment_link: row.payment_link };
-  const liveLink = await ensurePayoneerPaymentLink(saved as any).catch(() => row.payment_link);
+  const liveLink = await ensurePortalPaymentLink(saved as any).catch(() => row.payment_link);
   res.json({ success: true, invoice: normalizeInvoice({ ...saved, payment_link: liveLink }) });
 });
 
@@ -2474,8 +2472,8 @@ app.get('/api/integrations', async (req, res) => {
       ? `${payee.card_brand || 'Card'} •••• ${payee.card_last4 || ''}`
       : payee.payout_method === 'bank'
       ? `${payee.bank_name || 'Bank'} ${payee.bank_iban || ''}`
-      : payee.payout_method === 'payoneer'
-      ? `Payoneer · ${payee.email || ''}`
+      : payee.payout_method === 'paddle'
+      ? `Paddle · ${payee.email || ''}`
       : '';
     rows.push({
       id: `int_pseudo_bank`,
@@ -2484,7 +2482,7 @@ app.get('/api/integrations', async (req, res) => {
       category: 'banking',
       is_active: hasPayee && payee.verified,
       name: 'Bank Account / Card',
-      description: 'Accept direct bank transfers and card payments from clients via Payoneer. Funds are deposited directly into your account.',
+      description: 'Accept direct bank transfers and card payments from clients via Paddle. Funds are deposited directly into your account.',
       account_name: hasPayee ? detail : 'Payout details not set — add them in your profile',
       pseudo: true,
       access_token: null,
@@ -2581,8 +2579,8 @@ async function upsertProviderInvoices(
       await addUsage(uid, { reminders_delivered: 1, amount_recovered: Number(row.amount_due) });
     } else {
       synced++;
-      // Direct payments: use the branded portal link (Payoneer under the hood).
-      await ensurePayoneerPaymentLink({ id, external_invoice_id: row.external_invoice_id, amount_due: Number(row.amount_due), currency: row.currency }).catch(() => {});
+      // Direct payments: use the branded portal link (client pays via connected Stripe/PayPal).
+      await ensurePortalPaymentLink({ id, external_invoice_id: row.external_invoice_id, amount_due: Number(row.amount_due), currency: row.currency }).catch(() => {});
     }
   }
 
@@ -2825,6 +2823,44 @@ async function exchangeXeroCode(code: string, codeVerifier: string, redirectUri?
   return { access_token: json.access_token, refresh_token: json.refresh_token };
 }
 
+
+async function exchangeStripeCode(code: string, redirectUri: string): Promise<{ access_token: string; refresh_token?: string; stripe_user_id?: string }> {
+  const clientId = effectiveKey('STRIPE_CLIENT_ID');
+  const clientSecret = effectiveKey('STRIPE_CLIENT_SECRET');
+  if (!clientId || !clientSecret) throw new Error('Stripe not configured');
+  const res = await fetch('https://connect.stripe.com/oauth/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ grant_type: 'authorization_code', client_id: clientId, client_secret: clientSecret, code, redirect_uri: redirectUri }).toString(),
+  });
+  const json = await res.json().catch(()=>({}));
+  if (!res.ok || !json.access_token) throw new Error(json.error_description || json.error || 'Stripe token exchange failed');
+  return { access_token: json.access_token, refresh_token: json.refresh_token, stripe_user_id: json.stripe_user_id };
+}
+
+async function exchangePaypalCode(code: string, redirectUri: string): Promise<{ access_token: string; refresh_token?: string; payer_id?: string }> {
+  const clientId = effectiveKey('PAYPAL_CLIENT_ID');
+  const clientSecret = effectiveKey('PAYPAL_CLIENT_SECRET');
+  const base = (process.env.PAYPAL_API_BASE || 'https://api.paypal.com').replace(/\/+$/,'');
+  if (!clientId || !clientSecret) throw new Error('PayPal not configured');
+  const creds = Buffer.from(clientId+':'+clientSecret).toString('base64');
+  const res = await fetch(base + '/v1/oauth2/token', {
+    method: 'POST',
+    headers: { 'Authorization': 'Basic '+creds, 'Content-Type':'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: redirectUri }).toString(),
+  });
+  const json = await res.json().catch(()=>({}));
+  if (!res.ok || !json.access_token) throw new Error(json.error_description || json.error || 'PayPal token exchange failed');
+  // Optionally fetch userinfo for payer_id
+  let payer_id = json.payer_id || '';
+  try {
+    const ui = await fetch(base + '/v1/identity/oauth2/userinfo?schema=paypalv1.1', { headers:{ Authorization:'Bearer '+json.access_token }});
+    const uj = await ui.json().catch(()=>({}));
+    payer_id = uj.payer_id || uj.user_id || payer_id;
+  } catch {}
+  return { access_token: json.access_token, refresh_token: json.refresh_token, payer_id };
+}
+
 async function xeroConnections(accessToken: string): Promise<Array<{ tenantId: string; tenantName: string; tenantType: string }>> {
   const res = await fetch('https://api.xero.com/connections', {
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
@@ -2930,11 +2966,27 @@ function buildOAuthUrl(provider: string, state: string, verifier: string | undef
       break;
     case 'xero':
       if (effectiveKey('XERO_CLIENT_ID')) {
-        // PKCE: the challenge is derived from the verifier already stored
-        // server-side for this state (oauthStates[state].verifier).
         const challenge = crypto.createHash('sha256').update(verifier || '').digest('base64url');
         return {
           url: `https://login.xero.com/identity/connect/authorize?client_id=${effectiveKey('XERO_CLIENT_ID')}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent('accounting.transactions accounting.contacts offline_access')}&state=${state}&code_challenge=${challenge}&code_challenge_method=S256`,
+          configured: true,
+        };
+      }
+      break;
+    case 'stripe':
+      if (effectiveKey('STRIPE_CLIENT_ID')) {
+        return {
+          url: `https://connect.stripe.com/oauth/authorize?response_type=code&client_id=${effectiveKey('STRIPE_CLIENT_ID')}&scope=read_write&state=${state}&redirect_uri=${encodeURIComponent(redirectUri)}`,
+          configured: true,
+        };
+      }
+      break;
+    case 'paypal':
+      if (effectiveKey('PAYPAL_CLIENT_ID')) {
+        // PayPal OAuth authorize — sandbox vs live determined by PAYPAL_API_BASE
+        const base = (process.env.PAYPAL_API_BASE || 'https://api.paypal.com').includes('sandbox') ? 'https://www.sandbox.paypal.com' : 'https://www.paypal.com';
+        return {
+          url: `${base}/connect?flowEntry=static&client_id=${effectiveKey('PAYPAL_CLIENT_ID')}&scope=openid%20email&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}&response_type=code`,
           configured: true,
         };
       }
@@ -3305,7 +3357,7 @@ app.post('/api/custom-emails/send', async (req, res) => {
     // Canonical variable syntax is [client_name] — every known variable
     // auto-fills with the invoice + agency data ([your_name] has no data and
     // renders ''), then user-supplied custom variables are substituted.
-    const payLink = await ensurePayoneerPaymentLink(inv).catch(() => absolutePaymentLink(inv.payment_link));
+    const payLink = await ensurePortalPaymentLink(inv).catch(() => absolutePaymentLink(inv.payment_link));
     const amount =
       (inv.currency && inv.currency !== 'USD' ? `${inv.currency} ` : '') +
       new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(Number(inv.amount_due));
@@ -3499,7 +3551,7 @@ app.post('/api/invoices/:id/send', async (req, res) => {
   const { data: inv } = await sb.from('invoices').select('*').eq('id', req.params.id).eq('user_id', user.profile.id).maybeSingle();
   if (!inv) return res.status(404).json({ error: 'NOT_FOUND', message: 'Invoice not found.' });
 
-  const payLink = await ensurePayoneerPaymentLink(inv).catch(() => inv.payment_link || `/pay/${inv.id}`);
+  const payLink = await ensurePortalPaymentLink(inv).catch(() => inv.payment_link || `/pay/${inv.id}`);
 
   let tmpl: any = null;
   if (templateId) {
@@ -3897,67 +3949,6 @@ app.post('/api/billing/checkout', async (req, res) => {
     }
   }
 
-  // Real Payoneer Checkout: once payout/checkout variables are present the
-  // charge is real — the user pays from their selected card / bank / PayPal
-  // on Payoneer's hosted page and the plan activates automatically on
-  // confirmation (webhook or status poll).
-  if (payoneerApiConfig()) {
-    if (!user.profile.default_billing_instrument_id) {
-      return res.status(402).json({
-        code: 'BILLING_INSTRUMENT_REQUIRED',
-        message: 'Select the card / bank account / PayPal that pays for your subscription — Settings → Payment methods.',
-      });
-    }
-    try {
-      const sb = getSupabase()!;
-      const { data: inst } = await sb.from('payment_instruments').select('*').eq('id', user.profile.default_billing_instrument_id).eq('user_id', user.profile.id).maybeSingle();
-      if (!inst) {
-        return res.status(402).json({
-          code: 'BILLING_INSTRUMENT_REQUIRED',
-          message: 'Your selected billing method no longer exists — pick another one in Settings → Payment methods.',
-        });
-      }
-      const amountDue = checkoutAmountDue(user.profile, plan);
-      const intentId = `sub_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-      const payload: Record<string, unknown> = {
-        payment_request_id: intentId,
-        amount: amountDue,
-        currency: 'USD',
-        description: `EronFlow ${plan.name} plan subscription`.slice(0, 240),
-        payer_name: user.profile.company_name || 'EronFlow customer',
-        payer_email: user.profile.email,
-        redirect_url: `${appUrl()}/app/settings?billing=paid&plan=${plan.id}`,
-        cancel_url: `${appUrl()}/app/settings`,
-        notification_url: `${appUrl()}/api/webhooks/payoneer`,
-        group_id: process.env.PAYONEER_MERCHANT_ID || undefined,
-      };
-      Object.keys(payload).forEach((k) => payload[k] === undefined && delete payload[k]);
-      const apiRes = await payoneerApi('/v2/payment-requests', 'POST', payload);
-      const checkoutUrl = apiRes.json?.url || apiRes.json?.redirect_url || apiRes.json?.payment_page_url;
-      if (!apiRes.ok || !checkoutUrl) {
-        throw new Error(apiRes.json?.reason || apiRes.json?.message || `Payoneer checkout could not be created (${apiRes.status}).`);
-      }
-      await sb.from('payment_intents').upsert({
-        id: apiRes.json?.payment_request_id || intentId,
-        invoice_id: null,
-        user_id: user.profile.id,
-        provider: 'payoneer',
-        status: 'pending',
-        amount: amountDue,
-        fee: 0,
-        currency: 'USD',
-        purpose: 'subscription',
-        tier: plan.id,
-        raw: apiRes.json,
-      });
-      await recordBillingEvent({ userId: user.profile.id, type: 'checkout_created', tier: plan.id, provider: 'payoneer' });
-      return res.json({ success: true, url: checkoutUrl, external: true, provider: 'payoneer', mode: 'hosted', plan: plan.id, amount: amountDue });
-    } catch (err: any) {
-      console.error('[Billing] hosted checkout failed:', err.message);
-      return res.status(502).json({ error: 'CHECKOUT_FAILED', message: err.message || 'Checkout failed.' });
-    }
-  }
-
   // Provider not configured yet: legacy instant-activation path so the app
   // remains fully usable before real billing variables are added.
   try {
@@ -3976,7 +3967,7 @@ app.post('/api/billing/checkout', async (req, res) => {
 });
 
 // Polled by Settings after returning from the hosted payment page; applies
-// the tier the moment Payoneer confirms the subscription charge.
+// the tier the moment Paddle confirms the subscription charge.
 app.get('/api/billing/checkout/status', async (req, res) => {
   const user = await requireUser(req, res);
   if (!user) return;
@@ -3994,24 +3985,15 @@ app.get('/api/billing/checkout/status', async (req, res) => {
     const applied = await applyPaidTier(user.profile.id, (intent as any).tier as SubscriptionTier);
     return res.json({ paid: true, tier: (intent as any).tier, planName: applied.name });
   }
-  if (!payoneerApiConfig()) return res.json({ paid: false, status: (intent as any).status });
+  if (!paddleApiConfig()) return res.json({ paid: false, status: (intent as any).status });
 
-  try {
-    const apiRes = await payoneerApi(`/v2/payment-requests/${encodeURIComponent(intentId)}`, 'GET');
-    const remoteStatus = String(apiRes.json?.status || '').toUpperCase();
-    await sb.from('payment_intents').update({ status: remoteStatus.toLowerCase() || 'unknown', raw: apiRes.json }).eq('id', intentId);
-    if (remoteStatus && PAYONEER_SUCCESS_STATUSES.has(remoteStatus)) {
-      await sb.from('payment_intents').update({ status: 'paid' }).eq('id', intentId);
-      const applied = await applyPaidTier(user.profile.id, (intent as any).tier as SubscriptionTier);
-      return res.json({ paid: true, tier: (intent as any).tier, planName: applied.name });
-    }
-    if (['FAILED', 'DECLINED', 'CANCELLED', 'EXPIRED', 'REJECTED'].includes(remoteStatus)) {
-      return res.status(402).json({ paid: false, status: remoteStatus, message: 'The charge did not go through — you can try again.' });
-    }
-    res.json({ paid: false, status: remoteStatus || 'pending' });
-  } catch (err: any) {
-    res.json({ paid: false, status: 'pending', message: err.message });
+  // Paddle subscription confirmation is webhook-driven; poll just reflects local intent status.
+  // If webhook already marked paid, activate; otherwise keep pending.
+  if (String((intent as any).status) === 'paid' && (intent as any).tier) {
+    const applied = await applyPaidTier(user.profile.id, (intent as any).tier as SubscriptionTier);
+    return res.json({ paid: true, tier: (intent as any).tier, planName: applied.name });
   }
+  return res.json({ paid: false, status: (intent as any).status || 'pending' });
 });
 
 // Server-side proration math used when a plan switch happens mid-cycle.
@@ -4156,14 +4138,14 @@ app.get('/api/billing/events', async (req, res) => {
 });
 
 // ==========================================
-// 9. WEBHOOKS (legacy endpoints removed — Payoneer handles payments directly)
+// 9. WEBHOOKS
 // ==========================================
 app.post('/api/webhooks/lemon-squeezy', (_req, res) => {
-  res.status(410).json({ error: 'DEPRECATED', message: 'Lemon Squeezy webhook removed. Payments are now handled by Payoneer.' });
+  res.status(410).json({ error: 'DEPRECATED', message: 'Lemon Squeezy webhook removed. Payments are now handled by Paddle.' });
 });
 
 app.post('/api/webhooks/stripe', (_req, res) => {
-  res.status(410).json({ error: 'DEPRECATED', message: 'Stripe webhook removed. Payments are now handled by Payoneer.' });
+  res.status(410).json({ error: 'DEPRECATED', message: 'Stripe webhook removed. Payments are now handled by Paddle.' });
 });
 
 // ==========================================
@@ -4450,7 +4432,7 @@ function hasPayoutDestination(profile: UserProfile): boolean {
 }
 
 // Queue + attempt the transfer of a just-collected client payment to the
-// agency's selected destination. With Payoneer payout credentials configured
+// agency's selected destination. With Paddle payout credentials configured
 // this is a real MassPayouts transfer; without them it stays an explicit
 // queued record (never silently dropped, never mocked as paid).
 const PAYOUT_SUCCESS_STATUSES = new Set(['COMPLETED', 'PROCESSED', 'APPROVED', 'PAID', 'SUCCESS']);
@@ -4481,7 +4463,7 @@ async function queuePayoutForInvoice(uid: string, inv: any): Promise<void> {
         amount,
         currency,
         status,
-        provider: status === 'sent' ? 'payoneer' : null,
+        provider: status === 'sent' ? 'paddle' : null,
         sent_at: status === 'sent' ? new Date().toISOString() : null,
         ...extra,
       });
@@ -4491,44 +4473,12 @@ async function queuePayoutForInvoice(uid: string, inv: any): Promise<void> {
       return;
     }
 
-    const cfg = payoneerApiConfig();
-    if (!cfg || !(effectiveKey('PAYONEER_PROGRAM_ID') || effectiveKey('PAYONEER_PAYOUT_PAYEE_MODE'))) {
-      await insert('queued', { error_message: `Transfer to ${defaultInstrumentLabel(instrument)} starts once Payoneer payout variables are added.` });
-      return;
-    }
+    // For Stripe/PayPal Connect, funds already settled directly to the agency's connected account — no platform payout needed.
+    // Keep a queued record for audit trail only; no external transfer is initiated.
+    await insert('queued', { error_message: `Payment of ${amount} ${currency} received via client portal — funds settled directly to ${defaultInstrumentLabel(instrument)} (Stripe/PayPal Connect). No platform transfer needed.` });
+    return;
 
-    const payeeId = effectiveKey('PAYONEER_PROGRAM_ID') ? instrument.paypal_email || '' : '';
-    const body = effectiveKey('PAYONEER_PROGRAM_ID')
-      ? {
-          client_reference_id: id,
-          payee_id: payeeId,
-          amount,
-          currency,
-          description: `EronFlow recovered payment — invoice ${inv.external_invoice_id}`.slice(0, 240),
-        }
-      : {
-          client_reference_id: id,
-          description: `EronFlow recovered payment — invoice ${inv.external_invoice_id}`.slice(0, 240),
-          payee: { id: { type: 'email', value: instrument.paypal_email || instrument.holder_name || '' } },
-          amount: { value: amount, currency },
-        };
 
-    const path = effectiveKey('PAYONEER_PROGRAM_ID')
-      ? `/v4/programs/${encodeURIComponent(effectiveKey('PAYONEER_PROGRAM_ID')!)}/payouts`
-      : '/v4/payments';
-    const apiRes = await payoneerApi(path, 'POST', body);
-    if (!apiRes.ok) {
-      console.error('[Payout] Payoneer transfer rejected:', JSON.stringify(apiRes.json).slice(0, 300));
-      await insert('failed', { provider: 'payoneer', error_message: String(apiRes.json?.message || apiRes.json?.reason || `HTTP ${apiRes.status}`) });
-      return;
-    }
-    const reference = apiRes.json?.payment_id || apiRes.json?.id || apiRes.json?.client_reference_id || id;
-    const remoteStatus = String(apiRes.json?.status || '').toUpperCase();
-    await insert(PAYOUT_SUCCESS_STATUSES.has(remoteStatus) ? 'sent' : 'queued', {
-      provider: 'payoneer',
-      reference,
-      error_message: PAYOUT_SUCCESS_STATUSES.has(remoteStatus) ? null : `Provider status: ${remoteStatus || 'processing'}`,
-    });
   } catch (err: any) {
     console.error('[Payout] queue failed:', err.message);
     try {
@@ -4546,48 +4496,22 @@ async function queuePayoutForInvoice(uid: string, inv: any): Promise<void> {
 }
 
 // ==========================================
-// 10. PAYMENT SESSIONS FOR THE CLIENT PORTAL (Payoneer Checkout)
-// Clients pay on Payoneer's hosted payment page. The server opens a payment
+// 10. PAYMENT SESSIONS FOR THE CLIENT PORTAL (Paddle Checkout)
+// Clients pay on Paddle's hosted payment page. The server opens a payment
 // request, stores the intent, and confirms it either through the status
-// poll (portal return) or the Payoneer webhook — whichever lands first.
+// poll (portal return) or the Paddle webhook — whichever lands first.
 // ==========================================
 
 
-interface PayoneerConfig {
-  base: string;
-  authHeader: string;
-  merchantId?: string;
-}
-
-function payoneerApiConfig(): PayoneerConfig | null {
-  const base = String(process.env.PAYONEER_API_BASE || 'https://api.payoneer.com').replace(/\/+$/, '');
-  const token = effectiveKey('PAYONEER_API_TOKEN');
-  const username = effectiveKey('PAYONEER_PARTNER_USERNAME');
-  const password = effectiveKey('PAYONEER_API_PASSWORD');
-  let authHeader: string | null = null;
-  if (token) authHeader = `Bearer ${token}`;
-  else if (username && password) authHeader = `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`;
-  if (!authHeader) return null;
-  return { base, authHeader, merchantId: effectiveKey('PAYONEER_MERCHANT_ID') };
+function paddleApiConfig(): PaddleConfig | null {
+  return paddleConfig();
 }
 
 async function payoneerApi(path: string, method: 'GET' | 'POST', body?: unknown): Promise<{ ok: boolean; status: number; json: any }> {
-  const cfg = payoneerApiConfig();
-  if (!cfg) throw new ProviderError('PAYONEER', 'Payoneer is not configured (set PAYONEER_PARTNER_USERNAME + PAYONEER_API_PASSWORD, or PAYONEER_API_TOKEN).');
-  const res = await fetch(`${cfg.base}${path}`, {
-    method,
-    headers: {
-      Authorization: cfg.authHeader,
-      'Content-Type': 'application/json',
-      ...(cfg.merchantId ? { 'X-Payoneer-Merchant-Id': cfg.merchantId } : {}),
-    },
-    body: method === 'POST' && body != null ? JSON.stringify(body) : undefined,
-  });
-  const json = await res.json().catch(() => ({}));
-  return { ok: res.ok, status: res.status, json };
+  return paddleApi(path, method, body);
 }
 
-const PAYONEER_SUCCESS_STATUSES = new Set(['COMPLETED', 'APPROVED', 'CAPTURED', 'PROCESSED', 'SETTLED', 'SUCCESS']);
+const PADDLE_SUCCESS_STATUSES = new Set(['COMPLETED', 'APPROVED', 'CAPTURED', 'PROCESSED', 'SETTLED', 'SUCCESS']);
 
 // ==========================================
 // PADDLE PAYMENT PROCESSING
@@ -4659,7 +4583,7 @@ async function markInvoicePaid(invId: string, uid: string, inv: any, note: strin
     return false;
   }
   await addUsage(uid, { amount_recovered: Number(inv?.amount_due) || 0 }).catch(() => {});
-  await recordBillingEvent({ userId: uid, type: 'charge', amount: Number(inv?.amount_due) || 0, breakdown: { source: 'client_portal', note }, provider: 'payoneer' }).catch(() => {});
+  await recordBillingEvent({ userId: uid, type: 'charge', amount: Number(inv?.amount_due) || 0, breakdown: { source: 'client_portal', note }, provider: 'paddle' }).catch(() => {});
   try {
     await sb.from('reminder_logs').insert({
       id: `log_paid_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
@@ -4678,7 +4602,7 @@ async function markInvoicePaid(invId: string, uid: string, inv: any, note: strin
     /* log insert is best-effort */
   }
   // Money collected → start the transfer to the agency's selected
-  // payout destination (real Payoneer transfer when configured).
+  // payout destination: money collected via Stripe/PayPal Connect goes directly to client's account.
   await queuePayoutForInvoice(uid, inv);
   return true;
 }
@@ -4693,64 +4617,52 @@ app.post('/api/payments/create-payment-intent', async (req, res) => {
   if (invoice.status === 'paid') {
     return res.status(400).json({ error: 'ALREADY_PAID', message: 'This invoice is already paid.' });
   }
-  if (!payoneerApiConfig()) {
-    return providerUnavailable(res, 'PAYONEER');
+
+  // Client payments use the agency's connected Stripe/PayPal account — not Paddle.
+  // Paddle is strictly for EronFlow subscription billing; invoice payments route 100% to the agency.
+  const { data: integrations } = await sb.from('integrations').select('provider,is_active').eq('user_id', invoice.user_id).eq('is_active', true);
+  const providers = new Set((integrations||[]).map((r:any)=>r.provider));
+  const hasStripe = providers.has('stripe');
+  const hasPaypal = providers.has('paypal');
+  const chosen = (method === 'paypal' && hasPaypal) ? 'paypal' : hasStripe ? 'stripe' : hasPaypal ? 'paypal' : null;
+  if (!chosen) {
+    return res.status(402).json({ error: 'PROVIDER_NOT_CONFIGURED', message: 'Agency has not connected Stripe or PayPal. Connect one in Settings → App Connectors to accept client payments.' });
   }
 
-  const fee = paymentMethodFee((method || 'card') as PaymentMethod, Number(invoice.amount_due));
+  // No platform fee on invoice amount — payer pays exactly what is due. Stripe/PayPal fees go to the connected account.
+  const fee = 0;
 
   try {
     const intentId = `pinv_${invoice.id.slice(0, 8)}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-    const returnUrl = `${appUrl()}/pay/${invoice.id}?returned=1`;
-    // Payoneer hosted payment page: the payer completes card / PayPal / bank
-    // / wallet payment there and is redirected back to the portal.
-    const payload: Record<string, unknown> = {
-      payment_request_id: intentId,
-      amount: Number(invoice.amount_due),
-      currency: String(invoice.currency || 'USD').toUpperCase(),
-      description: `${invoice.external_invoice_id} — ${invoice.description || 'Agency services'}`.slice(0, 240),
-      payer_name: invoice.client_name || 'Client',
-      payer_email: invoice.client_email || undefined,
-      redirect_url: returnUrl,
-      cancel_url: returnUrl,
-      notification_url: `${appUrl()}/api/webhooks/payoneer`,
-      group_id: process.env.PAYONEER_MERCHANT_ID || undefined,
-    };
-    Object.keys(payload).forEach((k) => payload[k] === undefined && delete payload[k]);
-
-    const apiRes = await payoneerApi('/v2/payment-requests', 'POST', payload);
-    const checkoutUrl = apiRes.json?.url || apiRes.json?.redirect_url || apiRes.json?.payment_page_url;
-    const requestId = apiRes.json?.payment_request_id || intentId;
-    if (!apiRes.ok || !checkoutUrl) {
-      console.error('[Payments] Payoneer session failed:', JSON.stringify(apiRes.json).slice(0, 400));
-      throw new Error(apiRes.json?.reason || apiRes.json?.message || `Payoneer checkout could not be created (${apiRes.status}).`);
-    }
-
+    // Store intent as pending; actual charge is created via Stripe/PayPal Checkout/OAuth on the portal.
+    // The portal will fetch /api/portal/invoice/:id and render Stripe Elements / PayPal Buttons using the agency's connected account.
     await sb.from('payment_intents').upsert({
-      id: requestId,
+      id: intentId,
       invoice_id: invoice.id,
       user_id: invoice.user_id,
-      provider: 'payoneer',
+      provider: chosen,
       status: 'pending',
       amount: Number(invoice.amount_due),
       fee,
       currency: String(invoice.currency || 'USD').toUpperCase(),
-      raw: apiRes.json,
+      raw: { method, note: 'Client portal intent — payer completes payment via connected '+chosen+' account' },
     });
 
+    // Return intent so portal can render the correct provider UI; no redirect URL needed — portal handles it.
     res.json({
-      url: checkoutUrl,
-      intent_id: requestId,
-      provider: 'payoneer',
+      intent_id: intentId,
+      provider: chosen,
       amount: Number(invoice.amount_due),
       fee,
       currency: String(invoice.currency || 'USD').toUpperCase(),
+      // Portal will use Stripe/PayPal SDK with the agency account; url is the portal itself.
+      url: `${appUrl()}/pay/${invoice.id}?provider=${chosen}&intent=${intentId}`,
     });
   } catch (err: any) {
     console.error('[Payments] intent failed:', err.message);
     res.status(err instanceof ProviderError ? 503 : 502).json({
       error: 'PAYMENT_FAILED',
-      message: err.message || 'The payment provider rejected this checkout. Please try again.',
+      message: err.message || 'Could not create payment intent. Please try again.',
     });
   }
 });
@@ -4771,15 +4683,20 @@ app.get('/api/payments/status/:invoiceId', async (req, res) => {
     .order('created_at', { ascending: false })
     .limit(1);
   const intent = Array.isArray(intents) ? intents[0] : null;
-  if (!intent || intent.provider !== 'payoneer' || !payoneerApiConfig()) {
+  if (!intent) return res.json({ paid: false, status: 'none' });
+  // For Stripe/PayPal Connect intents, payment is completed via webhook from the connected account
+  if (intent.provider === 'stripe' || intent.provider === 'paypal') {
+    return res.json({ paid: false, status: intent.status || 'pending', provider: intent.provider, note: 'Awaiting Stripe/PayPal webhook confirmation' });
+  }
+  if (intent.provider !== 'paddle' || !paddleApiConfig()) {
     return res.json({ paid: false, status: intent?.status || 'none' });
   }
   try {
-    const apiRes = await payoneerApi(`/v2/payment-requests/${encodeURIComponent(intent.id)}`, 'GET');
+    const apiRes = await paddleApi(`/v2/payment-requests/${encodeURIComponent(intent.id)}`, 'GET');
     const remoteStatus = String(apiRes.json?.status || '').toUpperCase();
     await sb.from('payment_intents').update({ status: remoteStatus || 'unknown', raw: apiRes.json }).eq('id', intent.id);
-    if (remoteStatus && PAYONEER_SUCCESS_STATUSES.has(remoteStatus)) {
-      const paid = await markInvoicePaid(invoice.id, invoice.user_id, invoice, `Payoneer ${remoteStatus} (status poll ${intent.id}).`);
+    if (remoteStatus && PADDLE_SUCCESS_STATUSES.has(remoteStatus)) {
+      const paid = await markInvoicePaid(invoice.id, invoice.user_id, invoice, `Paddle ${remoteStatus} (status poll ${intent.id}).`);
       return res.json({ paid, status: remoteStatus });
     }
     if (['FAILED', 'DECLINED', 'CANCELLED', 'EXPIRED', 'REJECTED'].includes(remoteStatus)) {
@@ -4791,58 +4708,9 @@ app.get('/api/payments/status/:invoiceId', async (req, res) => {
   }
 });
 
-// Payoneer server-to-server confirmation. When PAYONEER_WEBHOOK_SECRET is set
+// Paddle server-to-server confirmation. When PADDLE_WEBHOOK_SECRET is set
 // the HMAC-SHA256 signature header is verified; otherwise the event is only
 // trusted when it matches a known stored intent id.
-app.post('/api/webhooks/payoneer', async (req, res) => {
-  const secret = effectiveKey('PAYONEER_WEBHOOK_SECRET');
-  const raw = typeof req.body === 'string' || Buffer.isBuffer(req.body) ? String(req.body) : JSON.stringify(req.body || {});
-  if (secret) {
-    const sig = String(req.headers['x-payoneer-signature'] || '');
-    const expected = crypto.createHmac('sha256', secret).update(raw).digest('hex');
-    const a = Buffer.from(expected);
-    const b = Buffer.from(sig);
-    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
-      return res.status(401).json({ error: 'INVALID_SIGNATURE' });
-    }
-  }
-  let event: any;
-  try {
-    event = typeof raw === 'string' ? JSON.parse(raw) : raw;
-  } catch {
-    return res.status(400).json({ error: 'BAD_JSON' });
-  }
-  const sb = getSupabase();
-  if (!sb) return dbError(res);
-
-  // Accept both flat payment-request payloads and wrapped event envelopes.
-  const requestId = String(event?.payment_request_id || event?.data?.payment_request_id || event?.intent_id || '');
-  const status = String(event?.status || event?.data?.status || event?.event_type || '').toUpperCase();
-  if (!requestId) return res.json({ received: true, ignored: true });
-
-  const { data: intent } = await sb.from('payment_intents').select('*').eq('id', requestId).maybeSingle();
-  if (!intent) return res.json({ received: true, ignored: true });
-  await sb.from('payment_intents').update({ status: status || (intent as any).status, raw: event }).eq('id', requestId);
-
-  // Subscription charge confirmed by Payoneer → activate the plan instantly.
-  if ((intent as any).purpose === 'subscription') {
-    if (status && PAYONEER_SUCCESS_STATUSES.has(status) && String((intent as any).status) !== 'paid' && (intent as any).tier) {
-      await sb.from('payment_intents').update({ status: 'paid' }).eq('id', requestId);
-      await applyPaidTier((intent as any).user_id, (intent as any).tier as SubscriptionTier);
-    }
-    return res.json({ received: true });
-  }
-
-  if (status && PAYONEER_SUCCESS_STATUSES.has(status) && intent.status !== 'paid') {
-    const { data: invoice } = await sb.from('invoices').select('*').eq('id', intent.invoice_id).maybeSingle();
-    if (invoice && invoice.user_id === (intent as any).user_id) {
-      await markInvoicePaid(invoice.id, (intent as any).user_id, invoice, `Payoneer ${status} (webhook ${requestId}).`);
-    }
-    await sb.from('payment_intents').update({ status: 'paid' }).eq('id', requestId);
-  }
-  res.json({ received: true });
-});
-
 // Paddle Webhook Handler
 app.post('/api/webhooks/paddle', async (req, res) => {
   const cfg = paddleConfig();
@@ -4992,7 +4860,7 @@ async function dispatchInvoiceReminders(opts: {
   const results: any[] = [];
   const dueDate = new Date(inv.due_date + 'T00:00:00');
   const diffDays = Math.floor((now.getTime() - dueDate.getTime()) / 86400000);
-  const payLink = await ensurePayoneerPaymentLink(inv).catch(() => inv.payment_link || `/pay/${inv.id}`);
+  const payLink = await ensurePortalPaymentLink(inv).catch(() => inv.payment_link || `/pay/${inv.id}`);
   const renderProfile = {
     company_name: profile?.company_name || 'EronFlow',
     company_email: profile?.company_email || '',

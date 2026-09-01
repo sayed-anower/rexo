@@ -15,7 +15,7 @@ import { calculateOpExForUsers } from '../lib/storage';
  *   - Upstash QStash scheduling    $15/mo (≤10k jobs), $50 over
  *   - Supabase (DB + auth)         $25/mo (≤250 agencies), $75 over
  *   - Hosting & infrastructure     $26/mo (Render + domain)
- *   - Payoneer fees                  3.99% of MRR + $0.45 per customer
+ *   - Paddle fees                    3.99% of MRR + $0.45 per customer (merchant of record)
  */
 export function OpExCalculator() {
   const [activeUsers, setActiveUsers] = useState<number>(100);
@@ -269,7 +269,7 @@ export function OpExCalculator() {
                 <td className="p-4 pr-6 text-right font-bold text-ink dark:text-white">${opEx.hosting_cost}</td>
               </tr>
 
-              {/* Payoneer */}
+              {/* Paddle */}
               <tr>
                 <td className="p-4 pl-6">
                   <div className="flex items-center gap-2">
@@ -278,13 +278,13 @@ export function OpExCalculator() {
                     </div>
                     <div>
                       <span className="font-bold text-ink dark:text-white block">Payment Processing</span>
-                      <span className="text-[11px] text-ink3">Payoneer gateway fees</span>
+                      <span className="text-[11px] text-ink3">Paddle (merchant of record)</span>
                     </div>
                   </div>
                 </td>
                 <td className="p-4 font-mono">{opEx.user_count.toLocaleString()} customers</td>
                 <td className="p-4 text-ink2">3.99% of MRR + $0.45 / customer</td>
-                <td className="p-4 pr-6 text-right font-bold text-ink dark:text-white">${opEx.payoneer_fees}</td>
+                <td className="p-4 pr-6 text-right font-bold text-ink dark:text-white">${opEx.paddle_fees}</td>
               </tr>
 
               {/* Totals row */}

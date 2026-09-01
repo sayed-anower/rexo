@@ -16,7 +16,8 @@ import {
   ChevronRight,
   FileText,
   MessageSquare,
-  Phone
+  Phone,
+  RefreshCw,
 } from 'lucide-react';
 import { CustomEmailTemplate, Invoice, UserProfile, ChannelType } from '../types';
 import { renderPlaceholders, absolutePaymentUrl, findUnknownVars } from '../lib/storage';
@@ -128,10 +129,14 @@ export function CustomEmailTemplates({
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingTemplate || !editingTemplate.title || !editingTemplate.subject) return;
-
-    await onSaveTemplate(editingTemplate);
-    setIsEditorOpen(false);
-    setEditingTemplate(null);
+    setSaving(true);
+    try {
+      await onSaveTemplate(editingTemplate);
+      setIsEditorOpen(false);
+      setEditingTemplate(null);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleGenerateAi = async (e: React.FormEvent) => {
@@ -633,10 +638,20 @@ export function CustomEmailTemplates({
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2.5 rounded-xl bg-accent hover:bg-accent-hover text-white text-xs font-bold transition-all shadow-md flex items-center gap-2"
+                  disabled={saving}
+                  className="px-5 py-2.5 rounded-xl bg-accent hover:bg-accent-hover text-white text-xs font-bold transition-all shadow-md flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>Save</span>
+                  {saving ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Saving…</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Save</span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>

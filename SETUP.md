@@ -24,7 +24,7 @@ Copy `.env.example` to `.env` and fill in every value. All variables are require
 
 ### Payment Processing
 
-**Option A: Paddle (Recommended — Merchant of Record)**
+**Subscriptions & Invoicing — Paddle (Merchant of Record)**
 | Variable | Description |
 |----------|-------------|
 | `PADDLE_VENDOR_ID` | From Paddle Dashboard → Developer Tools |
@@ -35,14 +35,13 @@ Copy `.env.example` to `.env` and fill in every value. All variables are require
 | `PADDLE_PRICE_PRO` | Price ID for Pro plan |
 | `PADDLE_PRICE_AGENCY` | Price ID for Agency plan |
 
-**Option B: Payoneer**
+**Client Payment Connectors — Stripe & PayPal (OAuth)**
 | Variable | Description |
 |----------|-------------|
-| `PAYONEER_MERCHANT_ID` | Merchant ID |
-| `PAYONEER_API_TOKEN` | API token (OR username+password) |
-| `PAYONEER_PARTNER_USERNAME` | Partner API username |
-| `PAYONEER_API_PASSWORD` | Partner API password |
-| `PAYONEER_WEBHOOK_SECRET` | Optional HMAC secret |
+| `STRIPE_CLIENT_ID` | Stripe Connect OAuth client ID |
+| `STRIPE_CLIENT_SECRET` | Stripe Connect OAuth client secret |
+| `PAYPAL_CLIENT_ID` | PayPal OAuth client ID |
+| `PAYPAL_CLIENT_SECRET` | PayPal OAuth client secret |
 
 ### Scheduling (Upstash QStash)
 | Variable | Description |
@@ -96,9 +95,10 @@ Register these URLs in each provider's developer console:
 | Provider | Where to Register | Redirect URL |
 |----------|-------------------|--------------|
 | Google (Sign-in + Gmail) | console.cloud.google.com → Credentials → OAuth client | `https://YOUR-DOMAIN/api/auth/google/callback` AND `https://YOUR-DOMAIN/api/oauth/callback` |
+| Stripe Connect | Stripe Dashboard → Developers → Connect → Settings | `https://YOUR-DOMAIN/api/integrations/stripe/callback` |
+| PayPal Connect | PayPal Developer Apps → App Settings | `https://YOUR-DOMAIN/api/integrations/paypal/callback` |
 | QuickBooks | Intuit Developer → App → Keys & OAuth | `https://YOUR-DOMAIN/api/oauth/callback` |
 | Xero | developer.xero.com → App → Redirect URIs | `https://YOUR-DOMAIN/api/oauth/callback` |
-| Paddle | Paddle Dashboard → Webhooks | N/A (uses hosted checkout) |
 
 > **Important:** The redirect URI must match EXACTLY — scheme, host, path. A mismatch causes `redirect_uri_mismatch` errors.
 
@@ -111,7 +111,8 @@ Register these URLs where providers push events to your server:
 | Provider | Where to Register | Webhook URL | Signature Header |
 |----------|-------------------|-------------|------------------|
 | Paddle | Paddle Dashboard → Webhooks | `https://YOUR-DOMAIN/api/webhooks/paddle` | `paddle-signature` |
-| Payoneer | Payoneer Dashboard → Notifications | `https://YOUR-DOMAIN/api/webhooks/payoneer` | `x-payoneer-signature` |
+| Stripe | Stripe Dashboard → Developers → Webhooks | `https://YOUR-DOMAIN/api/webhooks/stripe` | `stripe-signature` |
+| PayPal | PayPal Developer → Webhooks | `https://YOUR-DOMAIN/api/webhooks/paypal` | `Paypal-Auth-Algo` |
 | QuickBooks | Intuit Developer → Webhooks | `https://YOUR-DOMAIN/api/webhooks/quickbooks` | `Intuit-Signature` |
 | Xero | developer.xero.com → Webhooks | `https://YOUR-DOMAIN/api/webhooks/xero` | `x-xero-signature` |
 | QStash | N/A (QStash calls your URL) | `https://YOUR-DOMAIN/api/cron/process-reminders` | `upstash-signature` (JWT) |
@@ -120,7 +121,7 @@ Register these URLs where providers push events to your server:
 
 ## 4. Payment Gateway Setup
 
-### Paddle (Recommended)
+### Paddle — Subscriptions & Invoicing (Recommended)
 
 1. Create a Paddle account at [paddle.com](https://paddle.com)
 2. Complete seller onboarding (business details, bank account)
@@ -138,12 +139,20 @@ Register these URLs where providers push events to your server:
 6. Go to **Webhooks** → Add endpoint: `https://YOUR-DOMAIN/api/webhooks/paddle`
 7. For testing: use sandbox at `https://sandbox-api.paddle.com`
 
-### Payoneer (Alternative)
+### Stripe Connect — Client Payments
 
-1. Create a Payoneer partner account
-2. Get API credentials (token or username+password)
-3. Set up MassPayouts program for client payment transfers
-4. Register webhook URL in the dashboard
+1. Create a Stripe account at [stripe.com](https://stripe.com)
+2. Register a Stripe Connect OAuth app at [Stripe Dashboard → Connect](https://dashboard.stripe.com/test/express/accounts)
+3. Add redirect URI: `https://YOUR-DOMAIN/api/integrations/stripe/callback`
+4. Copy the Client ID and Secret to `.env`
+5. Register webhook endpoint: `https://YOUR-DOMAIN/api/webhooks/stripe`
+
+### PayPal Connect — Client Payments
+
+1. Create a PayPal Developer app at [developer.paypal.com](https://developer.paypal.com)
+2. Add redirect URI: `https://YOUR-DOMAIN/api/integrations/paypal/callback`
+3. Copy the Client ID and Secret to `.env`
+4. Register webhook endpoint: `https://YOUR-DOMAIN/api/webhooks/paypal`
 
 ---
 
@@ -220,6 +229,8 @@ Interactive script that creates a fully-active test user with any plan.
 | WhatsApp messages fail | Verify permanent system user token (not temporary app token) |
 | Email not sending | Verify domain in Resend, check SPF/DKIM records |
 | Paddle checkout fails | Verify Price IDs exist in Paddle Catalog and match plan tiers |
+| Stripe OAuth fails | Verify redirect URI matches exactly and app is approved/live |
+| PayPal OAuth fails | Verify sandbox/live mode matches and redirect URI is registered |
 
 ---
 
@@ -244,16 +255,21 @@ npx localtunnel --port 3000
 ┌─────────────────────────────────────────────────────────┐
 │                    EronFlow SaaS                         │
 ├─────────────────────────────────────────────────────────┤
-│  Frontend (React + Vite)    │  Backend (Express)         │
+│  Frontend (React + Vite)    │  Backend (Express)       │
 │  ├─ Dashboard               │  ├─ Auth (Supabase)        │
-│  ├─ Invoice Management      │  ├─ Billing (Paddle/Payo)  │
-│  ├─ Automation Scheduler    │  ├─ QStash Cron Worker     │
-│  ├─ Message Templates       │  ├─ Email (Resend)         │
-│  ├─ Connectors (OAuth)      │  ├─ WhatsApp (Meta API)    │
-│  └─ Public Payment Portal   │  ├─ SMS (EasySendSMS)      │
+│  ├─ Invoice Management      │  ├─ Billing (Paddle)       │
+│  ├─ Automation Scheduler    │  ├─ Connectors:            │
+│  ├─ Message Templates       │  │  ├─ Stripe Connect       │
+│  ├─ Connectors (OAuth)      │  │  ├─ PayPal Connect       │
+│  └─ Public Payment Portal   │  │  ├─ QuickBooks           │
+│                             │  │  └─ Xero                 │
+│                             │  ├─ QStash Cron Worker     │
+│                             │  ├─ Email (Resend)         │
+│                             │  ├─ SMS (EasySendSMS)      │
 │                             │  └─ AI (Gemini)            │
 ├─────────────────────────────────────────────────────────┤
-│  Providers: Supabase (DB) │ Paddle/Payo (Payments)      │
-│  QStash (Scheduling) │ Resend (Email) │ EasySendSMS     │
+│  Providers: Supabase (DB) │ Paddle (Payments)            │
+│  Stripe/PayPal (Client Payouts) │ QStash (Scheduling)    │
+│  Resend (Email) │ EasySendSMS                               │
 └─────────────────────────────────────────────────────────┘
 ```

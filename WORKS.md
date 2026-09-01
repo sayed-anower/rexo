@@ -50,8 +50,8 @@ delivery   accepted & JWT-verified at 2026-08-26T08:54:37.716Z  (= 33s after pub
 * **Removed**: the whole payout-details block (Payoneer / bank transfer / card fields) from
   signup — no bank/card/PayPal info is collected or stored at signup anymore. Payout
   instruments continue to live in Settings → Payment methods (server endpoints unchanged).
-* **Added (mandatory)**: Country selector (ISO 3166 list) + phone number with country code.
-* **Added**: “I agree to Terms of Service and Privacy Policy” checkbox — enforced client-side
+* **Added (mandatory)**: Country selector (ISO 3166 list, defaults to **US**) + phone number with country code (defaults to **+1**).
+* **Added**: "I agree to Terms of Service and Privacy Policy" checkbox — enforced client-side
   *and* server-side (`accept_terms:true` required, dedicated `TERMS_REQUIRED` error).
 * DB: new columns `users.user_country`, `users.terms_accepted_at` (idempotent migration runs
   automatically on boot; also added to the fresh-install schema).
@@ -90,7 +90,9 @@ EasySendSMS (which *was* proven working above).
 | Google Gemini | AI template/sequence drafting | `GEMINI_API_KEY` | ✅ set |
 | Meta WhatsApp Cloud API | WhatsApp reminders | `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, optional `WHATSAPP_API_VERSION` | ❌ empty — see §4 |
 | EasySendSMS | SMS reminders | `EASYSENDSMS_API_KEY`, `EASYSENDSMS_SENDER` | ✅ configured & live-tested |
-| Payoneer | subscription charges + client invoice payments + payouts | `PAYONEER_MERCHANT_ID`, then either `PAYONEER_API_TOKEN` or `PAYONEER_PARTNER_USERNAME`+`PAYONEER_API_PASSWORD`; optional `PAYONEER_WEBHOOK_SECRET`, `PAYONEER_PROGRAM_ID`, `PAYONEER_API_BASE` | ❌ placeholder creds |
+| Paddle | subscriptions + client invoice payments + payouts | `PADDLE_VENDOR_ID`, `PADDLE_API_KEY`; optional `PADDLE_WEBHOOK_SECRET`, `PADDLE_API_BASE` | ❌ placeholder creds |
+| Stripe Connect | client payments (OAuth) | `STRIPE_CLIENT_ID`, `STRIPE_CLIENT_SECRET` | ❌ not set |
+| PayPal Connect | client payments (OAuth) | `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` | ❌ not set |
 | QuickBooks Online | invoice sync | `QUICKBOOKS_CLIENT_ID`, `QUICKBOOKS_CLIENT_SECRET`, `QUICKBOOKS_WEBHOOK_TOKEN` | ⚠️ keys set — app setup below |
 | Xero | invoice sync | `XERO_CLIENT_ID`, `XERO_CLIENT_SECRET`, `XERO_WEBHOOK_KEY` | ❌ secret empty |
 | Google OAuth | “Continue with Google” sign-in + Gmail connector | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` (+`AUTH_COOKIE_SECRET` for sessions) | ❌ not set |
@@ -107,7 +109,9 @@ Replace `https://YOUR-DOMAIN` with your production `APP_URL`.
 | Google (sign-in **and** Gmail connector) | console.cloud.google.com → APIs & Services → Credentials → OAuth client → Authorized redirect URIs | `https://YOUR-DOMAIN/api/auth/google/callback` **and** `https://YOUR-DOMAIN/api/oauth/callback` |
 | QuickBooks | Intuit Developer → app → Keys & OAuth → Redirect URI | `https://YOUR-DOMAIN/api/oauth/callback` |
 | Xero | developer.xero.com → app → Redirect URI | `https://YOUR-DOMAIN/api/oauth/callback` |
-| Payoneer hosted checkout | sent automatically per-request as `redirect_url`/`cancel_url` (no console step) | `https://YOUR-DOMAIN/app/settings?billing=paid&plan=<plan>` and `https://YOUR-DOMAIN/pay/<invoiceId>?returned=1` |
+| Paddle hosted checkout | sent automatically per-request as `redirect_url`/`cancel_url` (no console step) | `https://YOUR-DOMAIN/app/settings?billing=paid&plan=<plan>` and `https://YOUR-DOMAIN/pay/<invoiceId>?returned=1` |
+| Stripe Connect | Stripe Dashboard → Developers → Connect → Settings | `https://YOUR-DOMAIN/api/integrations/stripe/callback` |
+| PayPal Connect | PayPal Developer Apps → App Settings | `https://YOUR-DOMAIN/api/integrations/paypal/callback` |
 
 > “Redirect URL” = after the user logs in / approves access at the provider, the provider
 > bounces the browser back to this URL with a `?code=…` authorization code. Our server
@@ -119,7 +123,9 @@ Replace `https://YOUR-DOMAIN` with your production `APP_URL`.
 | --- | --- | --- | --- |
 | QuickBooks | Intuit Developer → app → Webhooks | `https://YOUR-DOMAIN/api/webhooks/quickbooks` (Intuit first pings `?code=…`, we echo it automatically) | `QUICKBOOKS_WEBHOOK_TOKEN` (HMAC-SHA256 of body in `Intuit-Signature`) |
 | Xero | developer.xero.com → app → Webhooks | `https://YOUR-DOMAIN/api/webhooks/xero` (their console sends an Intent-to-receive first) | `XERO_WEBHOOK_KEY` (HMAC-SHA256 base64 in `x-xero-signature`) |
-| Payoneer | Payoneer partner dashboard → notifications | `https://YOUR-DOMAIN/api/webhooks/payoneer` | optional `PAYONEER_WEBHOOK_SECRET` (`x-payoneer-signature`) |
+| Paddle | Paddle Dashboard → Webhooks | `https://YOUR-DOMAIN/api/webhooks/paddle` | `PADDLE_WEBHOOK_SECRET` (`paddle-signature`) |
+| Stripe | Stripe Dashboard → Developers → Webhooks | `https://YOUR-DOMAIN/api/webhooks/stripe` | `STRIPE_API_KEY` (`stripe-signature`) |
+| PayPal | PayPal Developer → Webhooks | `https://YOUR-DOMAIN/api/webhooks/paypal` | `PAYPAL_CLIENT_SECRET` (`Paypal-Auth-Algo`) |
 | Upstash QStash | none — QStash calls the URL we publish to | `https://YOUR-DOMAIN/api/cron/process-reminders` | `QSTASH_CURRENT_SIGNING_KEY` / `QSTASH_NEXT_SIGNING_KEY` (JWT in `upstash-signature`) |
 
 > “Webhook” = the provider makes a server-to-server POST to us whenever something happens
@@ -187,25 +193,31 @@ Key is live (proven above). For production polish:
 4. Webhooks: `https://YOUR-DOMAIN/api/webhooks/xero`, set the signing key to
    `XERO_WEBHOOK_KEY` (already set), subscribe to invoices.
 
-### 4.7 Google OAuth (sign-in + Gmail connector disabled)
-1. console.cloud.google.com → OAuth consent screen (external) → publish.
-2. Credentials → OAuth Client ID (Web):
-   - Authorized JavaScript origin: `https://YOUR-DOMAIN`
-   - Authorized redirect URIs: `https://YOUR-DOMAIN/api/auth/google/callback` AND
-     `https://YOUR-DOMAIN/api/oauth/callback`
-3. Enable Gmail API (for the Gmail connector scope `gmail.send`).
-4. Put the client id/secret into `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`.
+### 4.5 Stripe Connect (client payments via OAuth)
+1. dashboard.stripe.com → Developers → Connect → Settings → Register OAuth app.
+2. Redirect URI: `https://YOUR-DOMAIN/api/integrations/stripe/callback`.
+3. Copy Client ID and Secret to `.env`: `STRIPE_CLIENT_ID` / `STRIPE_CLIENT_SECRET`.
+4. Register webhook endpoint: `https://YOUR-DOMAIN/api/webhooks/stripe`.
+5. Go live: submit your Stripe account for review (required for live charges).
 
-### 4.8 Payoneer (billing & client payments disabled)
-1. Partner dashboard → copy Merchant ID into `PAYONEER_MERCHANT_ID` (currently a placeholder).
-2. API credentials (username + API password, or an API token) → `PAYONEER_PARTNER_USERNAME`
-   + `PAYONEER_API_PASSWORD` (or `PAYONEER_API_TOKEN`). Use
-   `PAYONEER_API_BASE=https://api.sandbox.payoneer.com` while testing.
-3. Notifications URL in the dashboard: `https://YOUR-DOMAIN/api/webhooks/payoneer`;
-   optionally set `PAYONEER_WEBHOOK_SECRET` to enforce the HMAC check.
-4. Payouts of collected money: create a MassPayouts program → `PAYONEER_PROGRAM_ID`.
-5. Until these are set, plan checkout falls back to instant activation and client payments
-   return `PROVIDER_NOT_CONFIGURED` (no mock payments anywhere).
+### 4.6 PayPal Connect (client payments via OAuth)
+1. developer.paypal.com → Create App → copy Client ID and Secret.
+2. Redirect URI: `https://YOUR-DOMAIN/api/integrations/paypal/callback`.
+3. Put credentials in `PAYPAL_CLIENT_ID` / `PAYPAL_CLIENT_SECRET`.
+4. Register webhook endpoint: `https://YOUR-DOMAIN/api/webhooks/paypal`.
+5. Go live: submit your PayPal app for approval.
+
+### 4.7 Payoneer replaced by Paddle (billing & subscriptions)
+Paddle is now the merchant of record for all subscriptions and invoice payments:
+1. Create a Paddle account at [paddle.com](https://paddle.com)
+2. Complete seller onboarding (business details, bank account)
+3. Set up products and prices in Paddle Dashboard → Catalog
+4. Copy Vendor ID, API Key, Client Token to `.env`
+5. Register webhook: `https://YOUR-DOMAIN/api/webhooks/paddle`
+6. Copy Price IDs into `PADDLE_PRICE_STARTER`, `PADDLE_PRICE_PRO`, `PADDLE_PRICE_AGENCY`
+7. For testing: use sandbox at `https://sandbox-api.paddle.com`
+8. Until credentials are set, plan checkout falls back to instant activation and
+   client payments return `PROVIDER_NOT_CONFIGURED`.
 
 ---
 
@@ -215,12 +227,12 @@ Key is live (proven above). For production polish:
 - [ ] Set `APP_URL=https://yourdomain` (drives EVERY callback URL in §3).
 - [ ] Rotate `AUTH_COOKIE_SECRET` (64-char random; keeps sessions stable across restarts).
 - [ ] Register all §3.1 redirect URLs and §3.2 webhooks on the provider consoles.
-- [ ] Finish §4.2 (WhatsApp), §4.6 (Xero), §4.7 (Google), §4.8 (Payoneer); verify the Resend domain (§4.4).
+- [ ] Finish §4.2 (WhatsApp), §4.6 (Xero), §4.7 (Google), §4.5 (Stripe), §4.6 (PayPal), §4.7 (Paddle); verify the Resend domain (§4.4).
 - [ ] Confirm QStash: `curl https://yourdomain/api/cron/qstash-status` should show
       `qstashConfigured:true, signingKeysConfigured:true` and deliveries appearing after the
       next scheduled automation fires.
 - [ ] Run `npm test` (23 tests) and `npm run build` before releasing.
-- [ ] Remove `VONAGE_*` / `WHAPI_*` leftovers from any deployment secrets store — obsolete.
+- [ ] Remove `VONAGE_*` / `WHAPI_*` / `PAYONEER_*` leftovers from any deployment secrets store — obsolete.
 
 ## 6. Handy scripts added
 ```bash
@@ -304,7 +316,7 @@ wrong UTC instant — e.g. “9pm Asia/Dhaka” resolved to **03:00 the next day
 
 ### 7.7 Security notes (item 7)
 * Webhook signature verification (QuickBooks `Intuit-Signature`, Xero `x-xero-signature`,
-  Payoneer `x-payoneer-signature`) all use `crypto.timingSafeEqual` with HMAC-SHA256 — good.
+  Paddle `paddle-signature`) all use `crypto.timingSafeEqual` with HMAC-SHA256 — good.
 * QStash signature verification is the real Upstash JWT scheme (from prior change).
 * All DB access goes through the Supabase client with parameterised `.eq()/.select()`
   builders (no string-concatenated SQL); the only raw SQL is the constant self-migration
@@ -314,9 +326,10 @@ wrong UTC instant — e.g. “9pm Asia/Dhaka” resolved to **03:00 the next day
   + `otpFromAddress()`.
 
 ## 8. Remaining / not-yet-done (for production)
-- Payoneer live charges/payouts still need real credentials (§4.8) — today they fall back
+- Paddle live charges still need real credentials (§4.7) — today they fall back
   to queued records, never mocked as paid.
-- Plan limits (item 8) are enforced for emails/WhatsApp/SMS/AI/invoices per `plans.ts`;
-  review `min_automation_interval_mins` per tier and confirm Payoneer gating once wired.
+- Stripe Connect & PayPal Connect OAuth flows need to be wired up in server.ts.
+- Plan limits are enforced for emails/WhatsApp/SMS/AI/invoices per `plans.ts`;
+  review `min_automation_interval_mins` per tier.
 
 

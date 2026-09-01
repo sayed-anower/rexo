@@ -518,10 +518,10 @@ export function calculateOpExForUsers(activeUsers: number): OpExTierData {
 
   const grossMrr = activeUsers * avgSubscriptionPrice;
 
-  // Payoneer: 3.99% of MRR + $0.45 per customer
-  const payoneerFees = activeUsers === 0 ? 0 : grossMrr * 0.0399 + activeUsers * 0.45;
+  // Paddle: 3.99% of MRR + $0.45 per customer (merchant of record)
+  const paddleFees = activeUsers === 0 ? 0 : grossMrr * 0.0399 + activeUsers * 0.45;
 
-  const totalOpExUnrounded = resendCost + whatsappCost + smsCost + qstashCost + supabaseCost + hostingCost + payoneerFees;
+  const totalOpExUnrounded = resendCost + whatsappCost + smsCost + qstashCost + supabaseCost + hostingCost + paddleFees;
   const netProfitUnrounded = grossMrr - totalOpExUnrounded;
   const marginPercentage = grossMrr > 0 ? (netProfitUnrounded / grossMrr) * 100 : 0;
 
@@ -537,7 +537,7 @@ export function calculateOpExForUsers(activeUsers: number): OpExTierData {
     qstash_cost: qstashCost,
     supabase_cost: supabaseCost,
     hosting_cost: hostingCost,
-    payoneer_fees: Math.round(payoneerFees),
+    paddle_fees: Math.round(paddleFees),
     total_opex: Math.round(totalOpExUnrounded),
     gross_mrr: grossMrr,
     net_profit: Math.round(netProfitUnrounded),
@@ -760,7 +760,7 @@ export async function fetchAppConnectors(): Promise<AppConnectorInfo[]> {
   });
 }
 
-// 12. PAYMENT PORTAL (real Payoneer hosted checkout)
+// 12. PAYMENT PORTAL (Stripe/PayPal Connect — payer pays directly to agency's connected account)
 export async function createInvoicePaymentSession(
   invoiceId: string,
   method: 'card' | 'bank' | 'paypal' | 'wallet'
@@ -780,7 +780,7 @@ export async function createInvoicePaymentSession(
   });
 }
 
-// Polled by the public portal after returning from the Payoneer payment page
+// Polled by the public portal after returning from Stripe/PayPal (and until webhook lands)
 // (and until the webhook lands) so "paid" reflects within seconds.
 export async function fetchPaymentStatus(invoiceId: string): Promise<{ paid: boolean; status?: string; message?: string }> {
   return apiFetch(`/api/payments/status/${invoiceId}`);
