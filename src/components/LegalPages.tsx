@@ -63,7 +63,7 @@ export function PrivacyPolicyPage({ onBackHome }: LegalPageProps) {
       <ul>
         <li>To operate the service: sending reminders through email (Resend), WhatsApp (Meta Cloud API) and SMS (EasySendSMS).</li>
         <li>To schedule automations exactly when you configure them (Upstash QStash).</li>
-        <li>To process subscription payments and client payments through Payoneer.</li>
+        <li>To process subscription payments via Paddle (merchant of record) and invoice payments via your own Stripe/PayPal keys (BYOK — EronFlow never touches invoice funds).</li>
         <li>To generate draft templates when you explicitly request AI assistance (Google Gemini).</li>
         <li>To provide support and prevent abuse of the platform.</li>
       </ul>
@@ -72,7 +72,7 @@ export function PrivacyPolicyPage({ onBackHome }: LegalPageProps) {
       <p>
         We share data only with the processors required to deliver the service: Supabase (database hosting),
         Upstash QStash (job scheduling), Resend (email delivery), Google (OAuth sign-in, Gemini AI),
-        Meta (WhatsApp Cloud API), EasySendSMS (SMS delivery), Payoneer (payments) and QuickBooks/Xero (invoice sync
+        Meta (WhatsApp Cloud API), EasySendSMS (SMS delivery), Paddle (SaaS subscription billing), Stripe & PayPal via your own BYOK keys (invoice payments settle directly to your Stripe/PayPal account — EronFlow never touches invoice funds), and QuickBooks/Xero (invoice sync
         when you connect them). Each processor receives only what is needed for its task.
       </p>
 
@@ -136,7 +136,7 @@ export function TermsOfServicePage({ onBackHome }: LegalPageProps) {
       <ul>
         <li>You must provide a valid email address, country and phone number at signup and verify ownership via a one-time code.</li>
         <li>You are responsible for keeping your credentials secure and for all activity under your account.</li>
-        <li>Payout details (Payoneer, bank or card) are added later in Settings and are required before collected payments can be transferred to you.</li>
+        <li>BYOK payment keys (Stripe restricted key and/or PayPal Client ID + Secret) are added in Settings → Payment Setup; invoice payments then settle directly to your Stripe/PayPal account (EronFlow never holds funds).</li>
       </ul>
 
       <h2>3. Acceptable use</h2>
@@ -148,7 +148,7 @@ export function TermsOfServicePage({ onBackHome }: LegalPageProps) {
 
       <h2>4. Subscriptions, billing &amp; refunds</h2>
       <ul>
-        <li>Plans are billed monthly through Payoneer. Plan limits apply per calendar month and are enforced server-side.</li>
+        <li>Plans are billed monthly through Paddle (merchant of record, handles VAT/tax). Invoice payments via BYOK Stripe/PayPal settle 100% to your account. Plan limits apply per calendar month and are enforced server-side.</li>
         <li>Upgrades mid-cycle are prorated instantly; downgrades credit the difference.</li>
         <li>Cancellation refunds the unused portion of the month minus a 10% processing cut and actual usage costs, as calculated by the in-app refund preview.</li>
       </ul>
@@ -202,7 +202,7 @@ export function AboutPage({ onBackHome }: LegalPageProps) {
       <ul>
         <li><strong>Tracks invoices</strong> — add them manually or sync automatically from QuickBooks and Xero.</li>
         <li><strong>Sends smart reminders</strong> — friendly before the due date, firm after it, across email, WhatsApp and SMS.</li>
-        <li><strong>Collects payments</strong> — every reminder carries a branded payment link powered by Payoneer; clients pay by card, bank transfer, PayPal or wallet.</li>
+        <li><strong>Collects payments</strong> — every reminder carries a branded payment link; via BYOK, clients pay by card, bank transfer, PayPal or wallet and 100% settles directly to your Stripe/PayPal account (EronFlow never touches invoice funds). Paddle handles only your SaaS subscription.</li>
         <li><strong>Automates everything</strong> — timezone-exact schedules fire at the minute you choose; paid invoices stop receiving reminders automatically.</li>
         <li><strong>Drafts copy with AI</strong> — generate recovery sequences and templates tuned to your tone.</li>
       </ul>

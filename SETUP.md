@@ -24,7 +24,7 @@ Copy `.env.example` to `.env` and fill in every value. All variables are require
 
 ### Payment Processing
 
-**Subscriptions & Invoicing — Paddle (Merchant of Record)**
+**SaaS Subscription Billing ONLY — Paddle (Merchant of Record, handles VAT/tax)**
 | Variable | Description |
 |----------|-------------|
 | `PADDLE_VENDOR_ID` | From Paddle Dashboard → Developer Tools |
@@ -35,13 +35,13 @@ Copy `.env.example` to `.env` and fill in every value. All variables are require
 | `PADDLE_PRICE_PRO` | Price ID for Pro plan |
 | `PADDLE_PRICE_AGENCY` | Price ID for Agency plan |
 
-**Client Payment Connectors — Stripe & PayPal (OAuth)**
-| Variable | Description |
-|----------|-------------|
-| `STRIPE_CLIENT_ID` | Stripe Connect OAuth client ID |
-| `STRIPE_CLIENT_SECRET` | Stripe Connect OAuth client secret |
-| `PAYPAL_CLIENT_ID` | PayPal OAuth client ID |
-| `PAYPAL_CLIENT_SECRET` | PayPal OAuth client secret |
+**Invoice Payments — BYOK (Bring Your Own Keys) — per agency, NOT env vars**
+| Method | Where agency configures it | What it does |
+|--------|----------------------------|--------------|
+| **Stripe BYOK** | Settings → Billing → Payment Setup → Stripe (paste `rk_live_...` / `rk_test_...`) | 100% of client invoice money settles directly to agency's Stripe balance. EronFlow never touches it. See `PAY.md` + in-app instructions with dashboard links: https://dashboard.stripe.com/apikeys |
+| **PayPal BYOK** | Settings → Billing → Payment Setup → PayPal (paste Client ID + Secret, Live/Sandbox) | 100% settles to agency's PayPal. See `PAY.md` + dashboard: https://developer.paypal.com/dashboard/applications |
+
+> **No platform Stripe/PayPal env vars needed for invoice money.** `STRIPE_CLIENT_ID` etc are legacy Connect OAuth fallback — new installs leave them empty and use BYOK. Paddle is ONLY for SaaS billing.
 
 ### Scheduling (Upstash QStash)
 | Variable | Description |
@@ -94,11 +94,12 @@ Register these URLs in each provider's developer console:
 
 | Provider | Where to Register | Redirect URL |
 |----------|-------------------|--------------|
-| Google (Sign-in + Gmail) | console.cloud.google.com → Credentials → OAuth client | `https://YOUR-DOMAIN/api/auth/google/callback` AND `https://YOUR-DOMAIN/api/oauth/callback` |
-| Stripe Connect | Stripe Dashboard → Developers → Connect → Settings | `https://YOUR-DOMAIN/api/integrations/stripe/callback` |
-| PayPal Connect | PayPal Developer Apps → App Settings | `https://YOUR-DOMAIN/api/integrations/paypal/callback` |
+| Google (Sign-in) | console.cloud.google.com → Credentials → OAuth client | `https://YOUR-DOMAIN/api/auth/google/callback` AND `https://YOUR-DOMAIN/api/oauth/callback` |
 | QuickBooks | Intuit Developer → App → Keys & OAuth | `https://YOUR-DOMAIN/api/oauth/callback` |
 | Xero | developer.xero.com → App → Redirect URIs | `https://YOUR-DOMAIN/api/oauth/callback` |
+| Paddle hosted checkout | sent automatically per-request as `redirect_url`/`cancel_url` (no console step) | `https://YOUR-DOMAIN/app/settings?billing=paid&plan=<plan>` and `https://YOUR-DOMAIN/pay/<invoiceId>?returned=1` |
+
+> **Stripe & PayPal BYOK need NO redirect registration** — invoice payments use the agency's own API keys directly (no OAuth). The public portal creates a Stripe Checkout Session / PayPal Order with the agency key and redirects the payer to Stripe/PayPal hosted page. See `PAY.md` + Settings → Payment Setup.
 
 > **Important:** The redirect URI must match EXACTLY — scheme, host, path. A mismatch causes `redirect_uri_mismatch` errors.
 
@@ -110,18 +111,20 @@ Register these URLs where providers push events to your server:
 
 | Provider | Where to Register | Webhook URL | Signature Header |
 |----------|-------------------|-------------|------------------|
-| Paddle | Paddle Dashboard → Webhooks | `https://YOUR-DOMAIN/api/webhooks/paddle` | `paddle-signature` |
-| Stripe | Stripe Dashboard → Developers → Webhooks | `https://YOUR-DOMAIN/api/webhooks/stripe` | `stripe-signature` |
-| PayPal | PayPal Developer → Webhooks | `https://YOUR-DOMAIN/api/webhooks/paypal` | `Paypal-Auth-Algo` |
+| Paddle (SaaS billing only) | Paddle Dashboard → Webhooks | `https://YOUR-DOMAIN/api/webhooks/paddle` | `paddle-signature` |
 | QuickBooks | Intuit Developer → Webhooks | `https://YOUR-DOMAIN/api/webhooks/quickbooks` | `Intuit-Signature` |
 | Xero | developer.xero.com → Webhooks | `https://YOUR-DOMAIN/api/webhooks/xero` | `x-xero-signature` |
 | QStash | N/A (QStash calls your URL) | `https://YOUR-DOMAIN/api/cron/process-reminders` | `upstash-signature` (JWT) |
+
+> **Stripe & PayPal BYOK need NO webhook registration on the platform** — the agency’s Stripe/PayPal account receives money directly. EronFlow verifies payment by polling the agency’s BYOK API with the stored restricted key / PayPal credentials (Checkout Session / PaymentIntent / Order status). Optional: the agency can still add a Stripe webhook in their own dashboard if they want server-to-server confirmation, but it is not required.
 
 ---
 
 ## 4. Payment Gateway Setup
 
-### Paddle — Subscriptions & Invoicing (Recommended)
+### Paddle — SaaS Subscription Billing ONLY (Merchant of Record — handles VAT/tax)
+
+> **Paddle is ONLY for EronFlow plan charges.** Invoice payments are BYOK Stripe/PayPal — 100% direct to the agency.
 
 1. Create a Paddle account at [paddle.com](https://paddle.com)
 2. Complete seller onboarding (business details, bank account)
@@ -136,23 +139,28 @@ Register these URLs where providers push events to your server:
    PADDLE_PRICE_AGENCY="price_xxxxx"
    ```
 5. Go to **Developer Tools** → **API Keys** → copy Vendor ID and API Key
-6. Go to **Webhooks** → Add endpoint: `https://YOUR-DOMAIN/api/webhooks/paddle`
-7. For testing: use sandbox at `https://sandbox-api.paddle.com`
+6. Go to **Webhooks** → Add endpoint: `https://YOUR-DOMAIN/api/webhooks/paddle` → select `subscription_payment_succeeded`, `transaction_completed`, `subscription_updated`, `subscription_cancelled`
+7. For testing: use sandbox at `https://sandbox-api.paddle.com` + `PADDLE_API_BASE="https://sandbox-api.paddle.com"`
 
-### Stripe Connect — Client Payments
+### Stripe BYOK — Invoice Payments (agency’s own Stripe, 100% direct)
 
-1. Create a Stripe account at [stripe.com](https://stripe.com)
-2. Register a Stripe Connect OAuth app at [Stripe Dashboard → Connect](https://dashboard.stripe.com/test/express/accounts)
-3. Add redirect URI: `https://YOUR-DOMAIN/api/integrations/stripe/callback`
-4. Copy the Client ID and Secret to `.env`
-5. Register webhook endpoint: `https://YOUR-DOMAIN/api/webhooks/stripe`
+> **Each agency pastes their own Stripe restricted key — EronFlow never touches invoice money.** Test from Bangladesh with sandbox keys — no US SSN needed.
 
-### PayPal Connect — Client Payments
+1. Agency logs into **Stripe Dashboard** → **Developers → API Keys** → **Restricted keys → Create restricted key** (name: EronFlow Invoice Recovery). See `PAY.md` for full steps + dashboard links.
+2. Permissions: `PaymentIntents: Write`, `Customers: Write`, `Checkout Sessions: Write` (for hosted page), `Charges: Read`.
+3. Copy key (`rk_live_...` for live, `rk_test_...` for sandbox/test) → agency pastes it in **Settings → Billing → Payment Setup (BYOK)** → Save & Verify (live validation vs Stripe Balance API).
+4. Optional: also paste Publishable key (`pk_live_...` / `pk_test_...`) for best portal UX.
+5. **Test from Bangladesh:** Toggle **Test Mode** in Stripe Dashboard (top right) and use `rk_test_` / `pk_test_` — no US verification needed. See `PAY.md` § How to Test & Build.
+6. **Dashboard links:** Live https://dashboard.stripe.com/apikeys — Test https://dashboard.stripe.com/test/apikeys — Restricted keys docs https://stripe.com/docs/keys
 
-1. Create a PayPal Developer app at [developer.paypal.com](https://developer.paypal.com)
-2. Add redirect URI: `https://YOUR-DOMAIN/api/integrations/paypal/callback`
-3. Copy the Client ID and Secret to `.env`
-4. Register webhook endpoint: `https://YOUR-DOMAIN/api/webhooks/paypal`
+### PayPal BYOK — Invoice Payments (agency’s own PayPal, 100% direct)
+
+> Same model — agency’s PayPal, not platform’s.
+
+1. Agency logs into **PayPal Developer Dashboard** → toggle **Live** (or **Sandbox** for testing) → **Apps & Credentials → Create App** (type: Merchant, name: EronFlow Payment Gateway). See `PAY.md`.
+2. Copy **Client ID** + click **Show** for **Client Secret** → paste both in **Settings → Billing → Payment Setup (BYOK)** → select Live/Sandbox → Save & Verify (validated via PayPal token endpoint).
+3. **Test from Bangladesh:** Under **Sandbox → Apps & Credentials** → copy Default Application Client ID/Secret → use **Sandbox** mode — no Business verification needed. See `PAY.md`.
+4. **Dashboard links:** Live apps https://developer.paypal.com/dashboard/applications/live — Sandbox https://developer.paypal.com/dashboard/applications/sandbox — Accounts https://developer.paypal.com/dashboard/sandbox/accounts
 
 ---
 
@@ -229,8 +237,9 @@ Interactive script that creates a fully-active test user with any plan.
 | WhatsApp messages fail | Verify permanent system user token (not temporary app token) |
 | Email not sending | Verify domain in Resend, check SPF/DKIM records |
 | Paddle checkout fails | Verify Price IDs exist in Paddle Catalog and match plan tiers |
-| Stripe OAuth fails | Verify redirect URI matches exactly and app is approved/live |
-| PayPal OAuth fails | Verify sandbox/live mode matches and redirect URI is registered |
+| Stripe BYOK save fails | Check key format `rk_live_/rk_test_` and permissions: PaymentIntents Write, Customers Write, Checkout Sessions Write, Charges Read |
+| PayPal BYOK save fails | Check Client ID/Secret and mode (Live vs Sandbox) — must match PayPal dashboard toggle |
+| BYOK provider not configured (portal) | Agency has not added Stripe/PayPal keys in Settings → Payment Setup — see PAY.md |
 
 ---
 
@@ -257,19 +266,19 @@ npx localtunnel --port 3000
 ├─────────────────────────────────────────────────────────┤
 │  Frontend (React + Vite)    │  Backend (Express)       │
 │  ├─ Dashboard               │  ├─ Auth (Supabase)        │
-│  ├─ Invoice Management      │  ├─ Billing (Paddle)       │
-│  ├─ Automation Scheduler    │  ├─ Connectors:            │
-│  ├─ Message Templates       │  │  ├─ Stripe Connect       │
-│  ├─ Connectors (OAuth)      │  │  ├─ PayPal Connect       │
-│  └─ Public Payment Portal   │  │  ├─ QuickBooks           │
-│                             │  │  └─ Xero                 │
-│                             │  ├─ QStash Cron Worker     │
+│  ├─ Invoice Management      │  ├─ SaaS Billing: Paddle    │
+│  ├─ Automation Scheduler    │  ├─ BYOK Invoice Payments:  │
+│  ├─ Message Templates       │  │  ├─ Stripe (rk_live_/rk_test_)  │
+│  ├─ Connectors (OAuth QB/Xero) │ │  └─ PayPal (Client ID/Secret) │
+│  └─ Public Payment Portal   │  │  ├─ QuickBooks (OAuth)   │
+│     (BYOK → agency Stripe/ │  │  └─ Xero (OAuth PKCE)    │
+│      PayPal, 100% direct)   │  ├─ QStash Cron Worker     │
 │                             │  ├─ Email (Resend)         │
 │                             │  ├─ SMS (EasySendSMS)      │
 │                             │  └─ AI (Gemini)            │
 ├─────────────────────────────────────────────────────────┤
-│  Providers: Supabase (DB) │ Paddle (Payments)            │
-│  Stripe/PayPal (Client Payouts) │ QStash (Scheduling)    │
-│  Resend (Email) │ EasySendSMS                               │
+│  Providers: Supabase (DB) │ Paddle (SaaS billing only)   │
+│  Stripe BYOK + PayPal BYOK (invoice funds → agency)     │
+│  QStash (Scheduling) │ Resend │ EasySendSMS │ Gemini      │
 └─────────────────────────────────────────────────────────┘
 ```

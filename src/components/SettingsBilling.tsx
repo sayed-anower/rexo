@@ -41,10 +41,12 @@ import {
   removeTeamMember,
   uploadCompanyLogo,
   applyPlanTier,
+  fetchUsage,
 } from '../lib/storage';
 import { BillingEvent, TeamInvite, TeamMember, PaymentInstrument } from '../types';
 import { fetchInstruments } from '../lib/storage';
 import { PaymentMethodsManager } from './PaymentMethodsManager';
+import { ByokPaymentSetup } from './ByokPaymentSetup';
 
 interface SettingsBillingProps {
   user: UserProfile;
@@ -90,6 +92,18 @@ export function SettingsBilling({
   // The instrument currently selected to pay the subscription — shown in the
   // checkout confirmation so the user knows exactly what gets charged.
   const [billingInstrument, setBillingInstrument] = useState<PaymentInstrument | null>(null);
+  const [liveUsage, setLiveUsage] = useState<UsageStats | null>(usage);
+
+  // Keep liveUsage in sync with prop + poll every 8s for real-time counter updates
+  useEffect(() => { setLiveUsage(usage); }, [usage]);
+  useEffect(() => {
+    if (!user?.subscription_tier) return;
+    const id = setInterval(() => {
+      fetchUsage().then(setLiveUsage).catch(()=>{});
+      fetchRefundPreview().then(setRefundPreview).catch(()=>{});
+    }, 8000);
+    return () => clearInterval(id);
+  }, [user?.subscription_tier]);
 
   // Team invites & members
   const [invites, setInvites] = useState<TeamInvite[]>([]);
@@ -146,7 +160,7 @@ export function SettingsBilling({
     if (params.get('billing') === 'paid') {
       // Returned from the hosted subscription payment — webhook/status poll
       // activates the plan; refresh and confirm to the user.
-      onToast('Payment confirmed by Payoneer — activating your plan…');
+      onToast('Payment confirmed by Paddle — activating your plan…');
       onRefreshStatus();
       const clean = new URLSearchParams(window.location.search);
       clean.delete('billing');
@@ -304,7 +318,10 @@ export function SettingsBilling({
       {/* TAB 1: PLAN & USAGE */}
       {activeTab === 'billing' && (
         <div className="space-y-6">
-          {/* Payment methods: cards / banks / PayPal + payout & billing selection */}
+          {/* BYOK Payment Setup — Stripe & PayPal (invoice payments settle directly to agency) */}
+          <ByokPaymentSetup onToast={onToast} />
+
+          {/* Legacy: Payment methods (bank/card instruments) — kept for backward compat, BYOK is now primary */}
           <PaymentMethodsManager onToast={onToast} />
 
           {/* In-app checkout confirmation (billing=checkout&plan=X) */}
@@ -381,25 +398,31 @@ export function SettingsBilling({
             </div>
           )}
 
-          {/* Monthly Usage */}
+          {/* Monthly Usage — real-time (polls every 8s) */}
           <div className="p-6 rounded-3xl bg-white dark:bg-surface border border-line dark:border-line shadow-sm">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
                 <BarChart3 className="w-4 h-4 text-primary dark:text-secondary" />
                 <h3 className="text-base font-bold text-ink dark:text-white">This Month's Usage</h3>
+                <span className="px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 text-[9px] font-bold uppercase flex items-center gap-1">
+                  <RefreshCw className="w-3 h-3 animate-pulse" /> Live
+                </span>
               </div>
-              <span className="text-xs text-ink3">
-                {usage?.emails_sent ?? 0} emails · {usage?.whatsapp_sent ?? 0} WhatsApp · {usage?.SMS_sent ?? 0} SMS · {usage?.ai_generations ?? 0} AI drafts
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-ink3">
+                  {liveUsage?.emails_sent ?? 0} emails · {liveUsage?.whatsapp_sent ?? 0} WhatsApp · {liveUsage?.SMS_sent ?? 0} SMS · {liveUsage?.ai_generations ?? 0} AI drafts
+                </span>
+                <button onClick={() => { fetchUsage().then(setLiveUsage).catch(()=>{}); fetchRefundPreview().then(setRefundPreview).catch(()=>{}); }} className="p-1 rounded-lg hover:bg-surface2 text-ink3" title="Refresh counters"><RefreshCw className="w-3.5 h-3.5" /></button>
+              </div>
             </div>
 
             {limits && (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 {[
-                  { label: 'Emails sent', used: usage?.emails_sent ?? 0, limit: limits.emails_per_month },
-                  { label: 'WhatsApp messages', used: usage?.whatsapp_sent ?? 0, limit: limits.whatsapp_per_month },
-                  { label: 'SMS messages', used: usage?.SMS_sent ?? 0, limit: limits.SMS_per_month },
-                  { label: 'AI drafts', used: usage?.ai_generations ?? 0, limit: limits.ai_generations },
+                  { label: 'Emails sent', used: liveUsage?.emails_sent ?? 0, limit: limits.emails_per_month },
+                  { label: 'WhatsApp messages', used: liveUsage?.whatsapp_sent ?? 0, limit: limits.whatsapp_per_month },
+                  { label: 'SMS messages', used: liveUsage?.SMS_sent ?? 0, limit: limits.SMS_per_month },
+                  { label: 'AI drafts', used: liveUsage?.ai_generations ?? 0, limit: limits.ai_generations },
                 ].map((m) => {
                   const pct = m.limit === -1 ? 0 : Math.min(100, Math.round((m.used / Math.max(1, m.limit)) * 100));
                   return (
@@ -566,9 +589,67 @@ export function SettingsBilling({
             </button>
             <div className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary-soft text-primary dark:bg-surface2 dark:text-secondary text-xs font-bold">
               <ShieldCheck className="w-4 h-4" />
-              Card, bank, PayPal, Apple Pay & Google Pay via Payoneer
+              Card, bank, PayPal, Apple Pay & Google Pay via Stripe/PayPal BYOK + Paddle (SaaS)
             </div>
           </div>
+
+          {/* Refund Calculator — real-time, live usage */}
+          {refundPreview && !refundPreview.inactive && (
+            <div className="p-6 rounded-3xl bg-white dark:bg-surface border border-line dark:border-line shadow-sm max-w-2xl mx-auto space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <BarChart3 className="w-5 h-5 text-emerald-600" />
+                  <h3 className="text-base font-bold text-ink dark:text-white">Refund Calculator — Real-time</h3>
+                </div>
+                <button onClick={() => {
+                  fetchRefundPreview().then((p)=> setRefundPreview(p)).catch(()=>{});
+                }} className="px-3 py-1.5 rounded-xl border border-line dark:border-line text-[11px] font-bold text-ink2 hover:text-ink flex items-center gap-1.5">
+                  <RefreshCw className="w-3.5 h-3.5" /> Refresh
+                </button>
+              </div>
+              <p className="text-[11px] text-ink2 leading-relaxed">Live estimate if you cancel today. Usage costs are cut from the unused days (refreshed from your actual counters). Refund = unused days value minus 10% processing fee minus usage.</p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+                <div className="p-3 rounded-2xl bg-main dark:bg-surface2/60 border border-line dark:border-line">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-ink3 block">Emails sent</span>
+                  <span className="text-lg font-black text-ink dark:text-white">{refundPreview.usage?.emails_sent ?? 0}</span>
+                  <span className="text-[10px] text-ink3">@ $0.01 each = ${((refundPreview.usage?.emails_sent ?? 0) * 0.01).toFixed(2)}</span>
+                </div>
+                <div className="p-3 rounded-2xl bg-main dark:bg-surface2/60 border border-line dark:border-line">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-ink3 block">WhatsApp</span>
+                  <span className="text-lg font-black text-ink dark:text-white">{refundPreview.usage?.whatsapp_sent ?? 0}</span>
+                  <span className="text-[10px] text-ink3">@ $0.20 each = ${((refundPreview.usage?.whatsapp_sent ?? 0) * 0.20).toFixed(2)}</span>
+                </div>
+                <div className="p-3 rounded-2xl bg-main dark:bg-surface2/60 border border-line dark:border-line">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-ink3 block">SMS</span>
+                  <span className="text-lg font-black text-ink dark:text-white">{refundPreview.usage?.SMS_sent ?? 0}</span>
+                  <span className="text-[10px] text-ink3">@ $0.60 each = ${((refundPreview.usage?.SMS_sent ?? 0) * 0.60).toFixed(2)}</span>
+                </div>
+                <div className="p-3 rounded-2xl bg-main dark:bg-surface2/60 border border-line dark:border-line">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-ink3 block">AI drafts</span>
+                  <span className="text-lg font-black text-ink dark:text-white">{refundPreview.usage?.ai_generations ?? 0}</span>
+                  <span className="text-[10px] text-ink3">@ $0.01 each = ${((refundPreview.usage?.ai_generations ?? 0) * 0.01).toFixed(2)}</span>
+                </div>
+              </div>
+              <div className="grid sm:grid-cols-3 gap-3 text-xs">
+                <div className="p-3 rounded-2xl bg-main dark:bg-surface2/60 border border-line dark:border-line">
+                  <span className="block text-ink3 font-bold uppercase tracking-wider mb-1 text-[10px]">Plan price</span>
+                  <span className="text-lg font-black text-ink dark:text-white">${Number(refundPreview.price ?? currentPlan?.price ?? 0).toFixed(2)}/mo</span>
+                  <span className="block text-[10px] text-ink3 mt-1">{Math.round(refundPreview.elapsedDays ?? 0)} days used • {Math.round(refundPreview.remainingDays ?? 0)} days left</span>
+                </div>
+                <div className="p-3 rounded-2xl bg-main dark:bg-surface2/60 border border-line dark:border-line">
+                  <span className="block text-ink3 font-bold uppercase tracking-wider mb-1 text-[10px]">Usage cost this period</span>
+                  <span className="text-lg font-black text-rose-600">${Number(refundPreview.usageCost ?? 0).toFixed(2)}</span>
+                  <span className="block text-[10px] text-ink3 mt-1">{refundPreview.usage?.invoices_tracked ?? 0} invoices tracked @ $0.01</span>
+                </div>
+                <div className="p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800">
+                  <span className="block font-bold uppercase tracking-wider mb-1 text-[10px] text-emerald-700 dark:text-emerald-300">Estimated refund if you cancel now</span>
+                  <span className="text-lg font-black text-emerald-700 dark:text-emerald-300">${Number(refundPreview.refund ?? 0).toFixed(2)}</span>
+                  <span className="block text-[10px] text-emerald-600 dark:text-emerald-400 mt-1">10% fee: ${Number(refundPreview.cancellationFee ?? 0).toFixed(2)} • Remaining: ${((refundPreview.price ?? 0) * (refundPreview.remainingRatio ?? 0)).toFixed(2)}</span>
+                </div>
+              </div>
+              <p className="text-[10px] text-ink3">Formula: Refund = (Remaining days /30 × Plan price) − 10% cancellation fee − usage costs (email $0.01, WhatsApp $0.20, SMS $0.60, AI $0.01, invoice $0.01) — never negative. Tax/fees are $0 — Paddle is merchant of record and plan price is exactly what you pay.</p>
+            </div>
+          )}
 
           {/* Cancel plan — redirects to support email */}
           <div className="p-6 rounded-3xl bg-white dark:bg-surface border border-line dark:border-line shadow-sm max-w-2xl mx-auto">
@@ -582,7 +663,7 @@ export function SettingsBilling({
 
             <a
               href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(`Plan Cancellation — ${currentPlan?.name || 'Current Plan'}`)}&body=${encodeURIComponent(
-                `Hi EronFlow Support,\n\nI'd like to cancel my ${currentPlan?.name || 'current'} plan.\n\nAccount email: ${user.email}\nCompany: ${user.company_name}\n\nPlease confirm the cancellation and any applicable refund.\n\nThank you.`
+                `Hi EronFlow Support,\n\nI'd like to cancel my ${currentPlan?.name || 'current'} plan.\n\nAccount email: ${user.email}\nCompany: ${user.company_name}\n\nEstimated refund if I cancel today: $${refundPreview && !refundPreview.inactive ? Number(refundPreview.refund ?? 0).toFixed(2) : '—'}\nUsage this period: ${refundPreview ? `${refundPreview.usage?.emails_sent ?? 0} emails, ${refundPreview.usage?.whatsapp_sent ?? 0} WA, ${refundPreview.usage?.SMS_sent ?? 0} SMS, ${refundPreview.usage?.ai_generations ?? 0} AI` : ''}\n\nPlease confirm the cancellation and refund.\n\nThank you.`
               )}`}
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-red-50 dark:bg-red-950/60 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 font-bold text-xs transition-colors hover:bg-red-100 dark:hover:bg-red-950"
             >

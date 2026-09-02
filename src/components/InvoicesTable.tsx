@@ -126,8 +126,8 @@ export function InvoicesTable({
   };
 
   const handleCopyLink = (inv: Invoice) => {
-    // payment_link is a branded portal path via Payoneer — always share the
-    // full public URL the client will receive.
+    // payment_link is a branded portal path via BYOK Stripe/PayPal — always share the
+    // full public URL the client will receive (funds settle directly to your Stripe/PayPal).
     navigator.clipboard.writeText(absolutePaymentUrl(inv.payment_link));
     setCopiedId(inv.id);
     setTimeout(() => setCopiedId(null), 2000);

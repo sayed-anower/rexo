@@ -91,12 +91,20 @@ const sections = [
     icon: CreditCard,
     items: [
       {
-        title: 'Public Payment Portal',
-        body: `Every invoice gets a unique payment link (your-domain.com/pay/invoice-id). Clients can pay by card, bank transfer, PayPal, or wallet. Payment processing is handled securely by Payoneer.`,
+        title: 'Public Payment Portal (BYOK)',
+        body: `Every invoice gets a unique payment link (your-domain.com/pay/invoice-id). Clients can pay by card, bank transfer, PayPal, or wallet. Invoice payments settle 100% directly to your own Stripe/PayPal account via your BYOK keys (Settings → Payment Setup). EronFlow never touches invoice money. SaaS billing (your plan) is via Paddle as merchant of record.`,
       },
       {
-        title: 'Payment Methods',
-        body: `Add your payout methods in Settings → Payment Methods. You can add bank accounts, cards, or PayPal. EronFlow sends collected payments to your chosen method.`,
+        title: 'BYOK Setup — Stripe',
+        body: `1. Log into Stripe Dashboard → Developers → API Keys → Restricted keys → Create restricted key (name: EronFlow)\n2. Permissions: PaymentIntents Write, Customers Write, Checkout Sessions Write, Charges Read\n3. Copy the key (rk_live_... for live, rk_test_... for sandbox) and paste it in Settings → Billing → Payment Setup (BYOK)\n4. Optional: also paste your publishable key (pk_live_/pk_test_) for the best portal UX\n5. Click Save & Verify — EronFlow validates the key instantly against Stripe Balance API\n6. Test from Bangladesh: toggle Test Mode in Stripe Dashboard and use rk_test_/pk_test_ — no US verification needed.\nDocs: https://dashboard.stripe.com/apikeys`,
+      },
+      {
+        title: 'BYOK Setup — PayPal',
+        body: `1. Log into PayPal Developer Dashboard → Toggle to Live (or Sandbox for testing) → Apps & Credentials → Create App (type: Merchant)\n2. Name: EronFlow Payment Gateway\n3. Copy Client ID and Client Secret and paste in Settings → Billing → Payment Setup (BYOK)\n4. Select Live or Sandbox mode to match the keys\n5. Click Save & Verify — EronFlow tests the keys via PayPal OAuth token endpoint\n6. Sandbox from Bangladesh: use the Default Application under Sandbox → no verification needed.\nDocs: https://developer.paypal.com/dashboard/applications`,
+      },
+      {
+        title: 'Paddle — SaaS Billing Only',
+        body: `Your EronFlow plan (Starter/Pro/Agency) is billed via Paddle as merchant of record (handles VAT/tax). This is separate from invoice payments. 100% of client invoice money goes to your Stripe/PayPal via BYOK — Paddle never touches invoice payments.`,
       },
     ],
   },

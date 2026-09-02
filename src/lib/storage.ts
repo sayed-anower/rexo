@@ -24,7 +24,7 @@ import { PlanDefinition, PLANS } from '../data/plans';
 /*
  * API layer. No mock/demo fallbacks: every call talks to the real server,
  * which persists to PostgreSQL (Supabase) and dispatches through real
- * providers (Resend / Meta WhatsApp Cloud API / EasySendSMS / Payoneer / Gemini / QStash).
+ * providers (Resend / Meta WhatsApp Cloud API / EasySendSMS / Stripe BYOK & PayPal BYOK + Paddle / Gemini / QStash).
  * Auth relies on the HttpOnly session cookie set by the server.
  */
 
@@ -342,7 +342,7 @@ export async function sendInvoiceReminderMulti(
   });
 }
 
-// 4b. PAYEE (Payoneer / bank / card payout details)
+// 4b. PAYEE (bank / card payout details — legacy; BYOK is now primary for invoice funds)
 export async function fetchPayee(): Promise<PayeeInfo | undefined> {
   const data = await apiFetch<{ payee: PayeeInfo }>('/api/payee');
   return data.payee;
@@ -417,6 +417,52 @@ export async function verifyInstrumentCode(code: string): Promise<{ verified_tok
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(json?.message || 'Verification failed.');
   return json;
+}
+
+// 4d. BYOK PAYMENT CREDENTIALS (Stripe restricted key + PayPal REST API)
+// Bring Your Own Keys: agency pastes their OWN Stripe/PayPal keys so 100% of
+// client invoice payments settle directly into their account. Paddle is ONLY for SaaS billing.
+export interface ByokCredentials {
+  stripe_configured: boolean;
+  stripe_masked: string;
+  stripe_publishable_masked?: string;
+  paypal_configured: boolean;
+  paypal_client_id_masked: string;
+  paypal_mode: 'live' | 'sandbox';
+  updated_at?: string;
+}
+
+export async function fetchPaymentCredentials(): Promise<ByokCredentials> {
+  return apiFetch<ByokCredentials>('/api/payment-credentials');
+}
+
+export async function updatePaymentCredentials(data: {
+  stripe_restricted_key?: string;
+  stripe_publishable_key?: string;
+  paypal_client_id?: string;
+  paypal_client_secret?: string;
+  paypal_mode?: 'live' | 'sandbox';
+}): Promise<ByokCredentials> {
+  const res = await fetch('/api/payment-credentials', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err: any = new Error(json?.message || 'Could not save payment credentials.');
+    if (json?.error) err.code = json.error;
+    throw err;
+  }
+  return json as ByokCredentials;
+}
+
+export async function testPaymentCredentials(): Promise<{ stripe: { ok: boolean; message: string }; paypal: { ok: boolean; message: string } }> {
+  return apiFetch('/api/payment-credentials/test', { method: 'POST' });
+}
+
+export async function deletePaymentCredentials(provider: 'stripe' | 'paypal'): Promise<{ success: boolean }> {
+  return apiFetch(`/api/payment-credentials/${provider}`, { method: 'DELETE' });
 }
 
 // 5. INTEGRATIONS (real OAuth connect)
@@ -723,16 +769,16 @@ export const APP_CONNECTORS = [
   {
     id: 'conn_stripe',
     provider: 'stripe',
-    name: 'Stripe',
+    name: 'Stripe (BYOK)',
     category: 'payments',
-    description: 'Connect Stripe to accept card payments from clients and receive payouts directly to your Stripe account.',
+    description: 'Bring Your Own Keys — paste your Stripe restricted key (rk_live_ / rk_test_) so 100% of invoice payments settle directly to your Stripe balance. Paddle is ONLY for SaaS billing.',
   },
   {
     id: 'conn_paypal',
     provider: 'paypal',
-    name: 'PayPal',
+    name: 'PayPal (BYOK)',
     category: 'payments',
-    description: 'Connect PayPal to accept payments from clients worldwide via PayPal, cards, and local methods.',
+    description: 'Bring Your Own Keys — paste your PayPal Client ID + Secret (Live or Sandbox) so payments land directly in your PayPal account. No platform fees.',
   },
   /* {
     id: 'conn_whatsapp',

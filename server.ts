@@ -996,6 +996,9 @@ app.get('/api/health', (req, res) => {
       quickbooksConfigured: Boolean(effectiveKey('QUICKBOOKS_CLIENT_ID') && effectiveKey('QUICKBOOKS_CLIENT_SECRET')),
       xeroConfigured: Boolean(effectiveKey('XERO_CLIENT_ID') && effectiveKey('XERO_CLIENT_SECRET')),
       geminiConfigured: Boolean(effectiveKey('GEMINI_API_KEY')),
+      byokModel: true,
+      invoicePaymentsVia: 'BYOK Stripe + PayPal (agency keys)',
+      subscriptionPaymentsVia: 'Paddle',
     },
   });
 });
@@ -4425,6 +4428,382 @@ function verifyInstrumentToken(uid: string, token: string): boolean {
   return timingSafeEqualBuffers(Buffer.from(sig), Buffer.from(hmac.digest('base64url')));
 }
 
+// ==========================================
+// 9c. BYOK PAYMENT CREDENTIALS — Stripe & PayPal
+// Each agency pastes their OWN keys so 100% of invoice funds settle
+// directly into their Stripe / PayPal account. Paddle is ONLY for
+// EronFlow subscription billing; EronFlow never touches invoice money.
+// Keys are masked on read; only the last 4 chars are ever shown.
+// Docs are rendered in Settings → Payment setup + /docs.
+// ==========================================
+
+interface ByokRow {
+  user_id: string;
+  stripe_restricted_key: string | null;
+  stripe_publishable_key: string | null;
+  stripe_configured: boolean;
+  paypal_client_id: string | null;
+  paypal_client_secret: string | null;
+  paypal_mode: string | null;
+  paypal_configured: boolean;
+  updated_at: string | null;
+}
+
+function maskStripeKey(key: string | null | undefined): string {
+  if (!key) return '';
+  const k = String(key).trim();
+  if (k.length <= 8) return '••••';
+  return `${k.slice(0, 7)}••••${k.slice(-4)}`;
+}
+function maskPayPalId(id: string | null | undefined): string {
+  if (!id) return '';
+  const s = String(id).trim();
+  if (s.length <= 8) return '••••';
+  return `${s.slice(0, 6)}••••${s.slice(-4)}`;
+}
+
+function isValidStripeRestrictedKey(k: string | null | undefined): boolean {
+  const s = String(k || '').trim();
+  // PAY.md recommends restricted keys rk_live_ / rk_test_, but we also accept
+  // standard secret keys sk_live_ / sk_test_ for agencies that prefer them.
+  // We also accept publishable keys pk_ for display only (not used for charges).
+  return /^(rk|sk|pk)_(live|test)_[A-Za-z0-9]+$/.test(s);
+}
+function isPayPalSandboxCreds(clientId: string | null | undefined, mode: string | null | undefined): boolean {
+  if (String(mode || '').toLowerCase() === 'sandbox') return true;
+  // Heuristic: sandbox client IDs often contain 'Sandbox' or start with known prefix; we treat test-like keys as sandbox
+  const id = String(clientId || '').toLowerCase();
+  return id.includes('sandbox') || id.startsWith('a') && id.length < 80; // fallback; explicit mode is preferred
+}
+
+async function getByokCredentials(uid: string): Promise<ByokRow | null> {
+  const sb = getSupabase();
+  if (!sb) return null;
+  const { data } = await sb.from('payment_credentials').select('*').eq('user_id', uid).maybeSingle();
+  if (!data) return null;
+  return data as unknown as ByokRow;
+}
+
+async function ensureByokRow(uid: string): Promise<ByokRow> {
+  const sb = getSupabase()!;
+  const existing = await getByokCredentials(uid);
+  if (existing) return existing;
+  const { data } = await sb.from('payment_credentials').insert({ user_id: uid }).select('*').single();
+  return data as unknown as ByokRow;
+}
+
+async function testStripeKeyDirect(key: string): Promise<{ ok: boolean; message: string }> {
+  const k = String(key).trim();
+  if (!isValidStripeRestrictedKey(k)) return { ok: false, message: 'Key does not look like a Stripe restricted/secret key (expected rk_live_, rk_test_, sk_live_, sk_test_).' };
+  try {
+    // Cheap auth check: list 1 customer — restricted keys with Customers:Read or PaymentIntents:Write succeed
+    const res = await fetch('https://api.stripe.com/v1/customers?limit=1', {
+      headers: { Authorization: `Bearer ${k}` },
+    });
+    const json: any = await res.json().catch(() => ({}));
+    if (res.ok) return { ok: true, message: 'Stripe key validated — permissions OK.' };
+    const msg = json?.error?.message || `Stripe rejected the key (${res.status}). Check permissions: PaymentIntents Write, Customers Write, Charges Read, and for hosted checkout also Checkout Sessions Write.`;
+    return { ok: false, message: msg };
+  } catch (e: any) {
+    return { ok: false, message: e.message || 'Could not reach Stripe API.' };
+  }
+}
+
+async function getPayPalToken(clientId: string, secret: string, mode: string): Promise<{ token: string; base: string }> {
+  const base = mode === 'sandbox'
+    ? 'https://api-m.sandbox.paypal.com'
+    : 'https://api-m.paypal.com';
+  // PayPal also supports api.sandbox.paypal.com; both work, but api-m is current
+  const altBase = mode === 'sandbox' ? 'https://api.sandbox.paypal.com' : 'https://api.paypal.com';
+  const creds = Buffer.from(`${clientId}:${secret}`).toString('base64');
+  const tryFetch = async (b: string) => {
+    const r = await fetch(`${b}/v1/oauth2/token`, {
+      method: 'POST',
+      headers: { Authorization: `Basic ${creds}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'grant_type=client_credentials',
+    });
+    const j: any = await r.json().catch(() => ({}));
+    if (!r.ok || !j.access_token) throw new Error(j.error_description || j.error || `PayPal token failed (${r.status})`);
+    return { token: j.access_token as string, base: b };
+  };
+  try {
+    return await tryFetch(base);
+  } catch {
+    return await tryFetch(altBase);
+  }
+}
+
+async function testPayPalKeysDirect(clientId: string, secret: string, mode: string): Promise<{ ok: boolean; message: string }> {
+  if (!clientId || !secret) return { ok: false, message: 'Both Client ID and Client Secret are required.' };
+  try {
+    await getPayPalToken(clientId, secret, mode);
+    return { ok: true, message: `PayPal ${mode} credentials validated.` };
+  } catch (e: any) {
+    return { ok: false, message: e.message || 'PayPal credentials failed.' };
+  }
+}
+
+// Stripe helpers for BYOK portal payments
+async function stripeCreateCheckoutSessionWithByok(key: string, invoice: any): Promise<any> {
+  const amountCents = Math.round(Number(invoice.amount_due) * 100);
+  const currency = String(invoice.currency || 'USD').toLowerCase();
+  const successUrl = `${appUrl()}/pay/${invoice.id}?returned=1&provider=stripe`;
+  const cancelUrl = `${appUrl()}/pay/${invoice.id}?canceled=1`;
+  const params = new URLSearchParams();
+  params.set('mode', 'payment');
+  params.set('success_url', successUrl);
+  params.set('cancel_url', cancelUrl);
+  params.set('client_reference_id', String(invoice.id));
+  if (invoice.client_email) params.set('customer_email', String(invoice.client_email));
+  params.set('line_items[0][price_data][currency]', currency);
+  params.set('line_items[0][price_data][product_data][name]', `Invoice ${invoice.external_invoice_id}`);
+  params.set('line_items[0][price_data][unit_amount]', String(amountCents));
+  params.set('line_items[0][quantity]', '1');
+  // Enable card + link + allow automatic tax?
+  params.set('payment_method_types[0]', 'card');
+  const res = await fetch('https://api.stripe.com/v1/checkout/sessions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: params.toString(),
+  });
+  const json: any = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const msg = json?.error?.message || `Stripe Checkout failed (${res.status})`;
+    const code = json?.error?.code || '';
+    throw new Error(`${msg}${code ? ` [${code}]` : ''}`);
+  }
+  return json;
+}
+
+async function stripeCreatePaymentIntentWithByok(key: string, invoice: any): Promise<any> {
+  const amountCents = Math.round(Number(invoice.amount_due) * 100);
+  const currency = String(invoice.currency || 'USD').toLowerCase();
+  const params = new URLSearchParams();
+  params.set('amount', String(amountCents));
+  params.set('currency', currency);
+  params.set('description', `Invoice ${invoice.external_invoice_id} for ${invoice.client_name}`);
+  params.set('metadata[invoice_id]', String(invoice.id));
+  params.set('metadata[external_invoice_id]', String(invoice.external_invoice_id));
+  if (invoice.client_email) params.set('receipt_email', String(invoice.client_email));
+  params.set('automatic_payment_methods[enabled]', 'true');
+  const res = await fetch('https://api.stripe.com/v1/payment_intents', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: params.toString(),
+  });
+  const json: any = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(json?.error?.message || `Stripe PaymentIntent failed (${res.status})`);
+  }
+  return json;
+}
+
+async function stripeRetrievePaymentIntentWithByok(key: string, piId: string): Promise<any> {
+  const res = await fetch(`https://api.stripe.com/v1/payment_intents/${encodeURIComponent(piId)}`, {
+    headers: { Authorization: `Bearer ${key}` },
+  });
+  const json: any = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json?.error?.message || `Stripe retrieve failed (${res.status})`);
+  return json;
+}
+async function stripeRetrieveCheckoutSessionWithByok(key: string, csId: string): Promise<any> {
+  const res = await fetch(`https://api.stripe.com/v1/checkout/sessions/${encodeURIComponent(csId)}`, {
+    headers: { Authorization: `Bearer ${key}` },
+  });
+  const json: any = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json?.error?.message || `Stripe session retrieve failed (${res.status})`);
+  return json;
+}
+
+async function paypalCreateOrderWithByok(clientId: string, secret: string, mode: string, invoice: any): Promise<{ order: any; base: string; token: string }> {
+  const { token, base } = await getPayPalToken(clientId, secret, mode);
+  const currency = String(invoice.currency || 'USD').toUpperCase();
+  const value = Number(invoice.amount_due).toFixed(2);
+  const returnUrl = `${appUrl()}/pay/${invoice.id}?returned=1&provider=paypal`;
+  const cancelUrl = `${appUrl()}/pay/${invoice.id}?canceled=1`;
+  const body = {
+    intent: 'CAPTURE',
+    purchase_units: [{ amount: { currency_code: currency, value }, description: `Invoice ${invoice.external_invoice_id}`, custom_id: String(invoice.id) }],
+    application_context: { return_url: returnUrl, cancel_url: cancelUrl, brand_name: 'EronFlow Invoice', user_action: 'PAY_NOW' },
+  };
+  const res = await fetch(`${base}/v2/checkout/orders`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const json: any = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json?.message || json?.error_description || `PayPal order failed (${res.status})`);
+  return { order: json, base, token };
+}
+async function paypalCaptureOrGetOrderWithByok(clientId: string, secret: string, mode: string, orderId: string): Promise<any> {
+  const { token, base } = await getPayPalToken(clientId, secret, mode);
+  // First, try to capture if not yet captured, otherwise just GET
+  const getRes = await fetch(`${base}/v2/checkout/orders/${encodeURIComponent(orderId)}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const j: any = await getRes.json().catch(() => ({}));
+  if (!getRes.ok) throw new Error(j?.message || `PayPal get order failed (${getRes.status})`);
+  return j;
+}
+
+// ==========================================
+// 9d. BYOK CREDENTIAL ENDPOINTS (Stripe & PayPal)
+// ==========================================
+app.get('/api/payment-credentials', async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const sb = getSupabase();
+  if (!sb) return dbError(res);
+  const row = await getByokCredentials(user.profile.id);
+  if (!row) {
+    return res.json({
+      stripe_configured: false,
+      stripe_masked: '',
+      stripe_publishable_masked: '',
+      paypal_configured: false,
+      paypal_client_id_masked: '',
+      paypal_mode: 'live',
+    });
+  }
+  res.json({
+    stripe_configured: Boolean(row.stripe_configured && row.stripe_restricted_key),
+    stripe_masked: maskStripeKey(row.stripe_restricted_key),
+    stripe_publishable_masked: row.stripe_publishable_key ? maskStripeKey(row.stripe_publishable_key) : '',
+    paypal_configured: Boolean(row.paypal_configured && row.paypal_client_id && row.paypal_client_secret),
+    paypal_client_id_masked: maskPayPalId(row.paypal_client_id),
+    paypal_mode: row.paypal_mode || 'live',
+    updated_at: row.updated_at,
+  });
+});
+
+app.put('/api/payment-credentials', async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const active = assertPlanActive(user);
+  if (!active.ok) return res.status(402).json(active);
+  const sb = getSupabase();
+  if (!sb) return dbError(res);
+
+  const body = req.body || {};
+  const incomingStripe = body.stripe_restricted_key !== undefined ? String(body.stripe_restricted_key || '').trim() : undefined;
+  const incomingPublishable = body.stripe_publishable_key !== undefined ? String(body.stripe_publishable_key || '').trim() : undefined;
+  const incomingPaypalId = body.paypal_client_id !== undefined ? String(body.paypal_client_id || '').trim() : undefined;
+  const incomingPaypalSecret = body.paypal_client_secret !== undefined ? String(body.paypal_client_secret || '').trim() : undefined;
+  const incomingMode = body.paypal_mode !== undefined ? String(body.paypal_mode || '').trim().toLowerCase() : undefined;
+
+  // Load existing to allow partial updates and clearing
+  const existing = await getByokCredentials(user.profile.id);
+  let stripeKey = existing?.stripe_restricted_key || null;
+  let publishable = existing?.stripe_publishable_key || null;
+  let paypalId = existing?.paypal_client_id || null;
+  let paypalSecret = existing?.paypal_client_secret || null;
+  let mode = existing?.paypal_mode || 'live';
+
+  if (incomingStripe !== undefined) {
+    if (incomingStripe === '') stripeKey = null;
+    else {
+      if (!isValidStripeRestrictedKey(incomingStripe)) {
+        return res.status(400).json({ error: 'INVALID_STRIPE_KEY', message: 'Stripe key must look like rk_live_..., rk_test_..., sk_live_... or sk_test_... (restricted key recommended).' });
+      }
+      // Validate live by actually hitting Stripe
+      const check = await testStripeKeyDirect(incomingStripe);
+      if (!check.ok) return res.status(400).json({ error: 'STRIPE_KEY_INVALID', message: check.message });
+      stripeKey = incomingStripe;
+    }
+  }
+  if (incomingPublishable !== undefined) {
+    if (incomingPublishable === '') publishable = null;
+    else {
+      if (!/^pk_(live|test)_/.test(incomingPublishable)) {
+        return res.status(400).json({ error: 'INVALID_PUBLISHABLE_KEY', message: 'Stripe publishable key must start with pk_live_ or pk_test_.' });
+      }
+      publishable = incomingPublishable;
+    }
+  }
+  if (incomingPaypalId !== undefined) {
+    if (incomingPaypalId === '') paypalId = null;
+    else paypalId = incomingPaypalId;
+  }
+  if (incomingPaypalSecret !== undefined) {
+    if (incomingPaypalSecret === '') paypalSecret = null;
+    else paypalSecret = incomingPaypalSecret;
+  }
+  if (incomingMode !== undefined) {
+    if (!['live', 'sandbox'].includes(incomingMode)) {
+      return res.status(400).json({ error: 'INVALID_MODE', message: 'paypal_mode must be "live" or "sandbox".' });
+    }
+    mode = incomingMode;
+  }
+
+  // If both paypal fields are present, validate together
+  if ((incomingPaypalId !== undefined || incomingPaypalSecret !== undefined) && paypalId && paypalSecret) {
+    const check = await testPayPalKeysDirect(paypalId, paypalSecret, mode);
+    if (!check.ok) return res.status(400).json({ error: 'PAYPAL_KEY_INVALID', message: check.message });
+  }
+  // Allow clearing without validation when one is cleared
+
+  const stripeConfigured = Boolean(stripeKey);
+  const paypalConfigured = Boolean(paypalId && paypalSecret);
+
+  await sb.from('payment_credentials').upsert({
+    user_id: user.profile.id,
+    stripe_restricted_key: stripeKey,
+    stripe_publishable_key: publishable,
+    stripe_configured: stripeConfigured,
+    paypal_client_id: paypalId,
+    paypal_client_secret: paypalSecret,
+    paypal_mode: mode,
+    paypal_configured: paypalConfigured,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'user_id' });
+
+  res.json({
+    success: true,
+    stripe_configured: stripeConfigured,
+    stripe_masked: maskStripeKey(stripeKey),
+    paypal_configured: paypalConfigured,
+    paypal_client_id_masked: maskPayPalId(paypalId),
+    paypal_mode: mode,
+  });
+});
+
+app.post('/api/payment-credentials/test', async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const row = await getByokCredentials(user.profile.id);
+  if (!row) return res.json({ stripe: { ok: false, message: 'No Stripe key saved.' }, paypal: { ok: false, message: 'No PayPal keys saved.' } });
+  const results: any = {};
+  if (row.stripe_restricted_key) {
+    results.stripe = await testStripeKeyDirect(row.stripe_restricted_key);
+  } else {
+    results.stripe = { ok: false, message: 'No Stripe key configured.' };
+  }
+  if (row.paypal_client_id && row.paypal_client_secret) {
+    results.paypal = await testPayPalKeysDirect(row.paypal_client_id, row.paypal_client_secret, row.paypal_mode || 'live');
+  } else {
+    results.paypal = { ok: false, message: 'No PayPal keys configured.' };
+  }
+  res.json(results);
+});
+
+app.delete('/api/payment-credentials/:provider', async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const provider = String(req.params.provider || '').toLowerCase();
+  const sb = getSupabase();
+  if (!sb) return dbError(res);
+  const row = await getByokCredentials(user.profile.id);
+  if (!row) return res.json({ success: true });
+  if (provider === 'stripe') {
+    await sb.from('payment_credentials').update({ stripe_restricted_key: null, stripe_publishable_key: null, stripe_configured: false, updated_at: new Date().toISOString() }).eq('user_id', user.profile.id);
+  } else if (provider === 'paypal') {
+    await sb.from('payment_credentials').update({ paypal_client_id: null, paypal_client_secret: null, paypal_configured: false, updated_at: new Date().toISOString() }).eq('user_id', user.profile.id);
+  } else {
+    return res.status(400).json({ error: 'INVALID_PROVIDER', message: 'Provider must be stripe or paypal.' });
+  }
+  res.json({ success: true });
+});
+
 // True when the account has somewhere to send collected client money. Manual
 // sends and automation are gated on this — money needs a destination.
 function hasPayoutDestination(profile: UserProfile): boolean {
@@ -4473,9 +4852,9 @@ async function queuePayoutForInvoice(uid: string, inv: any): Promise<void> {
       return;
     }
 
-    // For Stripe/PayPal Connect, funds already settled directly to the agency's connected account — no platform payout needed.
-    // Keep a queued record for audit trail only; no external transfer is initiated.
-    await insert('queued', { error_message: `Payment of ${amount} ${currency} received via client portal — funds settled directly to ${defaultInstrumentLabel(instrument)} (Stripe/PayPal Connect). No platform transfer needed.` });
+    // BYOK model: invoice funds settle directly into the agency's own Stripe/PayPal account — no platform payout needed.
+    // Keep a queued record for audit trail only; no external transfer is initiated. Paddle is ONLY for SaaS billing.
+    await insert('queued', { error_message: `Payment of ${amount} ${currency} received via BYOK client portal — funds settled directly to ${defaultInstrumentLabel(instrument)} (agency Stripe/PayPal, BYOK). No platform transfer needed.` });
     return;
 
 
@@ -4570,7 +4949,7 @@ const PADDLE_PRICE_IDS: Record<string, string> = {
   agency: process.env.PADDLE_PRICE_AGENCY || '',
 };
 
-async function markInvoicePaid(invId: string, uid: string, inv: any, note: string): Promise<boolean> {
+async function markInvoicePaid(invId: string, uid: string, inv: any, note: string, providerOverride?: string): Promise<boolean> {
   const sb = getSupabase();
   if (!sb) return false;
   if (inv?.status === 'paid') return true;
@@ -4583,7 +4962,9 @@ async function markInvoicePaid(invId: string, uid: string, inv: any, note: strin
     return false;
   }
   await addUsage(uid, { amount_recovered: Number(inv?.amount_due) || 0 }).catch(() => {});
-  await recordBillingEvent({ userId: uid, type: 'charge', amount: Number(inv?.amount_due) || 0, breakdown: { source: 'client_portal', note }, provider: 'paddle' }).catch(() => {});
+  // Provider for portal payments is BYOK Stripe/PayPal (agency's own account), not Paddle
+  let providerForEvent = providerOverride || (note.toLowerCase().includes('paypal') ? 'paypal_byok' : note.toLowerCase().includes('stripe') ? 'stripe_byok' : 'byok');
+  await recordBillingEvent({ userId: uid, type: 'charge', amount: Number(inv?.amount_due) || 0, breakdown: { source: 'client_portal', note }, provider: providerForEvent }).catch(() => {});
   try {
     await sb.from('reminder_logs').insert({
       id: `log_paid_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
@@ -4618,57 +4999,196 @@ app.post('/api/payments/create-payment-intent', async (req, res) => {
     return res.status(400).json({ error: 'ALREADY_PAID', message: 'This invoice is already paid.' });
   }
 
-  // Client payments use the agency's connected Stripe/PayPal account — not Paddle.
-  // Paddle is strictly for EronFlow subscription billing; invoice payments route 100% to the agency.
+  // BYOK: invoice payments use the agency's OWN Stripe / PayPal keys (Bring Your Own Keys).
+  // Paddle is ONLY for EronFlow SaaS subscription billing; funds settle 100% to the agency.
+  const byok = await getByokCredentials(invoice.user_id);
+  // Fallback: legacy OAuth integrations (stripe/paypal connect) if BYOK not yet migrated
   const { data: integrations } = await sb.from('integrations').select('provider,is_active').eq('user_id', invoice.user_id).eq('is_active', true);
   const providers = new Set((integrations||[]).map((r:any)=>r.provider));
-  const hasStripe = providers.has('stripe');
-  const hasPaypal = providers.has('paypal');
-  const chosen = (method === 'paypal' && hasPaypal) ? 'paypal' : hasStripe ? 'stripe' : hasPaypal ? 'paypal' : null;
+  const hasStripeByok = Boolean(byok?.stripe_configured && byok?.stripe_restricted_key);
+  const hasPayPalByok = Boolean(byok?.paypal_configured && byok?.paypal_client_id && byok?.paypal_client_secret);
+  const hasStripeLegacy = providers.has('stripe');
+  const hasPayPalLegacy = providers.has('paypal');
+  const hasStripe = hasStripeByok || hasStripeLegacy;
+  const hasPaypal = hasPayPalByok || hasPayPalLegacy;
+
+  // Choose provider: explicit method wins if that provider is available, else pick any available
+  let chosen: 'stripe' | 'paypal' | null = null;
+  if (method === 'paypal' && hasPaypal) chosen = 'paypal';
+  else if (['card','bank','wallet'].includes(String(method)) && hasStripe) chosen = 'stripe';
+  else if (hasStripe) chosen = 'stripe';
+  else if (hasPaypal) chosen = 'paypal';
+
   if (!chosen) {
-    return res.status(402).json({ error: 'PROVIDER_NOT_CONFIGURED', message: 'Agency has not connected Stripe or PayPal. Connect one in Settings → App Connectors to accept client payments.' });
+    return res.status(402).json({
+      error: 'PROVIDER_NOT_CONFIGURED',
+      provider: 'byok',
+      message: 'This agency has not connected a payment method yet. The agency owner needs to add their Stripe or PayPal keys in Settings → Payment Setup (BYOK). See PAY.md for setup links (Stripe Dashboard → API Keys → Restricted keys, PayPal Developer → Apps & Credentials).',
+      setup_url: '/app/settings?tab=byok',
+    });
   }
 
-  // No platform fee on invoice amount — payer pays exactly what is due. Stripe/PayPal fees go to the connected account.
   const fee = 0;
+  const currency = String(invoice.currency || 'USD').toUpperCase();
+  const amount = Number(invoice.amount_due);
 
   try {
-    const intentId = `pinv_${invoice.id.slice(0, 8)}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-    // Store intent as pending; actual charge is created via Stripe/PayPal Checkout/OAuth on the portal.
-    // The portal will fetch /api/portal/invoice/:id and render Stripe Elements / PayPal Buttons using the agency's connected account.
+    // BYOK Stripe path — create a real Stripe hosted payment (Checkout Session preferred)
+    if (chosen === 'stripe' && hasStripeByok && byok?.stripe_restricted_key) {
+      const key = String(byok.stripe_restricted_key).trim();
+      let session: any = null;
+      let pi: any = null;
+      let lastError: string | null = null;
+      // Try Checkout Session first (best UX: Stripe-hosted, supports all card wallets)
+      try {
+        session = await stripeCreateCheckoutSessionWithByok(key, invoice);
+      } catch (e: any) {
+        lastError = e.message;
+        // If restricted key lacks checkout_sessions:write, fall back to PaymentIntent
+        if (/checkout/i.test(lastError) || /restricted/i.test(lastError) || /permission/i.test(lastError)) {
+          try {
+            pi = await stripeCreatePaymentIntentWithByok(key, invoice);
+          } catch (e2: any) {
+            throw new Error(lastError + ' | PaymentIntent fallback also failed: ' + e2.message);
+          }
+        } else {
+          // For other errors (e.g. invalid key), try PaymentIntent as fallback once
+          try {
+            pi = await stripeCreatePaymentIntentWithByok(key, invoice);
+            session = null;
+          } catch {
+            throw new Error(lastError);
+          }
+        }
+      }
+
+      if (session && session.url) {
+        const intentId = String(session.id || `cs_${Date.now()}`);
+        await sb.from('payment_intents').upsert({
+          id: intentId,
+          invoice_id: invoice.id,
+          user_id: invoice.user_id,
+          provider: 'stripe',
+          status: String(session.payment_status || session.status || 'open'),
+          amount,
+          fee,
+          currency,
+          raw: session,
+        });
+        return res.json({
+          intent_id: intentId,
+          provider: 'stripe',
+          mode: 'checkout',
+          amount,
+          fee,
+          currency,
+          url: String(session.url),
+          stripe_session_id: String(session.id),
+        });
+      }
+      if (pi && pi.client_secret) {
+        const intentId = String(pi.id);
+        await sb.from('payment_intents').upsert({
+          id: intentId,
+          invoice_id: invoice.id,
+          user_id: invoice.user_id,
+          provider: 'stripe',
+          status: String(pi.status || 'requires_payment_method'),
+          amount,
+          fee,
+          currency,
+          raw: pi,
+        });
+        return res.json({
+          intent_id: intentId,
+          provider: 'stripe',
+          mode: 'payment_intent',
+          amount,
+          fee,
+          currency,
+          stripe_client_secret: String(pi.client_secret),
+          stripe_publishable_key: byok.stripe_publishable_key || undefined,
+          // Return portal URL; frontend can use client_secret with Stripe.js to collect card, or we give a direct Stripe-hosted link
+          url: `${appUrl()}/pay/${invoice.id}?provider=stripe&intent=${intentId}`,
+          message: 'Stripe PaymentIntent created with your agency key — collect card securely via Stripe.js (client_secret provided). Add your publishable key in Settings → Payment Setup for the best UX.',
+        });
+      }
+      throw new Error(lastError || 'Stripe did not return a checkout URL or PaymentIntent.');
+    }
+
+    // BYOK PayPal path — create a PayPal Order (approval link)
+    if (chosen === 'paypal' && hasPayPalByok && byok?.paypal_client_id && byok?.paypal_client_secret) {
+      const orderRes = await paypalCreateOrderWithByok(byok.paypal_client_id, byok.paypal_client_secret, byok.paypal_mode || 'live', invoice);
+      const order = orderRes.order;
+      const approval = (order.links || []).find((l: any) => l.rel === 'approve')?.href || (order.links || []).find((l: any) => l.rel === 'payer-action')?.href || '';
+      const orderId = String(order.id);
+      await sb.from('payment_intents').upsert({
+        id: orderId,
+        invoice_id: invoice.id,
+        user_id: invoice.user_id,
+        provider: 'paypal',
+        status: String(order.status || 'CREATED'),
+        amount,
+        fee,
+        currency,
+        raw: order,
+      });
+      if (approval) {
+        return res.json({
+          intent_id: orderId,
+          provider: 'paypal',
+          amount,
+          fee,
+          currency,
+          url: String(approval),
+          paypal_order_id: orderId,
+        });
+      }
+      return res.json({
+        intent_id: orderId,
+        provider: 'paypal',
+        amount,
+        fee,
+        currency,
+        url: `${appUrl()}/pay/${invoice.id}?provider=paypal&intent=${orderId}`,
+        message: 'PayPal order created — redirect URL missing, polling will confirm capture.',
+      });
+    }
+
+    // Legacy OAuth fallback (if BYOK not configured but old connect still active)
+    const fallbackIntentId = `pinv_${invoice.id.slice(0, 8)}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     await sb.from('payment_intents').upsert({
-      id: intentId,
+      id: fallbackIntentId,
       invoice_id: invoice.id,
       user_id: invoice.user_id,
       provider: chosen,
       status: 'pending',
-      amount: Number(invoice.amount_due),
+      amount,
       fee,
-      currency: String(invoice.currency || 'USD').toUpperCase(),
-      raw: { method, note: 'Client portal intent — payer completes payment via connected '+chosen+' account' },
+      currency,
+      raw: { method, note: 'Client portal intent — payer completes payment via legacy connected '+chosen+' account (migrate to BYOK in Settings → Payment Setup for direct settlement).' },
     });
-
-    // Return intent so portal can render the correct provider UI; no redirect URL needed — portal handles it.
-    res.json({
-      intent_id: intentId,
+    return res.json({
+      intent_id: fallbackIntentId,
       provider: chosen,
-      amount: Number(invoice.amount_due),
+      amount,
       fee,
-      currency: String(invoice.currency || 'USD').toUpperCase(),
-      // Portal will use Stripe/PayPal SDK with the agency account; url is the portal itself.
-      url: `${appUrl()}/pay/${invoice.id}?provider=${chosen}&intent=${intentId}`,
+      currency,
+      url: `${appUrl()}/pay/${invoice.id}?provider=${chosen}&intent=${fallbackIntentId}`,
+      message: 'Using legacy connected account — please migrate to BYOK (Settings → Payment Setup) so funds settle directly to your own Stripe/PayPal.',
     });
   } catch (err: any) {
-    console.error('[Payments] intent failed:', err.message);
+    console.error('[Payments] BYOK intent failed:', err.message);
     res.status(err instanceof ProviderError ? 503 : 502).json({
       error: 'PAYMENT_FAILED',
-      message: err.message || 'Could not create payment intent. Please try again.',
+      message: err.message || 'Could not create payment session with the agency key. Check that the Stripe restricted key has PaymentIntents Write + Checkout Sessions Write, or that PayPal Client ID/Secret and mode are correct.',
     });
   }
 });
 
 // Portal polls this after returning from the hosted payment page (and while a
 // webhook has not yet landed) so "paid" reflects within seconds.
+// BYOK model: we poll the agency's own Stripe/PayPal API directly using the stored BYOK keys.
 app.get('/api/payments/status/:invoiceId', async (req, res) => {
   const sb = getSupabase();
   if (!sb) return dbError(res);
@@ -4684,9 +5204,77 @@ app.get('/api/payments/status/:invoiceId', async (req, res) => {
     .limit(1);
   const intent = Array.isArray(intents) ? intents[0] : null;
   if (!intent) return res.json({ paid: false, status: 'none' });
-  // For Stripe/PayPal Connect intents, payment is completed via webhook from the connected account
+
+  // BYOK Stripe / PayPal — check live status via the agency's stored keys
   if (intent.provider === 'stripe' || intent.provider === 'paypal') {
-    return res.json({ paid: false, status: intent.status || 'pending', provider: intent.provider, note: 'Awaiting Stripe/PayPal webhook confirmation' });
+    const byok = await getByokCredentials(invoice.user_id);
+    try {
+      if (intent.provider === 'stripe' && byok?.stripe_restricted_key) {
+        const raw: any = intent.raw || {};
+        let remoteStatus: string | null = null;
+        let isPaid = false;
+        // Checkout Session path
+        if (String(intent.id).startsWith('cs_') || raw.object === 'checkout.session' || raw.payment_status) {
+          const cs = await stripeRetrieveCheckoutSessionWithByok(byok.stripe_restricted_key, intent.id);
+          remoteStatus = String(cs.payment_status || cs.status || '').toUpperCase();
+          isPaid = remoteStatus === 'PAID' || remoteStatus === 'COMPLETE' || cs.payment_status === 'paid';
+          await sb.from('payment_intents').update({ status: remoteStatus || 'unknown', raw: cs }).eq('id', intent.id);
+          if (isPaid) {
+            const paid = await markInvoicePaid(invoice.id, invoice.user_id, invoice, `Stripe Checkout ${remoteStatus} (BYOK poll ${intent.id}).`);
+            return res.json({ paid, status: remoteStatus, provider: 'stripe' });
+          }
+        } else {
+          // PaymentIntent path
+          const pi = await stripeRetrievePaymentIntentWithByok(byok.stripe_restricted_key, intent.id);
+          remoteStatus = String(pi.status || '').toUpperCase();
+          isPaid = remoteStatus === 'SUCCEEDED';
+          await sb.from('payment_intents').update({ status: remoteStatus || 'unknown', raw: pi }).eq('id', intent.id);
+          if (isPaid) {
+            const paid = await markInvoicePaid(invoice.id, invoice.user_id, invoice, `Stripe ${remoteStatus} (BYOK poll ${intent.id}).`);
+            return res.json({ paid, status: remoteStatus, provider: 'stripe' });
+          }
+          if (['CANCELED','CANCELLED','FAILED'].includes(remoteStatus)) {
+            return res.status(402).json({ paid: false, status: remoteStatus, provider: 'stripe', message: 'The payment was not completed. You can safely try again.' });
+          }
+        }
+        return res.json({ paid: false, status: remoteStatus || intent.status || 'pending', provider: 'stripe' });
+      }
+      if (intent.provider === 'paypal' && byok?.paypal_client_id && byok?.paypal_client_secret) {
+        const order = await paypalCaptureOrGetOrderWithByok(byok.paypal_client_id, byok.paypal_client_secret, byok.paypal_mode || 'live', intent.id);
+        const remoteStatus = String(order.status || '').toUpperCase();
+        await sb.from('payment_intents').update({ status: remoteStatus || 'unknown', raw: order }).eq('id', intent.id);
+        const isPaid = remoteStatus === 'COMPLETED' || remoteStatus === 'APPROVED';
+        // For PayPal, COMPLETED means captured; APPROVED means payer approved but not yet captured — we treat APPROVED as paid for portal because capture happens on approval
+        if (isPaid) {
+          // For APPROVED we should capture now
+          if (remoteStatus === 'APPROVED') {
+            try {
+              const { token, base } = await getPayPalToken(byok.paypal_client_id, byok.paypal_client_secret, byok.paypal_mode || 'live');
+              const capRes = await fetch(`${base}/v2/checkout/orders/${encodeURIComponent(intent.id)}/capture`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+              });
+              const capJson: any = await capRes.json().catch(()=>({}));
+              if (capRes.ok) {
+                const paid = await markInvoicePaid(invoice.id, invoice.user_id, invoice, `PayPal CAPTURED (BYOK poll ${intent.id}).`);
+                return res.json({ paid, status: 'COMPLETED', provider: 'paypal' });
+              }
+            } catch {}
+          }
+          const paid = await markInvoicePaid(invoice.id, invoice.user_id, invoice, `PayPal ${remoteStatus} (BYOK poll ${intent.id}).`);
+          return res.json({ paid, status: remoteStatus, provider: 'paypal' });
+        }
+        if (['VOIDED','FAILED','EXPIRED'].includes(remoteStatus)) {
+          return res.status(402).json({ paid: false, status: remoteStatus, provider: 'paypal', message: 'The payment was not completed. You can safely try again.' });
+        }
+        return res.json({ paid: false, status: remoteStatus || 'pending', provider: 'paypal' });
+      }
+    } catch (e: any) {
+      // Fall back to stored status if BYOK API check fails
+      return res.json({ paid: false, status: intent.status || 'pending', provider: intent.provider, note: e.message || 'Awaiting confirmation' });
+    }
+    // No BYOK keys but legacy intent — legacy webhook path (no BYOK verification)
+    return res.json({ paid: false, status: intent.status || 'pending', provider: intent.provider, note: 'Awaiting Stripe/PayPal webhook confirmation (migrate to BYOK for instant verification)' });
   }
   if (intent.provider !== 'paddle' || !paddleApiConfig()) {
     return res.json({ paid: false, status: intent?.status || 'none' });
@@ -4791,6 +5379,18 @@ app.get('/api/portal/invoice/:id', async (req, res) => {
   if (!data) return res.status(404).json({ error: 'NOT_FOUND', message: 'Invoice not found.' });
 
   const { data: agency } = await sb.from('users').select('*').eq('id', data.user_id).maybeSingle();
+  // BYOK availability — portal shows only methods the agency actually configured
+  const byok = await getByokCredentials(data.user_id);
+  const availableProviders: string[] = [];
+  if (byok?.stripe_configured && byok?.stripe_restricted_key) availableProviders.push('stripe');
+  if (byok?.paypal_configured && byok?.paypal_client_id && byok?.paypal_client_secret) availableProviders.push('paypal');
+  // Legacy fallback
+  if (availableProviders.length === 0) {
+    const { data: ints } = await sb.from('integrations').select('provider').eq('user_id', data.user_id).eq('is_active', true);
+    for (const i of ints || []) {
+      if ((i as any).provider === 'stripe' || (i as any).provider === 'paypal') availableProviders.push((i as any).provider);
+    }
+  }
   res.json({
     invoice: normalizeInvoice(data),
     agency: agency
@@ -4800,6 +5400,8 @@ app.get('/api/portal/invoice/:id', async (req, res) => {
           brand_color: (agency as unknown as DbRow).brand_color || '#E58233',
         }
       : { company_name: 'Client Billing' },
+    availableProviders: [...new Set(availableProviders)],
+    byokModel: true,
   });
 });
 

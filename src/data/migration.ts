@@ -219,12 +219,15 @@ alter table if exists public.schedules add column if not exists last_run_at time
 -- ([my_var]) collected once when the automation is created/edited.
 alter table if exists public.schedules add column if not exists extra_vars jsonb not null default '{}'::jsonb;
 
--- Client invoice checkout sessions opened on the Payoneer hosted payment page.
+-- Client invoice checkout sessions — created when a payer hits the public portal.
+-- BYOK model: the intent is created against the agency's own Stripe/PayPal keys so
+-- funds settle directly into the agency's connected Stripe/PayPal account.
+-- Paddle is separately used for SaaS subscription billing only (purpose='subscription').
 create table if not exists public.payment_intents (
   id text primary key,
   invoice_id text not null references public.invoices(id) on delete cascade,
   user_id uuid not null references public.users(id) on delete cascade,
-  provider text not null default 'payoneer',
+  provider text not null default 'stripe',
   status text not null default 'pending',
   amount numeric not null default 0,
   fee numeric not null default 0,
@@ -264,9 +267,31 @@ alter table if exists public.users add column if not exists default_billing_inst
 alter table if exists public.users add column if not exists user_country text;
 alter table if exists public.users add column if not exists terms_accepted_at timestamptz;
 
+-- BYOK payment credentials — each agency stores their own Stripe restricted key
+-- and PayPal REST API credentials so 100% of client invoice payments route
+-- directly to the agency's own Stripe / PayPal account. Paddle is used only
+-- for SaaS subscription billing; EronFlow never touches invoice funds.
+create table if not exists public.payment_credentials (
+  user_id uuid primary key references public.users(id) on delete cascade,
+  stripe_restricted_key text,
+  stripe_publishable_key text,
+  stripe_configured boolean not null default false,
+  paypal_client_id text,
+  paypal_client_secret text,
+  paypal_mode text not null default 'live',
+  paypal_configured boolean not null default false,
+  updated_at timestamptz default now()
+);
+-- Idempotent adds for deployments that ran before this table existed
+alter table if exists public.payment_credentials add column if not exists stripe_restricted_key text;
+alter table if exists public.payment_credentials add column if not exists stripe_publishable_key text;
+alter table if exists public.payment_credentials add column if not exists paypal_client_id text;
+alter table if exists public.payment_credentials add column if not exists paypal_client_secret text;
+
 -- Automatic transfers of collected client payments to the agency's selected
--- payout destination (Payoneer MassPayouts when configured; otherwise queued
--- as a transparent manual-transfer record).
+-- payout destination (legacy payee method — now largely superseded by BYOK where
+-- funds settle directly into the agency's Stripe/PayPal account; kept for
+-- backward compatibility and manual-transfer records).
 create table if not exists public.payouts (
   id text primary key,
   user_id uuid not null references public.users(id) on delete cascade,

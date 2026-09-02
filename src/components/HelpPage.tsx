@@ -35,7 +35,7 @@ export function HelpPage({ user }: HelpPageProps) {
     },
     {
       title: 'Why do clients see a payment page?',
-      body: 'Every reminder includes a secure payment link to your branded public portal (your-domain.com/pay/invoice-id). Clients open it, see your branding, and pay by card, bank transfer, PayPal or wallet in a few clicks. Payment processing is handled securely by Payoneer, and the [payment_link] variable in templates always expands to the full clickable URL automatically.',
+      body: 'Every reminder includes a secure payment link to your branded public portal (your-domain.com/pay/invoice-id). Clients open it, see your branding, and pay by card, bank transfer, PayPal or wallet in a few clicks. Invoice payments are processed via your own Stripe/PayPal keys (BYOK — 100% settles to your Stripe/PayPal account; EronFlow never touches invoice money) and the [payment_link] variable always expands to the full clickable URL automatically. SaaS billing is via Paddle.',
     },
     {
       title: 'What counts against my plan limits?',

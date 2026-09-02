@@ -129,7 +129,7 @@ export function PricingPage({ onOpenAuth }: PricingPageProps) {
         </span>
         <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-line dark:border-line bg-white dark:bg-surface">
           <CreditCard className="w-4 h-4 text-primary dark:text-secondary" />
-          Card, bank, PayPal via Payoneer
+          Stripe & PayPal BYOK (invoice payments) · Paddle (SaaS billing)
         </span>
       </section>
 
@@ -156,7 +156,7 @@ export function PricingPage({ onOpenAuth }: PricingPageProps) {
           },
           {
             q: 'What payment methods do you accept?',
-            a: 'We accept credit/debit cards, bank transfers, and PayPal through Payoneer. Apple Pay and Google Pay are also available where supported.',
+            a: 'SaaS subscriptions: Paddle (card, PayPal, Apple Pay & Google Pay as merchant of record). Invoice payments: 100% BYOK — your own Stripe (restricted key) and PayPal (Client ID/Secret) so funds settle directly to your Stripe/PayPal account. No platform markup on invoice amounts.',
           },
           {
             q: 'Is there a free trial?',

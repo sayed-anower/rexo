@@ -1,64 +1,33 @@
-Adding Stripe and PayPal connectors involves a straightforward 5-phase plan. Your SaaS front-end never touches credit card data; it simply requests permission via OAuth and triggers payments on your client’s behalf.
-### Phase 1: Database Setup & Account Profiles
-Before writing frontend code, update your user schema (e.g., in PostgreSQL or MongoDB) to store each client’s connected payment provider credentials.
-**Schema Fields to Add for Each Organization/Client:**
- * stripe_account_id (String - Stores acct_12345)
- * stripe_connected (Boolean - Default false)
- * paypal_merchant_id (String - Stores PAYERID_12345)
- * paypal_connected (Boolean - Default false)
-### Phase 2: Add Provider Connectors in your UI
-Build an **Integrations / Billing Settings** page in your SaaS dashboard.
-**UI Elements:**
- * **Stripe Card:** Display connection status.
-   * If disconnected: Show a **"Connect with Stripe"** button.
-   * If connected: Show a green **"Connected"** status badge + a **"Disconnect"** button.
- * **PayPal Card:** Same logic with a **"Connect with PayPal"** button.
-### Phase 3: Implement the OAuth Auth Flow (Connect Step)
-```
-[ SaaS Dashboard ] ---> Redirects to Provider Login ---> [ Provider Auth Page ]
-                                                              │
-[ SaaS Dashboard ] <--- Code Handshake Callback <──────────────┘
-
-```
-#### A. Stripe Connection Flow
- 1. **Developer Setup:** Register a free Stripe account, enable **Stripe Connect**, and set your redirect URL to [https://your-app.com/api/integrations/stripe/callback](https://your-app.com/api/integrations/stripe/callback).
- 2. **User Clicks "Connect Stripe":** Your app redirects them to:
-   ```text
-   https://connect.stripe.com/oauth/authorize?response_type=code&client_id=ca_YOUR_CLIENT_ID&scope=read_write&state=CLIENT_ID_OR_TOKEN
-   
-   ```
- 3. **Handle Callback Backend:** Stripe redirects the client back to your SaaS callback endpoint with a ?code=ac_xxx parameter.
- 4. **Exchange Code:** Your Node.js backend exchanges code for the client's stripe_user_id:
-   ```javascript
-   const response = await stripe.oauth.token({ grant_type: 'authorization_code', code });
-   const connectedId = response.stripe_user_id; // Store `connectedId` in your database
-   
-   ```
-#### B. PayPal Connection Flow
- 1. **Developer Setup:** Create a PayPal Developer app and obtain Partner Credentials.
- 2. **User Clicks "Connect PayPal":** Your backend calls PayPal's /v2/customer/partner-referrals API to generate a unique onboarding link.
- 3. **Redirect Client:** Redirect the user to that URL. The client signs in to PayPal and consents to app access.
- 4. **Save Payer ID:** PayPal sends back their merchant_id to your redirect URL. Store this in your database.
-### Phase 4: Build the Public Debt Payment Portal
-When an overdue client opens the payment link (e.g., [your-app.com/pay/:invoiceId](https://your-app.com/pay/:invoiceId)), your server checks which payment methods the client has connected.
- 1. Fetch invoice details and client authorization tokens from your database.
- 2. Render payment buttons according to what the client has integrated:
-   * **If Stripe is connected:** Initialize a Stripe Checkout Session or Render Stripe Elements using the client's stripe_account_id via header:
-     ```javascript
-     const session = await stripe.checkout.sessions.create({
-       payment_method_types: ['card'],
-       line_items: [{ price_data: { ... }, quantity: 1 }],
-       mode: 'payment',
-     }, {
-       stripeAccount: clientStripeAccountId // Routes 100% of money to client's account
-     });
-     
-     ```
-   * **If PayPal is connected:** Render PayPal's Smart Payment Buttons on your portal page, setting the payee.merchant_id field to the client's saved PayPal ID.
-### Phase 5: Webhooks (Automatic Payment Resolution)
-When a debtor pays on the portal, payment processors notify your backend automatically.
- 1. **Set Up Endpoint:** Create a route like POST /api/webhooks/stripe.
- 2. **Listen for Events:** Catch payment_intent.succeeded or checkout.session.completed.
- 3. **Automate Debt Resolution:**
-   * Update the invoice status in your SaaS to "PAID".
-   * Trigger your engine to stop all automated email/SMS reminder queues for that invoice.
+Because you are operating from Bangladesh, **you do not need to generate live keys yourself or provide US SSN/EIN verification**.
+In the **Bring Your Own Keys (BYOK)** model, your app only requests keys from your users (clients). Since your clients reside in supported regions (US, UK, EU), **they** generate these keys from their own accounts and paste them into your app dashboard.
+Below is the exact integration guide to provide to your clients, along with instructions for obtaining **free test keys** for development from Bangladesh without local restriction blockades.
+**Client Onboarding Instructions (Copy/Paste into Your SaaS Documentation)**
+Provide these step-by-step instructions inside your app settings page where clients enter their payment credentials:
+### 1. Stripe Setup (Restricted API Keys)
+*Instruct your clients to use Restricted Keys instead of standard secret keys for security.*
+ * **Step 1:** Log into the Stripe Dashboard.
+ * **Step 2:** Click **Developers** in the top right menu, then select **API Keys**.
+ * **Step 3:** Under the **Restricted keys** section, click **Create restricted key**.
+ * **Step 4:** Name the key (e.g., Invoice Recovery App Integration).
+ * **Step 5:** Set the following explicit permissions:
+   * PaymentIntents: **Write**
+   * Customers: **Write**
+   * Charges: **Read**
+ * **Step 6:** Click **Create key**, copy the key (starts with rk_live_), and paste it into your app dashboard.
+### 2. PayPal Setup (REST API Credentials)
+*Instruct your clients to generate standard merchant app keys.*
+ * **Step 1:** Log into the PayPal Developer Dashboard using a PayPal Business account.
+ * **Step 2:** Toggle the switch to **Live** mode at the top of the dashboard.
+ * **Step 3:** Under **Apps & Credentials**, click **Create App**.
+ * **Step 4:** Enter an App Name (e.g., Debt Recovery Payment Gateway) and set App Type to **Merchant**.
+ * **Step 5:** Copy the **Client ID** and click **Show** to copy the **Client Secret**, then paste both values into your app dashboard.
+**How to Test & Build This System from Bangladesh (No Verification Needed)**
+You can build and test this entire dynamic multi-tenant setup locally in Bangladesh without needing a US bank account or tax ID:
+ * **For Stripe Sandbox Testing:**
+   * Go to Stripe Dashboard and register a standard developer account.
+   * Skip identity verification setup and toggle on **Test Mode** (located in the top right/left corner).
+   * Grab your sandbox keys (pk_test_ and rk_test_) to build your dynamic Node.js billing logic.
+ * **For PayPal Sandbox Testing:**
+   * Log into the PayPal Developer Sandbox Dashboard.
+   * Under **Apps & Credentials**, click **Sandbox**.
+   * Copy the automatically generated **Default Application** Client ID and Client Secret to test buyer/seller transaction flows locally.

@@ -46,9 +46,9 @@ export function PublicPaymentPortal({
   const [copiedLink, setCopiedLink] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // After the client completes (or cancels) on Payoneer's hosted payment page
-  // they land back here with ?returned=1. Poll the server — which checks both
-  // our records and Payoneer's status — until the invoice flips to paid.
+  // After the client completes (or cancels) on the agency's Stripe/PayPal BYOK hosted payment page
+  // they land back here with ?returned=1. Poll the server — which checks the agency's BYOK Stripe/PayPal API
+  // directly (plus our DB) — until the invoice flips to paid. Paddle is ONLY for SaaS subscriptions.
   const pollRef = useRef<number | null>(null);
   useEffect(() => {
     if (!invoiceId || !invoice) return;
@@ -153,10 +153,10 @@ export function PublicPaymentPortal({
   };
 
 const methods: { id: PaymentMethod; label: string; hint: string; icon: React.ElementType }[] = [
-  { id: 'card', label: 'Credit / Debit Card', hint: 'Visa, Mastercard, Amex, Apple Pay & Google Pay', icon: CreditCard },
-  { id: 'paypal', label: 'PayPal', hint: 'Pay with your PayPal balance or linked card', icon: Wallet },
-  { id: 'bank', label: 'Bank Transfer / ACH', hint: 'SEPA, iDEAL and US bank debits', icon: Landmark },
-  { id: 'wallet', label: 'Wallets & Local', hint: 'Apple Pay, Google Pay, Klarna and more', icon: Banknote },
+  { id: 'card', label: 'Credit / Debit Card', hint: 'Via your agency Stripe (Visa, Mastercard, Amex) — funds go directly to agency', icon: CreditCard },
+  { id: 'paypal', label: 'PayPal', hint: 'Via your agency PayPal (balance or linked card) — direct to agency PayPal', icon: Wallet },
+  { id: 'bank', label: 'Bank Transfer / ACH', hint: 'Via Stripe (SEPA, iDEAL, ACH) — settles to agency Stripe', icon: Landmark },
+  { id: 'wallet', label: 'Wallets & Local', hint: 'Apple Pay, Google Pay, Klarna via Stripe — direct to agency', icon: Banknote },
 ];
 
 function feeRateLabel(def: PaymentMethodFee): string {
@@ -307,8 +307,7 @@ function feeRateLabel(def: PaymentMethodFee): string {
                       </div>
                       <p className="text-[10px] text-ink2 mt-1 leading-relaxed">{m.hint}</p>
                       <p className={`text-[10px] mt-1 font-semibold ${selected ? 'text-accent' : 'text-ink3'}`}>
-                        Payoneer fee: {feeRateLabel(PAYMENT_METHOD_FEES[m.id])} &middot;{' '}
-                        {PAYMENT_METHOD_FEES[m.id].level === 'high' ? 'Higher fee' : 'Lower fee'}
+                        No platform markup — payer pays exactly invoice amount. Stripe/PayPal fees (if any) go directly to agency.
                       </p>
                     </button>
                   );
@@ -322,21 +321,12 @@ function feeRateLabel(def: PaymentMethodFee): string {
                 </div>
               )}
 
-              {(() => {
-                const def = PAYMENT_METHOD_FEES[paymentMethod];
-                const est = paymentMethodFee(paymentMethod, invoice.amount_due);
-                return (
-                  <div className="p-3 rounded-xl bg-surface2 dark:bg-surface2/50 border border-line dark:border-line flex items-start gap-2">
-                    <Info className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
-                    <p className="text-[11px] text-ink2 dark:text-ink2 leading-relaxed">
-                      Payoneer charges a <span className="font-bold text-ink dark:text-white">{def.level === 'high' ? 'higher' : 'lower'}</span>{' '}
-                      processing fee for {def.label.toLowerCase()}: <span className="font-bold text-ink dark:text-white">{feeRateLabel(def)}</span> —{' '}
-                      about <span className="font-bold text-ink dark:text-white">${est.toFixed(2)}</span> on this invoice. The fee is charged by
-                      Payoneer and applied automatically; the full invoice amount below is exactly what is collected.
-                    </p>
-                  </div>
-                );
-              })()}
+              <div className="p-3 rounded-xl bg-surface2 dark:bg-surface2/50 border border-line dark:border-line flex items-start gap-2">
+                <Info className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
+                <p className="text-[11px] text-ink2 dark:text-ink2 leading-relaxed">
+                  <span className="font-bold text-ink dark:text-white">BYOK — funds go directly to your agency.</span> EronFlow never touches invoice money. Stripe/PayPal handle the charge on your own account; you pay exactly <span className="font-bold text-ink dark:text-white">${invoice.amount_due.toFixed(2)} {invoice.currency}</span> — no extra platform fee. Stripe/PayPal’s own processing fees (if any) are settled by your Stripe/PayPal account directly.
+                </p>
+              </div>
 
               <button
                 type="button"
@@ -358,7 +348,7 @@ function feeRateLabel(def: PaymentMethodFee): string {
         </div>
 
         <div className="text-center text-xs text-ink3">
-          Powered by <span className="font-bold text-ink dark:text-ink2">EronFlow SaaS</span> &middot; Secure payments via Payoneer
+          Powered by <span className="font-bold text-ink dark:text-ink2">EronFlow SaaS</span> &middot; Secure invoice payments via your agency’s Stripe & PayPal (BYOK) · SaaS billing via Paddle
         </div>
       </div>
       {isPaid && <ConfettiFn trigger={handleConfetti} />}

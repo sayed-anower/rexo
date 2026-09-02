@@ -98,6 +98,7 @@ export function Connectors({ onConnect, onDisconnect, onSync }: ConnectorsProps)
             const isWorking = working === c.id;
             const isSyncing = syncing === c.id;
             const isAccounting = c.category === 'accounting';
+            const isByokPayment = c.provider === 'stripe' || c.provider === 'paypal';
             return (
               <div
                 key={c.id}
@@ -107,9 +108,21 @@ export function Connectors({ onConnect, onDisconnect, onSync }: ConnectorsProps)
                   <div className="flex items-center gap-2">
                     <span className="text-xl">{CONNECTOR_ICONS[c.provider] || '🔌'}</span>
                     <h4 className="font-bold text-ink dark:text-white text-sm">{c.name}</h4>
+                    {isByokPayment && <span className="px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300 text-[9px] font-extrabold uppercase">BYOK</span>}
                   </div>
-                  <p className="text-xs text-ink2 dark:text-ink2 leading-relaxed">{c.description}</p>
-                  {c.connected && (
+                  <p className="text-xs text-ink2 dark:text-ink2 leading-relaxed">
+                    {isByokPayment
+                      ? c.provider === 'stripe'
+                        ? 'BYOK — paste your Stripe restricted key (rk_live_/rk_test_) so 100% of client invoice payments settle directly to your Stripe balance. No OAuth — see Settings → Payment Setup. Paddle handles only your SaaS subscription.'
+                        : 'BYOK — paste your PayPal Client ID + Secret (Live or Sandbox) so client payments land directly in your PayPal account. See Settings → Payment Setup. Paddle handles only your SaaS subscription.'
+                      : c.description}
+                  </p>
+                  {isByokPayment && (
+                    <span className="inline-block mt-2 text-[10px] font-bold text-indigo-600 dark:text-indigo-400">
+                      → Configure in Settings → Billing → Payment Setup (BYOK) — keys are masked & verified live.
+                    </span>
+                  )}
+                  {c.connected && !isByokPayment && (
                     <span className="inline-block mt-2 text-[10px] font-mono text-primary dark:text-secondary truncate max-w-full">
                       Connected: {c.account_name || c.provider}
                     </span>
@@ -129,29 +142,40 @@ export function Connectors({ onConnect, onDisconnect, onSync }: ConnectorsProps)
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => handleToggle(c)}
-                    disabled={isWorking || isSyncing}
-                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 disabled:opacity-50 ${
-                      c.connected
-                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 hover:bg-emerald-200 dark:hover:bg-emerald-900'
-                        : 'bg-accent hover:bg-accent-hover text-white shadow-sm'
-                    }`}
-                  >
-                    {isWorking ? (
-                      <span>{c.connected ? 'Disconnecting...' : 'Connecting...'}</span>
-                    ) : c.connected ? (
-                      <>
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>Connected</span>
-                      </>
-                    ) : (
-                      <>
-                        <ExternalLink className="w-3.5 h-3.5" />
-                        <span>Connect</span>
-                      </>
-                    )}
-                  </button>
+                  {isByokPayment ? (
+                    <a
+                      href="/app/settings"
+                      onClick={(e) => { e.preventDefault(); window.history.pushState({}, '', '/app/settings'); window.dispatchEvent(new Event('rf:route')); }}
+                      className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm flex items-center gap-1.5"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      <span>Open Payment Setup</span>
+                    </a>
+                  ) : (
+                    <button
+                      onClick={() => handleToggle(c)}
+                      disabled={isWorking || isSyncing}
+                      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 disabled:opacity-50 ${
+                        c.connected
+                          ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 hover:bg-emerald-200 dark:hover:bg-emerald-900'
+                          : 'bg-accent hover:bg-accent-hover text-white shadow-sm'
+                      }`}
+                    >
+                      {isWorking ? (
+                        <span>{c.connected ? 'Disconnecting...' : 'Connecting...'}</span>
+                      ) : c.connected ? (
+                        <>
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>Connected</span>
+                        </>
+                      ) : (
+                        <>
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          <span>Connect</span>
+                        </>
+                      )}
+                    </button>
+                  )}
 
                   {c.connected && isAccounting && (
                     <button

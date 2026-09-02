@@ -13,9 +13,15 @@ import { createClient } from '@supabase/supabase-js';
 import * as readline from 'readline';
 import { config } from 'dotenv';
 import { resolve } from 'path';
-import { randomUUID } from 'crypto';
+import { randomUUID, randomBytes, scryptSync } from 'crypto';
 
 config({ path: resolve(import.meta.dirname ?? __dirname, '..', '.env') });
+
+function hashPassword(password: string): string {
+  const salt = randomBytes(16).toString('hex');
+  const hash = scryptSync(password, salt, 64).toString('hex');
+  return `scrypt$${salt}$${hash}`;
+}
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -48,6 +54,8 @@ async function main() {
 
   const phone = (await ask('Phone number [+1...]: ')).trim() || '+12025550199';
   const country = (await ask('Country code [US]: ')).trim().toUpperCase() || 'US';
+  const passwordRaw = (await ask('Password [Test12345!]: ')).trim() || 'Test12345!';
+  const wantByok = (await ask('Also seed BYOK test keys? (y/N): ')).trim().toLowerCase() === 'y';
 
   console.log(`\nCreating ${tier} user for ${name} (${email})…`);
 
@@ -55,12 +63,12 @@ async function main() {
   const now = new Date().toISOString();
   const month = now.slice(0, 7); // YYYY-MM
 
-  // 1. Create user
+  // 1. Create user (BYOK-ready — stripe/paypal keys are per-user in payment_credentials, Paddle is SaaS-only)
   const { error: userErr } = await supabase.from('users').upsert(
     {
       id: userId,
       email,
-      password_hash: '$2a$10$placeholder_test_user_no_password',
+      password_hash: hashPassword(passwordRaw),
       company_name: name,
       company_phone: phone,
       user_country: country,
@@ -111,7 +119,7 @@ async function main() {
   if (usageErr) console.warn('  ⚠ Usage:', usageErr.message);
   else console.log('  ✓ Usage tracking initialized');
 
-  // 4. Sample email template
+  // 4. Sample email template (correct [var] syntax + channels)
   const { error: tplErr } = await supabase.from('custom_email_templates').upsert(
     {
       id: `tpl_test_${Date.now()}`,
@@ -119,21 +127,79 @@ async function main() {
       title: 'Friendly Invoice Reminder',
       sender_name: `${name} Billing`,
       sender_email: `billing@${name.toLowerCase().replace(/\s+/g, '')}.com`,
-      subject: 'Reminder: Invoice {{invoice_id}} Payment',
-      body: `Hi {{client_name}},\n\nThis is a friendly reminder that invoice {{invoice_id}} for {{amount_due}} {{currency}} was due on {{due_date}}.\n\nPlease process payment via: {{payment_link}}\n\nBest regards,\n{{your_name}}`,
-      category: 'reminder',
+      subject: 'Reminder: Invoice [external_invoice_id] Payment',
+      body: `Hi [client_name],\n\nThis is a friendly reminder that invoice [external_invoice_id] for [amount_due] [currency] was due on [due_date].\n\nPlease process payment via: [payment_link]\n\nBest regards,\n[your_name]`,
+      category: 'custom',
       is_default: true,
-      channels: ['{email}'],
+      channels: ['email'],
     },
     { onConflict: 'id' }
   );
   if (tplErr) console.warn('  ⚠ Template:', tplErr.message);
   else console.log('  ✓ Sample template created');
 
+  // 5. Seed default recovery flows (like real signup does) so automation & recovery work immediately
+  try {
+    const { INITIAL_SEQUENCES, INITIAL_CUSTOM_EMAIL_TEMPLATES } = await import('../src/data/initialData.js');
+    for (const seq of INITIAL_SEQUENCES as any[]) {
+      const seqId = `seq_${userId.slice(0, 8)}_${seq.id}`;
+      const { error } = await supabase.from('sequences').upsert({
+        id: seqId,
+        user_id: userId,
+        name: seq.name,
+        description: seq.description || null,
+        steps: JSON.stringify(seq.steps),
+        is_default: seq.is_default,
+      }, { onConflict: 'id' });
+      if (!error) console.log(`  ✓ Sequence: ${seq.name}`);
+    }
+    for (const t of (INITIAL_CUSTOM_EMAIL_TEMPLATES as any[]).slice(0, 2)) {
+      const tplId = `tmpl_${userId.slice(0, 8)}_${t.id}`;
+      await supabase.from('custom_email_templates').upsert({
+        id: tplId,
+        user_id: userId,
+        title: t.title,
+        sender_name: t.sender_name,
+        sender_email: t.sender_email,
+        subject: t.subject,
+        body: t.body,
+        category: t.category,
+        is_default: t.is_default || false,
+        channels: ['email'],
+      }, { onConflict: 'id' });
+    }
+  } catch (e: any) {
+    console.warn('  ⚠ Sequences seed:', e.message);
+  }
+
+  // 6. Optional BYOK test keys (Stripe test restricted key + PayPal sandbox) — paste after creation in Settings → Payment Setup for full BYOK testing
+  if (wantByok) {
+    const stripeTestKey = (await ask('Stripe test restricted key (rk_test_... or leave empty): ')).trim();
+    const paypalId = (await ask('PayPal sandbox Client ID (or leave empty): ')).trim();
+    const paypalSecret = paypalId ? (await ask('PayPal sandbox Secret: ')).trim() : '';
+    if (stripeTestKey || (paypalId && paypalSecret)) {
+      const { error: byokErr } = await supabase.from('payment_credentials').upsert({
+        user_id: userId,
+        stripe_restricted_key: stripeTestKey || null,
+        stripe_configured: Boolean(stripeTestKey),
+        paypal_client_id: paypalId || null,
+        paypal_client_secret: paypalSecret || null,
+        paypal_mode: 'sandbox',
+        paypal_configured: Boolean(paypalId && paypalSecret),
+        updated_at: now,
+      }, { onConflict: 'user_id' });
+      if (byokErr) console.warn('  ⚠ BYOK keys:', byokErr.message);
+      else console.log('  ✓ BYOK test keys seeded (sandbox). Invoice portal will use them directly — Paddle is SaaS-only.');
+    }
+  }
+
   console.log(`\n✅ Test user ready!`);
   console.log(`   Email:    ${email}`);
+  console.log(`   Password: ${passwordRaw} (scrypt hashed)`);
   console.log(`   Plan:     ${tier} (active)`);
   console.log(`   User ID:  ${userId}`);
+  console.log(`   BYOK:     ${wantByok ? 'seeded (if you pasted keys)' : 'not seeded — add Stripe/PayPal keys in Settings → Payment Setup (BYOK) after login'}`);
+  console.log(`   Billing:  Paddle handles SaaS billing; invoice payments use BYOK keys (100% to your Stripe/PayPal).`);
   console.log(`\n   Log in at your app and start testing.\n`);
 
   rl.close();

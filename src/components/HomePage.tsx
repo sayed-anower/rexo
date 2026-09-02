@@ -43,7 +43,7 @@ export function HomePage({ onOpenAuth, onGoogleSignIn }: HomePageProps) {
     },
     {
       q: 'Can clients pay on my own branded page?',
-      a: 'Yes. Pro and Agency plans give you a white-label payment page on your own domain (e.g. billing.youragency.com). Clients see your logo and colors, and can pay by card, PayPal, bank transfer, Apple Pay or Google Pay through real Payoneer rails.'
+      a: 'Yes. Pro and Agency plans give you a white-label payment page on your own domain (e.g. billing.youragency.com). Clients see your logo and colors, and can pay by card, PayPal, bank transfer, Apple Pay or Google Pay — 100% of the money goes directly to your own Stripe or PayPal account via Bring Your Own Keys (BYOK). Paddle is only used for your EronFlow subscription billing.'
     },
     {
       q: 'Is my pricing transparent? Are there hidden fees?',
@@ -137,7 +137,9 @@ export function HomePage({ onOpenAuth, onGoogleSignIn }: HomePageProps) {
         <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-6 text-center">
           <span className="text-xs font-bold text-ink3 uppercase tracking-wider">Connects with</span>
           <div className="flex flex-wrap items-center justify-center gap-3 text-xs font-bold text-ink2 dark:text-ink2">
-            <span className="px-3 py-1.5 rounded-xl bg-main dark:bg-surface2 border border-line dark:border-line">Payoneer</span>
+            <span className="px-3 py-1.5 rounded-xl bg-main dark:bg-surface2 border border-line dark:border-line">Stripe (BYOK)</span>
+            <span className="px-3 py-1.5 rounded-xl bg-main dark:bg-surface2 border border-line dark:border-line">PayPal (BYOK)</span>
+            <span className="px-3 py-1.5 rounded-xl bg-main dark:bg-surface2 border border-line dark:border-line">Paddle (SaaS billing)</span>
             <span className="px-3 py-1.5 rounded-xl bg-main dark:bg-surface2 border border-line dark:border-line">QuickBooks</span>
             <span className="px-3 py-1.5 rounded-xl bg-main dark:bg-surface2 border border-line dark:border-line">Xero</span>
             <span className="px-3 py-1.5 rounded-xl bg-main dark:bg-surface2 border border-line dark:border-line">WhatsApp</span>
