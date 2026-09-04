@@ -3926,7 +3926,7 @@ app.post('/api/billing/checkout', async (req, res) => {
         redirectUrl: `${appUrl()}/app/settings?billing=paid&plan=${plan.id}`,
         cancelUrl: `${appUrl()}/app/settings`,
       };
-      const apiRes = await paddleApi('/checkout/sessions', 'POST', payload);
+      const apiRes = await paddleApi('/v2/checkout/sessions', 'POST', payload);
       if (!apiRes.ok || !apiRes.json?.data?.id) {
         throw new Error(apiRes.json?.error?.message || `Paddle checkout could not be created (${apiRes.status}).`);
       }
