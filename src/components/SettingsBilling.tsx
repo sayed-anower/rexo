@@ -2,8 +2,6 @@ import React, { useEffect, useState } from 'react';
 import {
   Settings,
   CreditCard,
-  Globe,
-  Sparkles,
   Check,
   X,
   ShieldCheck,
@@ -14,18 +12,18 @@ import {
   PlugZap,
   BarChart3,
   AlertTriangle,
-  FlaskConical,
   RefreshCw,
-  ExternalLink,
-  CheckCircle2,
   Trash2,
   Copy,
-  Link2,
   Upload,
   UserPlus,
   Building2,
-  ChevronDown,
   Mail,
+  Wallet,
+  MailWarning,
+  MessageSquare,
+  Smartphone,
+  Sparkles,
 } from 'lucide-react';
 import { UserProfile, SubscriptionTier, UsageStats, SchedulingPrefs, Sequence, CustomEmailTemplate, Invoice } from '../types';
 import { PLANS, PLAN_BY_ID, CUSTOM_PLAN, SUPPORT_EMAIL } from '../data/plans';
@@ -75,7 +73,7 @@ export function SettingsBilling({
   onNavigateConnectors,
   onToast,
 }: SettingsBillingProps) {
-  const [activeTab, setActiveTab] = useState<'billing' | 'branding' | 'team'>('billing');
+  const [activeTab, setActiveTab] = useState<'billing' | 'branding' | 'team' | 'payment'>('billing');
   const [checkoutTier, setCheckoutTier] = useState<SubscriptionTier | null>(null);
   const [checkoutActivating, setCheckoutActivating] = useState(false);
   const [companyName, setCompanyName] = useState(user.company_name);
@@ -278,20 +276,23 @@ export function SettingsBilling({
     <div className="space-y-6">
       {/* Header */}
       <div className="p-6 rounded-3xl bg-white dark:bg-surface border border-line dark:border-line shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-2xl bg-primary-soft dark:bg-surface2 flex items-center justify-center">
             <Settings className="w-5 h-5 text-primary dark:text-secondary" />
-            <h2 className="text-xl font-bold text-ink dark:text-white">Account Settings & Billing</h2>
           </div>
-          <p className="text-xs text-ink2 dark:text-ink2">
-            Manage your plan, automation schedule, branding and team seats.
-          </p>
+          <div>
+            <h2 className="text-xl font-bold text-ink dark:text-white">Account Settings & Billing</h2>
+            <p className="text-xs text-ink2 dark:text-ink2">
+              Manage your plan, payment methods, branding and team.
+            </p>
+          </div>
         </div>
 
         <div className="flex items-center gap-1.5 p-1 bg-surface2 dark:bg-surface2 rounded-2xl overflow-x-auto">
           {(
             [
               { id: 'billing', label: 'Plan & Usage', icon: CreditCard },
+              { id: 'payment', label: 'Payment Setup', icon: Wallet },
               { id: 'branding', label: 'Branding', icon: Palette },
               { id: 'team', label: 'Team', icon: Users },
             ] as const
@@ -318,12 +319,6 @@ export function SettingsBilling({
       {/* TAB 1: PLAN & USAGE */}
       {activeTab === 'billing' && (
         <div className="space-y-6">
-          {/* BYOK Payment Setup — Stripe & PayPal (invoice payments settle directly to agency) */}
-          <ByokPaymentSetup onToast={onToast} />
-
-          {/* Legacy: Payment methods (bank/card instruments) — kept for backward compat, BYOK is now primary */}
-          <PaymentMethodsManager onToast={onToast} />
-
           {/* In-app checkout confirmation (billing=checkout&plan=X) */}
           {checkoutTier && (
             <div className="p-6 rounded-3xl bg-white dark:bg-surface border border-accent/40 dark:border-accent/40 shadow-lg space-y-4">
@@ -400,47 +395,51 @@ export function SettingsBilling({
 
           {/* Monthly Usage — real-time (polls every 8s) */}
           <div className="p-6 rounded-3xl bg-white dark:bg-surface border border-line dark:border-line shadow-sm">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <BarChart3 className="w-4 h-4 text-primary dark:text-secondary" />
-                <h3 className="text-base font-bold text-ink dark:text-white">This Month's Usage</h3>
-                <span className="px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 text-[9px] font-bold uppercase flex items-center gap-1">
-                  <RefreshCw className="w-3 h-3 animate-pulse" /> Live
-                </span>
+            <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-primary-soft dark:bg-surface2 flex items-center justify-center">
+                  <BarChart3 className="w-5 h-5 text-primary dark:text-secondary" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-ink dark:text-white">This Month's Usage</h3>
+                  <span className="px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 text-[9px] font-bold uppercase inline-flex items-center gap-1 mt-0.5">
+                    <RefreshCw className="w-3 h-3 animate-pulse" /> Live
+                  </span>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-ink3">
-                  {liveUsage?.emails_sent ?? 0} emails · {liveUsage?.whatsapp_sent ?? 0} WhatsApp · {liveUsage?.SMS_sent ?? 0} SMS · {liveUsage?.ai_generations ?? 0} AI drafts
-                </span>
-                <button onClick={() => { fetchUsage().then(setLiveUsage).catch(()=>{}); fetchRefundPreview().then(setRefundPreview).catch(()=>{}); }} className="p-1 rounded-lg hover:bg-surface2 text-ink3" title="Refresh counters"><RefreshCw className="w-3.5 h-3.5" /></button>
-              </div>
+              <button onClick={() => { fetchUsage().then(setLiveUsage).catch(()=>{}); }} className="p-1.5 rounded-lg hover:bg-surface2 text-ink3 transition-colors" title="Refresh counters"><RefreshCw className="w-3.5 h-3.5" /></button>
             </div>
 
             {limits && (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 {[
-                  { label: 'Emails sent', used: liveUsage?.emails_sent ?? 0, limit: limits.emails_per_month },
-                  { label: 'WhatsApp messages', used: liveUsage?.whatsapp_sent ?? 0, limit: limits.whatsapp_per_month },
-                  { label: 'SMS messages', used: liveUsage?.SMS_sent ?? 0, limit: limits.SMS_per_month },
-                  { label: 'AI drafts', used: liveUsage?.ai_generations ?? 0, limit: limits.ai_generations },
+                  { label: 'Emails sent', used: liveUsage?.emails_sent ?? 0, limit: limits.emails_per_month, color: 'from-blue-500 to-blue-600', bgColor: 'bg-blue-50 dark:bg-blue-950/40', textColor: 'text-blue-600 dark:text-blue-400', icon: Mail },
+                  { label: 'WhatsApp', used: liveUsage?.whatsapp_sent ?? 0, limit: limits.whatsapp_per_month, color: 'from-emerald-500 to-emerald-600', bgColor: 'bg-emerald-50 dark:bg-emerald-950/40', textColor: 'text-emerald-600 dark:text-emerald-400', icon: MessageSquare },
+                  { label: 'SMS', used: liveUsage?.SMS_sent ?? 0, limit: limits.SMS_per_month, color: 'from-violet-500 to-violet-600', bgColor: 'bg-violet-50 dark:bg-violet-950/40', textColor: 'text-violet-600 dark:text-violet-400', icon: Smartphone },
+                  { label: 'AI drafts', used: liveUsage?.ai_generations ?? 0, limit: limits.ai_generations, color: 'from-amber-500 to-amber-600', bgColor: 'bg-amber-50 dark:bg-amber-950/40', textColor: 'text-amber-600 dark:text-amber-400', icon: Sparkles },
                 ].map((m) => {
                   const pct = m.limit === -1 ? 0 : Math.min(100, Math.round((m.used / Math.max(1, m.limit)) * 100));
+                  const UsageIcon = m.icon;
                   return (
-                    <div key={m.label} className="p-4 rounded-2xl bg-main dark:bg-surface2/60 border border-line dark:border-line">
-                      <div className="flex items-center justify-between mb-2">
+                    <div key={m.label} className={`p-4 rounded-2xl ${m.bgColor} border border-line/50 dark:border-line/50`}>
+                      <div className="flex items-center gap-2 mb-3">
+                        <UsageIcon className={`w-4 h-4 ${m.textColor}`} />
                         <span className="text-xs font-bold text-ink dark:text-white">{m.label}</span>
-                        <span className="text-[11px] text-ink2">
-                          {m.used}{m.limit === -1 ? '' : ` / ${m.limit}`}
-                        </span>
                       </div>
-                      <div className="h-2 rounded-full bg-line dark:bg-surface2 overflow-hidden">
+                      <div className="flex items-baseline gap-1 mb-2">
+                        <span className="text-2xl font-black text-ink dark:text-white">{m.used}</span>
+                        {m.limit !== -1 && (
+                          <span className="text-xs text-ink3 font-medium">/ {m.limit}</span>
+                        )}
+                      </div>
+                      <div className="h-1.5 rounded-full bg-white/60 dark:bg-surface2/60 overflow-hidden">
                         <div
-                          className={`h-full rounded-full ${pct >= 90 ? 'bg-rose-500' : 'bg-gradient-to-r from-primary-strong to-primary'}`}
+                          className={`h-full rounded-full bg-gradient-to-r ${m.color} transition-all duration-500`}
                           style={{ width: `${m.limit === -1 ? 0 : pct}%` }}
                         />
                       </div>
                       {m.limit !== -1 && pct >= 90 && (
-                        <p className="text-[10px] text-rose-600 dark:text-rose-400 mt-1.5">Nearly at your plan limit — consider upgrading.</p>
+                        <p className="text-[10px] text-rose-600 dark:text-rose-400 mt-2 font-medium">Nearly at limit — consider upgrading.</p>
                       )}
                     </div>
                   );
@@ -450,7 +449,7 @@ export function SettingsBilling({
 
             <button
               onClick={onNavigateConnectors}
-              className="mt-4 inline-flex items-center gap-2 text-xs font-bold text-primary dark:text-secondary hover:underline"
+              className="mt-5 inline-flex items-center gap-2 text-xs font-bold text-primary dark:text-secondary hover:underline"
             >
               <PlugZap className="w-4 h-4" />
               <span>Manage your connected apps</span>
@@ -582,82 +581,25 @@ export function SettingsBilling({
           <div className="flex justify-center gap-3 flex-wrap">
             <button
               onClick={onRefreshStatus}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white dark:bg-surface border border-line dark:border-line text-xs font-bold text-ink2 hover:text-ink transition-colors"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white dark:bg-surface border border-line dark:border-line text-xs font-bold text-ink2 hover:text-ink hover:border-primary dark:hover:border-secondary transition-all shadow-sm"
             >
               <RefreshCw className="w-3.5 h-3.5" />
               Refresh plan status
             </button>
-            <div className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary-soft text-primary dark:bg-surface2 dark:text-secondary text-xs font-bold">
-              <ShieldCheck className="w-4 h-4" />
-              Card, bank, PayPal, Apple Pay & Google Pay via Stripe/PayPal BYOK + Paddle (SaaS)
-            </div>
           </div>
-
-          {/* Refund Calculator — real-time, live usage */}
-          {refundPreview && !refundPreview.inactive && (
-            <div className="p-6 rounded-3xl bg-white dark:bg-surface border border-line dark:border-line shadow-sm max-w-2xl mx-auto space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <BarChart3 className="w-5 h-5 text-emerald-600" />
-                  <h3 className="text-base font-bold text-ink dark:text-white">Refund Calculator — Real-time</h3>
-                </div>
-                <button onClick={() => {
-                  fetchRefundPreview().then((p)=> setRefundPreview(p)).catch(()=>{});
-                }} className="px-3 py-1.5 rounded-xl border border-line dark:border-line text-[11px] font-bold text-ink2 hover:text-ink flex items-center gap-1.5">
-                  <RefreshCw className="w-3.5 h-3.5" /> Refresh
-                </button>
-              </div>
-              <p className="text-[11px] text-ink2 leading-relaxed">Live estimate if you cancel today. Usage costs are cut from the unused days (refreshed from your actual counters). Refund = unused days value minus 10% processing fee minus usage.</p>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
-                <div className="p-3 rounded-2xl bg-main dark:bg-surface2/60 border border-line dark:border-line">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-ink3 block">Emails sent</span>
-                  <span className="text-lg font-black text-ink dark:text-white">{refundPreview.usage?.emails_sent ?? 0}</span>
-                  <span className="text-[10px] text-ink3">@ $0.01 each = ${((refundPreview.usage?.emails_sent ?? 0) * 0.01).toFixed(2)}</span>
-                </div>
-                <div className="p-3 rounded-2xl bg-main dark:bg-surface2/60 border border-line dark:border-line">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-ink3 block">WhatsApp</span>
-                  <span className="text-lg font-black text-ink dark:text-white">{refundPreview.usage?.whatsapp_sent ?? 0}</span>
-                  <span className="text-[10px] text-ink3">@ $0.20 each = ${((refundPreview.usage?.whatsapp_sent ?? 0) * 0.20).toFixed(2)}</span>
-                </div>
-                <div className="p-3 rounded-2xl bg-main dark:bg-surface2/60 border border-line dark:border-line">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-ink3 block">SMS</span>
-                  <span className="text-lg font-black text-ink dark:text-white">{refundPreview.usage?.SMS_sent ?? 0}</span>
-                  <span className="text-[10px] text-ink3">@ $0.60 each = ${((refundPreview.usage?.SMS_sent ?? 0) * 0.60).toFixed(2)}</span>
-                </div>
-                <div className="p-3 rounded-2xl bg-main dark:bg-surface2/60 border border-line dark:border-line">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-ink3 block">AI drafts</span>
-                  <span className="text-lg font-black text-ink dark:text-white">{refundPreview.usage?.ai_generations ?? 0}</span>
-                  <span className="text-[10px] text-ink3">@ $0.01 each = ${((refundPreview.usage?.ai_generations ?? 0) * 0.01).toFixed(2)}</span>
-                </div>
-              </div>
-              <div className="grid sm:grid-cols-3 gap-3 text-xs">
-                <div className="p-3 rounded-2xl bg-main dark:bg-surface2/60 border border-line dark:border-line">
-                  <span className="block text-ink3 font-bold uppercase tracking-wider mb-1 text-[10px]">Plan price</span>
-                  <span className="text-lg font-black text-ink dark:text-white">${Number(refundPreview.price ?? currentPlan?.price ?? 0).toFixed(2)}/mo</span>
-                  <span className="block text-[10px] text-ink3 mt-1">{Math.round(refundPreview.elapsedDays ?? 0)} days used • {Math.round(refundPreview.remainingDays ?? 0)} days left</span>
-                </div>
-                <div className="p-3 rounded-2xl bg-main dark:bg-surface2/60 border border-line dark:border-line">
-                  <span className="block text-ink3 font-bold uppercase tracking-wider mb-1 text-[10px]">Usage cost this period</span>
-                  <span className="text-lg font-black text-rose-600">${Number(refundPreview.usageCost ?? 0).toFixed(2)}</span>
-                  <span className="block text-[10px] text-ink3 mt-1">{refundPreview.usage?.invoices_tracked ?? 0} invoices tracked @ $0.01</span>
-                </div>
-                <div className="p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800">
-                  <span className="block font-bold uppercase tracking-wider mb-1 text-[10px] text-emerald-700 dark:text-emerald-300">Estimated refund if you cancel now</span>
-                  <span className="text-lg font-black text-emerald-700 dark:text-emerald-300">${Number(refundPreview.refund ?? 0).toFixed(2)}</span>
-                  <span className="block text-[10px] text-emerald-600 dark:text-emerald-400 mt-1">10% fee: ${Number(refundPreview.cancellationFee ?? 0).toFixed(2)} • Remaining: ${((refundPreview.price ?? 0) * (refundPreview.remainingRatio ?? 0)).toFixed(2)}</span>
-                </div>
-              </div>
-              <p className="text-[10px] text-ink3">Formula: Refund = (Remaining days /30 × Plan price) − 10% cancellation fee − usage costs (email $0.01, WhatsApp $0.20, SMS $0.60, AI $0.01, invoice $0.01) — never negative. Tax/fees are $0 — Paddle is merchant of record and plan price is exactly what you pay.</p>
-            </div>
-          )}
 
           {/* Cancel plan — redirects to support email */}
           <div className="p-6 rounded-3xl bg-white dark:bg-surface border border-line dark:border-line shadow-sm max-w-2xl mx-auto">
-            <div className="flex items-center gap-2 mb-1">
-              <Clock3 className="w-5 h-5 text-primary dark:text-secondary" />
-              <h3 className="text-base font-bold text-ink dark:text-white">Cancel plan</h3>
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-9 h-9 rounded-xl bg-rose-50 dark:bg-rose-950/40 flex items-center justify-center">
+                <MailWarning className="w-5 h-5 text-rose-500" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-ink dark:text-white">Cancel plan</h3>
+                <p className="text-[11px] text-ink3">Need to pause? Contact us and we'll help within 24h.</p>
+              </div>
             </div>
-            <p className="text-xs text-ink2 dark:text-ink2 mb-4">
+            <p className="text-xs text-ink2 dark:text-ink2 mb-4 ml-12">
               To cancel your plan or request a refund, please contact our support team. We'll process your request within 24–48 hours.
             </p>
 
@@ -668,7 +610,7 @@ export function SettingsBilling({
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-red-50 dark:bg-red-950/60 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 font-bold text-xs transition-colors hover:bg-red-100 dark:hover:bg-red-950"
             >
               <Mail className="w-4 h-4" />
-              Cancel via email — {SUPPORT_EMAIL}
+              Mail Us to Cancel Plan & Refund
             </a>
           </div>
 
@@ -680,17 +622,23 @@ export function SettingsBilling({
           ) : (
             events.length > 0 && (
             <div className="p-6 rounded-3xl bg-white dark:bg-surface border border-line dark:border-line shadow-sm">
-              <h3 className="text-base font-bold text-ink dark:text-white mb-4">Billing history</h3>
-              <div className="space-y-2">
+              <div className="flex items-center gap-2 mb-4">
+                <Clock3 className="w-4 h-4 text-primary dark:text-secondary" />
+                <h3 className="text-base font-bold text-ink dark:text-white">Billing history</h3>
+              </div>
+              <div className="space-y-1">
                 {events.map((ev) => (
-                  <div key={ev.id} className="flex items-center justify-between text-xs py-2 border-b border-line dark:border-line last:border-0">
-                    <div>
-                      <span className="font-bold text-ink dark:text-white capitalize">{ev.type.replace(/_/g, ' ')}</span>
-                      <span className="text-ink3 ml-2">
-                        {new Date(ev.created_at).toLocaleDateString()} {ev.tier ? `· ${ev.tier}` : ''} {ev.provider ? `· ${ev.provider}` : ''}
-                      </span>
+                  <div key={ev.id} className="flex items-center justify-between text-xs py-2.5 px-3 rounded-xl hover:bg-main dark:hover:bg-surface2/40 transition-colors">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-2 h-2 rounded-full shrink-0 ${ev.refund_amount > 0 ? 'bg-emerald-500' : ev.type === 'plan_change' ? 'bg-primary' : 'bg-ink3'}`} />
+                      <div>
+                        <span className="font-bold text-ink dark:text-white capitalize">{ev.type.replace(/_/g, ' ')}</span>
+                        <span className="text-ink3 ml-2">
+                          {new Date(ev.created_at).toLocaleDateString()} {ev.tier ? `· ${ev.tier}` : ''} {ev.provider ? `· ${ev.provider}` : ''}
+                        </span>
+                      </div>
                     </div>
-                    <span className="font-bold text-ink dark:text-white">
+                    <span className={`font-bold ${ev.refund_amount > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-ink dark:text-white'}`}>
                       {ev.refund_amount > 0 ? `+$${ev.refund_amount.toFixed(2)} refund` : `$${ev.amount.toFixed(2)}`}
                     </span>
                   </div>
@@ -701,13 +649,28 @@ export function SettingsBilling({
         </div>
       )}
 
+      {/* TAB: PAYMENT SETUP (BYOK Stripe & PayPal) */}
+      {activeTab === 'payment' && (
+        <div className="space-y-6">
+          <PaymentMethodsManager onToast={onToast} />
+          <ByokPaymentSetup onToast={onToast} />
+        </div>
+      )}
+
       {/* TAB 3: BRANDING & CUSTOM DOMAIN */}
       {activeTab === 'branding' && (
         <div className="p-6 sm:p-8 rounded-3xl bg-white dark:bg-surface border border-line dark:border-line shadow-sm max-w-2xl">
-          <h3 className="text-lg font-bold text-ink dark:text-white mb-1">Your Branding & Payment Page</h3>
-          <p className="text-xs text-ink2 dark:text-ink2 mb-6">
-            Upload your company logo — it appears on your public payment page. Configure your custom domain and email signature too.
-          </p>
+          <div className="flex items-center gap-3 mb-1">
+            <div className="w-9 h-9 rounded-xl bg-primary-soft dark:bg-surface2 flex items-center justify-center">
+              <Palette className="w-5 h-5 text-primary dark:text-secondary" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-ink dark:text-white">Your Branding & Payment Page</h3>
+              <p className="text-xs text-ink2 dark:text-ink2">
+                Customize how your payment page looks to clients.
+              </p>
+            </div>
+          </div>
 
           <form onSubmit={handleBrandingSave} className="space-y-4">
             <div>
@@ -787,12 +750,16 @@ export function SettingsBilling({
       {/* TAB 4: TEAM SEATS */}
       {activeTab === 'team' && (
         <div className="p-6 sm:p-8 rounded-3xl bg-white dark:bg-surface border border-line dark:border-line shadow-sm space-y-6 max-w-2xl">
-          <div>
-            <h3 className="text-lg font-bold text-ink dark:text-white">Team & Account Access</h3>
-            <p className="text-xs text-ink2 dark:text-ink2">
-              Invite teammates via a link. They sign up / sign in to their own dashboard with a one-time email code and can
-              then work in your workspace (limited by your plan's team seats).
-            </p>
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-primary-soft dark:bg-surface2 flex items-center justify-center">
+              <Users className="w-5 h-5 text-primary dark:text-secondary" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-ink dark:text-white">Team & Account Access</h3>
+              <p className="text-xs text-ink2 dark:text-ink2">
+                Invite teammates via a link. They sign in with a one-time code.
+              </p>
+            </div>
           </div>
 
           <div className="divide-y divide-line dark:divide-line">

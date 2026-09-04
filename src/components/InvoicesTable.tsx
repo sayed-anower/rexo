@@ -81,7 +81,7 @@ export function InvoicesTable({
   const [newClientName, setNewClientName] = useState('');
   const [newClientEmail, setNewClientEmail] = useState('');
   const [newClientPhone, setNewClientPhone] = useState('');
-  const [newClientPhoneDial, setNewClientPhoneDial] = useState('880');
+  const [newClientPhoneDial, setNewClientPhoneDial] = useState('1');
   const [newAmount, setNewAmount] = useState('');
   const [newDueDate, setNewDueDate] = useState('');
   const [newDesc, setNewDesc] = useState('');
@@ -94,7 +94,7 @@ export function InvoicesTable({
     if (match) {
       return { dial: String(match.dial), number: digits.slice(String(match.dial).length) };
     }
-    return { dial: '880', number: digits };
+    return { dial: '1', number: digits };
   };
 
   const openEditInvoice = (inv: Invoice) => {
@@ -123,6 +123,13 @@ export function InvoicesTable({
   const closeCreateModal = () => {
     setIsCreateModalOpen(false);
     setEditingInvoice(null);
+    setNewClientName('');
+    setNewClientEmail('');
+    setNewClientPhone('');
+    setNewClientPhoneDial('1');
+    setNewAmount('');
+    setNewDueDate('');
+    setNewDesc('');
   };
 
   const handleCopyLink = (inv: Invoice) => {
@@ -293,6 +300,13 @@ export function InvoicesTable({
           <button
             onClick={() => {
               setEditingInvoice(null);
+              setNewClientName('');
+              setNewClientEmail('');
+              setNewClientPhone('');
+              setNewClientPhoneDial('1');
+              setNewAmount('');
+              setNewDueDate('');
+              setNewDesc('');
               setIsCreateModalOpen(true);
             }}
             className="px-4 py-2 rounded-xl bg-accent hover:bg-accent-hover text-white text-xs font-bold transition-all flex items-center gap-2 shadow-md shadow-accent/25"
@@ -849,7 +863,7 @@ export function InvoicesTable({
               type="tel"
               value={newClientPhone}
               onChange={(e) => setNewClientPhone(e.target.value)}
-              placeholder="1712345678"
+              placeholder="2025551234"
               className="w-full px-3 py-2 text-xs text-ink dark:text-white bg-transparent outline-none font-mono"
             />
           </div>

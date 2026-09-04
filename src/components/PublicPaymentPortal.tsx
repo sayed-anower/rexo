@@ -348,7 +348,7 @@ function feeRateLabel(def: PaymentMethodFee): string {
         </div>
 
         <div className="text-center text-xs text-ink3">
-          Powered by <span className="font-bold text-ink dark:text-ink2">EronFlow SaaS</span> &middot; Secure invoice payments via your agency’s Stripe & PayPal (BYOK) · SaaS billing via Paddle
+          Powered by <span className="font-bold text-ink dark:text-ink2">EronFlow SaaS</span>
         </div>
       </div>
       {isPaid && <ConfettiFn trigger={handleConfetti} />}

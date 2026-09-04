@@ -11,7 +11,7 @@ export function ByokPaymentSetup({ onToast }: { onToast: (msg: string) => void }
   const [stripePub, setStripePub] = useState('');
   const [paypalId, setPaypalId] = useState('');
   const [paypalSecret, setPaypalSecret] = useState('');
-  const [paypalMode, setPaypalMode] = useState<'live' | 'sandbox'>('live');
+  const [paypalMode] = useState<'live'>('live');
   const [copied, setCopied] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<{ stripe?: { ok: boolean; message: string }; paypal?: { ok: boolean; message: string } } | null>(null);
 
@@ -19,7 +19,6 @@ export function ByokPaymentSetup({ onToast }: { onToast: (msg: string) => void }
     try {
       const c = await fetchPaymentCredentials();
       setCreds(c);
-      setPaypalMode(c.paypal_mode || 'live');
     } catch (e: any) {
       onToast(e.message || 'Could not load payment credentials.');
     } finally {
@@ -59,7 +58,7 @@ export function ByokPaymentSetup({ onToast }: { onToast: (msg: string) => void }
       setCreds(res);
       setPaypalId('');
       setPaypalSecret('');
-      onToast(`PayPal ${paypalMode} credentials saved & verified — client payments will now settle to your PayPal account.`);
+      onToast('PayPal live credentials saved & verified — client payments will now settle to your PayPal account.');
     } catch (e: any) {
       onToast(e.message || 'PayPal save failed.');
     } finally {
@@ -116,7 +115,7 @@ export function ByokPaymentSetup({ onToast }: { onToast: (msg: string) => void }
           </div>
           <div>
             <h3 className="text-base font-bold text-ink dark:text-white flex items-center gap-2">
-              Payment Setup — Bring Your Own Keys (BYOK)
+              Payment Setup
               {creds?.stripe_configured || creds?.paypal_configured ? (
                 <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 text-[10px] font-extrabold uppercase tracking-wider flex items-center gap-1">
                   <Check className="w-3 h-3" /> Configured
@@ -128,11 +127,8 @@ export function ByokPaymentSetup({ onToast }: { onToast: (msg: string) => void }
               )}
             </h3>
             <p className="text-[11px] text-ink2 dark:text-ink2 max-w-2xl leading-relaxed mt-1">
-              <span className="font-bold text-ink dark:text-white">EronFlow never touches invoice money.</span> 100% of client payments settle directly into <span className="font-bold">your own</span> Stripe or PayPal account via your keys. Paddle is used <span className="font-bold">only</span> for your EronFlow SaaS subscription billing.
+              <span className="font-bold text-ink dark:text-white">EronFlow never touches invoice money.</span> 100% of client payments settle directly into <span className="font-bold">your own</span> Stripe or PayPal account via your keys.
               Your keys are stored encrypted, masked on display, and never shown again.
-            </p>
-            <p className="text-[10px] text-ink3 mt-1.5">
-              Operating from Bangladesh? You do NOT need US SSN/EIN — your clients in supported regions (US/UK/EU) provide keys; you test with free sandbox/test keys as described below.
             </p>
           </div>
         </div>
@@ -168,7 +164,7 @@ export function ByokPaymentSetup({ onToast }: { onToast: (msg: string) => void }
               <div className="flex items-center gap-2">
                 <Wallet className="w-4 h-4 text-sky-600" />
                 <div>
-                  <span className="block text-xs font-bold text-sky-900 dark:text-sky-100">PayPal connected ({creds.paypal_mode})</span>
+                  <span className="block text-xs font-bold text-sky-900 dark:text-sky-100">PayPal connected (Live)</span>
                   <span className="text-[11px] font-mono text-sky-700 dark:text-sky-300">{creds.paypal_client_id_masked}</span>
                 </div>
               </div>
@@ -201,8 +197,8 @@ export function ByokPaymentSetup({ onToast }: { onToast: (msg: string) => void }
               <CreditCard className="w-4 h-4" />
             </div>
             <div>
-              <h4 className="text-sm font-bold text-ink dark:text-white">Stripe — Restricted API Key (BYOK)</h4>
-              <p className="text-[11px] text-ink2">Funds go straight to your Stripe balance — not through EronFlow.</p>
+              <h4 className="text-sm font-bold text-ink dark:text-white">Stripe</h4>
+              <p className="text-[11px] text-ink2">Funds go straight to your Stripe balance.</p>
             </div>
           </div>
           <a href="https://dashboard.stripe.com/apikeys" target="_blank" rel="noreferrer" className="text-[11px] font-bold text-primary dark:text-secondary hover:underline flex items-center gap-1">
@@ -213,13 +209,13 @@ export function ByokPaymentSetup({ onToast }: { onToast: (msg: string) => void }
         <div className="p-4 space-y-4">
           <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 space-y-2">
             <p className="text-[11px] font-bold text-amber-900 dark:text-amber-100 flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5" /> How to get your Restricted Key (recommended — more secure than secret keys)
+              How to get your Restricted Key (recommended — more secure than secret keys)
             </p>
             <ol className="text-[11px] text-amber-800 dark:text-amber-200 leading-relaxed list-decimal list-inside space-y-1">
               <li>Log into <a href="https://dashboard.stripe.com/" target="_blank" rel="noreferrer" className="underline font-bold">Stripe Dashboard</a> with your Business account</li>
               <li>Click <span className="font-bold">Developers</span> (top right) → <span className="font-bold">API Keys</span></li>
               <li>Scroll to <span className="font-bold">Restricted keys</span> → click <span className="font-bold">Create restricted key</span></li>
-              <li>Name it: <span className="font-mono bg-white dark:bg-surface px-1 py-0.5 rounded border">EronFlow Invoice Recovery</span></li>
+              <li>Name it.</li>
               <li>Set permissions:
                 <ul className="list-disc list-inside ml-4 mt-1 space-y-0.5">
                   <li>Customers: <span className="font-bold">Write</span></li>
@@ -228,15 +224,8 @@ export function ByokPaymentSetup({ onToast }: { onToast: (msg: string) => void }
                   <li>Charges: <span className="font-bold">Read</span></li>
                 </ul>
               </li>
-              <li>Click <span className="font-bold">Create key</span> → copy the key (starts with <span className="font-mono">rk_live_</span> or <span className="font-mono">rk_test_</span> for sandbox) → paste below.</li>
+              <li>Click <span className="font-bold">Create key</span> → copy the key (starts with <span className="font-mono">"rk_live_"</span>) → paste below.</li>
             </ol>
-            <p className="text-[10px] text-amber-700 dark:text-amber-300 flex items-center gap-1">
-              <Info className="w-3 h-3" /> Test from Bangladesh? Toggle <span className="font-bold">Test Mode</span> (top right of Stripe Dashboard) and use <span className="font-mono">rk_test_… / pk_test_…</span> — no US verification needed.
-            </p>
-            <div className="flex flex-wrap gap-1.5 pt-1">
-              <a href="https://dashboard.stripe.com/test/apikeys" target="_blank" rel="noreferrer" className="px-2 py-1 rounded-lg bg-white dark:bg-surface border border-amber-300 dark:border-amber-700 text-[10px] font-bold text-amber-800 dark:text-amber-200 hover:bg-amber-50">Stripe Test Keys (rk_test_)</a>
-              <a href="https://dashboard.stripe.com/apikeys" target="_blank" rel="noreferrer" className="px-2 py-1 rounded-lg bg-white dark:bg-surface border border-amber-300 dark:border-amber-700 text-[10px] font-bold text-amber-800 dark:text-amber-200 hover:bg-amber-50">Stripe Live Keys (rk_live_)</a>
-            </div>
           </div>
 
           <div className="space-y-3">
@@ -249,7 +238,6 @@ export function ByokPaymentSetup({ onToast }: { onToast: (msg: string) => void }
                 type="password"
                 className="w-full px-3 py-2.5 rounded-xl border border-line dark:border-line bg-main dark:bg-surface2 text-xs font-mono text-ink dark:text-white outline-none focus:ring-2 focus:ring-accent"
               />
-              <p className="text-[10px] text-ink3 mt-1">We validate the key instantly against Stripe Balance API. No charge is made. Use Test Mode keys while building from Bangladesh.</p>
             </div>
             <div>
               <label className="block text-[10px] font-bold text-ink3 uppercase tracking-wider mb-1">Stripe Publishable Key (pk_live_... / pk_test_...) — optional, improves portal UX</label>
@@ -293,23 +281,15 @@ export function ByokPaymentSetup({ onToast }: { onToast: (msg: string) => void }
         <div className="p-4 space-y-4">
           <div className="p-3 rounded-xl bg-sky-50 dark:bg-sky-950/30 border border-sky-200 dark:border-sky-800 space-y-2">
             <p className="text-[11px] font-bold text-sky-900 dark:text-sky-100 flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5" /> How to get your PayPal REST API Credentials
+              How to get your PayPal REST API Credentials
             </p>
             <ol className="text-[11px] text-sky-800 dark:text-sky-200 leading-relaxed list-decimal list-inside space-y-1">
               <li>Log into <a href="https://developer.paypal.com/" target="_blank" rel="noreferrer" className="underline font-bold">PayPal Developer Dashboard</a> with your Business account</li>
-              <li>Toggle the switch to <span className="font-bold">Live</span> (top of dashboard) for production, or <span className="font-bold">Sandbox</span> for testing</li>
+              <li>Toggle the switch to <span className="font-bold">Live</span> (top of dashboard) for production</li>
               <li>Under <span className="font-bold">Apps & Credentials</span> → click <span className="font-bold">Create App</span></li>
-              <li>Enter App Name: <span className="font-mono bg-white dark:bg-surface px-1 py-0.5 rounded border">EronFlow Payment Gateway</span> — App Type: <span className="font-bold">Merchant</span></li>
-              <li>Copy the <span className="font-bold">Client ID</span> and click <span className="font-bold">Show</span> to copy <span className="font-bold">Client Secret</span> → paste both below. Set mode to <span className="font-bold">Live</span> for live keys, <span className="font-bold">Sandbox</span> for sandbox keys.</li>
+              <li>Enter App Name — App Type: <span className="font-bold">Merchant</span></li>
+              <li>Copy the <span className="font-bold">Client ID</span> and click <span className="font-bold">Show</span> to copy <span className="font-bold">Client Secret</span> → paste both below.</li>
             </ol>
-            <p className="text-[10px] text-sky-700 dark:text-sky-300 flex items-center gap-1">
-              <Info className="w-3 h-3" /> Sandbox testing from Bangladesh: use the automatically generated <span className="font-bold">Default Application</span> under Sandbox → copy its Client ID & Secret — no Business verification needed.
-            </p>
-            <div className="flex flex-wrap gap-1.5 pt-1">
-              <a href="https://developer.paypal.com/dashboard/sandbox/accounts" target="_blank" rel="noreferrer" className="px-2 py-1 rounded-lg bg-white dark:bg-surface border border-sky-300 dark:border-sky-700 text-[10px] font-bold text-sky-800 dark:text-sky-200 hover:bg-sky-50">PayPal Sandbox Accounts</a>
-              <a href="https://developer.paypal.com/dashboard/applications/sandbox" target="_blank" rel="noreferrer" className="px-2 py-1 rounded-lg bg-white dark:bg-surface border border-sky-300 dark:border-sky-700 text-[10px] font-bold text-sky-800 dark:text-sky-200 hover:bg-sky-50">PayPal Sandbox Apps</a>
-              <a href="https://developer.paypal.com/dashboard/applications/live" target="_blank" rel="noreferrer" className="px-2 py-1 rounded-lg bg-white dark:bg-surface border border-sky-300 dark:border-sky-700 text-[10px] font-bold text-sky-800 dark:text-sky-200 hover:bg-sky-50">PayPal Live Apps</a>
-            </div>
           </div>
 
           <div className="space-y-3">
@@ -335,26 +315,6 @@ export function ByokPaymentSetup({ onToast }: { onToast: (msg: string) => void }
                 />
               </div>
             </div>
-            <div>
-              <label className="block text-[10px] font-bold text-ink3 uppercase tracking-wider mb-1">Environment</label>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setPaypalMode('live')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold border ${paypalMode === 'live' ? 'bg-sky-600 border-sky-600 text-white' : 'bg-white dark:bg-surface border-line dark:border-line text-ink2'}`}
-                >
-                  Live
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPaypalMode('sandbox')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold border ${paypalMode === 'sandbox' ? 'bg-amber-500 border-amber-500 text-white' : 'bg-white dark:bg-surface border-line dark:border-line text-ink2'}`}
-                >
-                  Sandbox (testing)
-                </button>
-                <span className="text-[10px] text-ink3">Use Sandbox for testing from Bangladesh — no US bank needed.</span>
-              </div>
-            </div>
             <button
               onClick={handleSavePayPal}
               disabled={saving === 'paypal' || !paypalId.trim() || !paypalSecret.trim()}
@@ -371,10 +331,9 @@ export function ByokPaymentSetup({ onToast }: { onToast: (msg: string) => void }
       <div className="p-4 rounded-2xl bg-main dark:bg-surface2/60 border border-line dark:border-line flex items-start gap-2.5">
         <Info className="w-4 h-4 text-primary shrink-0 mt-0.5" />
         <div className="space-y-1">
-          <p className="text-[11px] font-bold text-ink dark:text-white">Public payment portal uses your BYOK keys — not ours</p>
+          <p className="text-[11px] font-bold text-ink dark:text-white">Public payment portal uses your keys.</p>
           <p className="text-[11px] text-ink2 leading-relaxed">
-            When a client opens <span className="font-mono bg-white dark:bg-surface px-1 py-0.5 rounded border text-[10px]">/pay/&lt;invoice-id&gt;</span> and clicks Pay, EronFlow creates a Stripe Checkout Session or PayPal Order <span className="font-bold">directly with your stored keys</span> — the payer’s card/ PayPal completes on Stripe/PayPal’s hosted page and funds settle instantly to your Stripe/PayPal balance. Use <span className="font-bold">Paddle</span> only for your EronFlow subscription (Plan & Usage).
-          </p>
+            When a client opens <span className="font-mono bg-white dark:bg-surface px-1 py-0.5 rounded border text-[10px]">/pay/&lt;invoice-id&gt;</span> and clicks Pay, EronFlow creates a Stripe Checkout Session or PayPal Order <span className="font-bold">directly with your stored keys</span> — the payer’s card/ PayPal completes on Stripe/PayPal’s hosted page and funds settle instantly to your Stripe/PayPal balance.</p>
           <p className="text-[10px] text-ink3">
             Need help? See <a href="/docs" className="underline font-bold">/docs → Payments</a> or <a href="https://dashboard.stripe.com/apikeys" target="_blank" rel="noreferrer" className="underline">Stripe Dashboard</a> / <a href="https://developer.paypal.com/dashboard" target="_blank" rel="noreferrer" className="underline">PayPal Developer Dashboard</a>.
           </p>

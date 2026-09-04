@@ -5023,7 +5023,7 @@ app.post('/api/payments/create-payment-intent', async (req, res) => {
     return res.status(402).json({
       error: 'PROVIDER_NOT_CONFIGURED',
       provider: 'byok',
-      message: 'This agency has not connected a payment method yet. The agency owner needs to add their Stripe or PayPal keys in Settings → Payment Setup (BYOK). See PAY.md for setup links (Stripe Dashboard → API Keys → Restricted keys, PayPal Developer → Apps & Credentials).',
+      message: 'This agency has not connected a payment method yet. The agency owner needs to add their Stripe or PayPal in Settings.',
       setup_url: '/app/settings?tab=byok',
     });
   }
