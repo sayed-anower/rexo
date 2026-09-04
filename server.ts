@@ -3919,6 +3919,89 @@ app.post('/api/billing/checkout', async (req, res) => {
     try {
       const sb = getSupabase()!;
       const intentId = `paddle_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      
+      // Paddle Billing format
+      const payload = {
+        items: [{ price_id: priceId, quantity: 1 }],
+        custom_data: { user_id: user.profile.id, tier: plan.id, intent_id: intentId },
+        checkout: {
+          url_success: `${appUrl()}/app/settings?billing=paid&plan=${plan.id}`,
+        },
+      };
+
+      const apiRes = await paddleApi('/transactions', 'POST', payload);
+      
+      if (!apiRes.ok || !apiRes.json?.data?.id) {
+        throw new Error(apiRes.json?.error?.detail || apiRes.json?.error?.message || `Paddle checkout could not be created (${apiRes.status}).`);
+      }
+
+      // Hosted checkout URL returned in transaction data
+      const checkoutUrl = apiRes.json.data.checkout?.url;
+
+      if (!checkoutUrl) {
+        throw new Error('Paddle transaction succeeded, but no checkout URL was returned.');
+      }
+
+      await sb.from('payment_intents').upsert({
+        id: intentId,
+        invoice_id: null,
+        user_id: user.profile.id,
+        provider: 'paddle',
+        status: 'pending',
+        amount: plan.price,
+        fee: 0,
+        currency: 'USD',
+        purpose: 'subscription',
+        tier: plan.id,
+        raw: apiRes.json.data,
+      });
+
+      await recordBillingEvent({ userId: user.profile.id, type: 'checkout_created', tier: plan.id, provider: 'paddle' });
+      return res.json({ success: true, url: checkoutUrl, external: true, provider: 'paddle', mode: 'hosted', plan: plan.id, amount: plan.price });
+    } catch (err: any) {
+      console.error('[Billing] Paddle checkout failed:', err.message);
+      return res.status(502).json({ error: 'CHECKOUT_FAILED', message: err.message || 'Paddle checkout failed.' });
+    }
+  }
+
+  // Provider not configured yet: legacy instant-activation path
+  try {
+    const checkout = await createPlanCheckout(user.profile, plan);
+    await recordBillingEvent({
+      userId: user.profile.id,
+      type: 'checkout_created',
+      tier: plan.id,
+      provider: checkout.provider,
+    });
+    res.json({ success: true, url: checkout.url, provider: checkout.provider, plan: plan.id });
+  } catch (err: any) {
+    const status = err instanceof ProviderError ? 503 : 502;
+    res.status(status).json({ error: 'CHECKOUT_FAILED', provider: (err as ProviderError).provider, message: err.message });
+  }
+});
+
+/*
+app.post('/api/billing/checkout', async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const tier = req.body?.tier as string;
+  if (tier === 'custom') {
+    return res
+      .status(400)
+      .json({ error: 'CUSTOM_PLAN', message: `Custom plans are arranged directly — email ${SUPPORT_EMAIL} to get started.` });
+  }
+  const plan = PLAN_BY_ID[tier as SubscriptionTier];
+  if (!plan) return res.status(400).json({ error: 'VALIDATION', message: 'Unknown plan.' });
+
+  // Paddle Checkout: use Paddle as merchant of record for subscription billing
+  if (paddleConfig()) {
+    const priceId = PADDLE_PRICE_IDS[tier];
+    if (!priceId) {
+      return res.status(400).json({ error: 'PADDLE_CONFIG', message: `No Paddle price ID configured for plan "${tier}". Set PADDLE_PRICE_${tier.toUpperCase()} in .env.` });
+    }
+    try {
+      const sb = getSupabase()!;
+      const intentId = `paddle_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       const payload = {
         items: [{ priceId, quantity: 1 }],
         customer: { email: user.profile.email, name: user.profile.company_name },
@@ -3968,6 +4051,7 @@ app.post('/api/billing/checkout', async (req, res) => {
     res.status(status).json({ error: 'CHECKOUT_FAILED', provider: (err as ProviderError).provider, message: err.message });
   }
 });
+*/
 
 // Polled by Settings after returning from the hosted payment page; applies
 // the tier the moment Paddle confirms the subscription charge.

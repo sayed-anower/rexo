@@ -7,7 +7,7 @@ import {
   Zap,
   TrendingUp,
   CreditCard,
-  Sparkles,
+  ShieldCheck,
   ChevronDown,
   ChevronUp,
   BadgeCheck,
@@ -62,7 +62,7 @@ export function HomePage({ onOpenAuth, onGoogleSignIn }: HomePageProps) {
         <div className="text-center space-y-6 max-w-3xl mx-auto">
           {/* Top Pill */}
           <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-primary-soft dark:bg-surface2 border border-primary-soft dark:border-line text-primary dark:text-secondary text-xs font-bold shadow-xs animate-in fade-in duration-300">
-            <Sparkles className="w-4 h-4 text-amber-500" />
+            <ShieldCheck className="w-4 h-4 text-amber-500" />
             <span>Automated Invoice Payment Recovery</span>
           </div>
 
