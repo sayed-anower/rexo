@@ -112,6 +112,7 @@ export function SettingsBilling({
 
   const limits = fetchPlanLimits(user.subscription_tier);
   const currentPlan = user.subscription_tier ? PLAN_BY_ID[user.subscription_tier] : null;
+  const hasActivePlan = !!user.subscription_tier && user.subscription_status === 'active';
 
   useEffect(() => {
     let mounted = true;
@@ -158,8 +159,15 @@ export function SettingsBilling({
     if (params.get('billing') === 'paid') {
       // Returned from the hosted subscription payment — webhook/status poll
       // activates the plan; refresh and confirm to the user.
+      // Poll every 3s for up to 30s in case the webhook is delayed.
       onToast('Payment confirmed by Paddle — activating your plan…');
-      onRefreshStatus();
+      let attempts = 0;
+      const poll = async () => {
+        await onRefreshStatus();
+        attempts++;
+        if (attempts < 10) setTimeout(poll, 3000);
+      };
+      poll();
       const clean = new URLSearchParams(window.location.search);
       clean.delete('billing');
       clean.delete('plan');
@@ -801,18 +809,24 @@ export function SettingsBilling({
             <label className="block text-xs font-semibold text-ink dark:text-ink2">
               Invite a teammate via link
             </label>
+            {!hasActivePlan && (
+              <p className="text-[11px] text-amber-600 dark:text-amber-400 font-medium">
+                You need an active plan to create or manage invite links.
+              </p>
+            )}
             <div className="flex flex-col sm:flex-row gap-2">
               <input
                 type="email"
                 value={inviteEmail}
                 onChange={(e) => setInviteEmail(e.target.value)}
                 placeholder="teammate@email.com (optional)"
-                className="flex-1 px-3 py-2 rounded-xl border border-line dark:border-line bg-white dark:bg-surface text-xs text-ink dark:text-white outline-none focus:ring-2 focus:ring-accent"
+                disabled={!hasActivePlan}
+                className="flex-1 px-3 py-2 rounded-xl border border-line dark:border-line bg-white dark:bg-surface text-xs text-ink dark:text-white outline-none focus:ring-2 focus:ring-accent disabled:opacity-50"
               />
               <button
                 type="button"
                 onClick={handleCreateInvite}
-                disabled={inviting}
+                disabled={inviting || !hasActivePlan}
                 className="px-4 py-2 rounded-xl bg-accent hover:bg-accent-hover text-white font-bold text-xs transition-all flex items-center justify-center gap-2 disabled:opacity-50"
               >
                 <UserPlus className="w-4 h-4" />
@@ -847,8 +861,9 @@ export function SettingsBilling({
                             })
                             .catch((e: any) => onToast(e.message || 'Could not revoke invite.'))
                         }
-                        className="p-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/60 text-rose-600 dark:text-rose-400 transition-colors"
-                        title="Revoke invite"
+                        disabled={!hasActivePlan}
+                        className="p-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/60 text-rose-600 dark:text-rose-400 transition-colors disabled:opacity-50"
+                        title={hasActivePlan ? 'Revoke invite' : 'Active plan required'}
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>

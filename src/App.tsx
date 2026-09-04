@@ -650,8 +650,11 @@ const handleApplyAiSteps = (newSteps: any[]) => {
   const needsPlan = !user?.subscription_tier || user.subscription_status !== 'active';
   // Settings & Billing stays reachable so a pending account can complete
   // checkout and activate a plan; every other tab requires an active plan.
+  // Also allow access when returning from Paddle hosted checkout (billing=paid/checkout
+  // in the URL) so the success handler can refresh the plan status.
   const isBillingTab = route.name === 'app' && route.tab === 'settings';
-  if (needsPlan && !isBillingTab) {
+  const hasBillingReturn = typeof window !== 'undefined' && /[?&]billing=(paid|checkout)/.test(window.location.search);
+  if (needsPlan && !isBillingTab && !hasBillingReturn) {
     return (
       <div className="min-h-screen bg-main dark:bg-main text-ink dark:text-ink flex flex-col font-sans transition-colors">
         {toastMessage && <Toast message={toastMessage} />}
