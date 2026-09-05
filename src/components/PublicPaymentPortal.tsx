@@ -80,6 +80,35 @@ export function PublicPaymentPortal({
     };
   }, [invoice, invoiceId]);
 
+  // Load Paddle.js and auto-open checkout when ?_ptxn= is present in URL
+  // Use a ref to store txnId so it's accessible in callbacks
+  const txnIdRef = useRef<string | null>(null);
+  
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    txnIdRef.current = params.get('_ptxn');
+  }, []);
+  
+  useEffect(() => {
+    const txnId = txnIdRef.current;
+    if (!txnId) return;
+    
+    const paddleScript = document.querySelector('script[src*="paddle"]');
+    if (!paddleScript) {
+      const script = document.createElement('script');
+      script.src = 'https://checkout.paddle.com/js/paddle.js';
+      script.async = true;
+      script.onload = () => {
+        if ((window as any).Paddle && (window as any).Paddle.Checkout) {
+          ;(window as any).Paddle.Checkout.open({ transactionId: txnId });
+        }
+      };
+      document.head.appendChild(script);
+    } else if ((window as any).Paddle && (window as any).Paddle.Checkout) {
+      ;(window as any).Paddle.Checkout.open({ transactionId: txnId });
+    }
+  }, []);
+
   const isPaid = paid || invoice?.status === 'paid';
 
   if (loading) {
