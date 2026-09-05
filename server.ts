@@ -2276,6 +2276,8 @@ app.post('/api/team/invites', async (req, res) => {
 app.delete('/api/team/invites/:id', async (req, res) => {
   const user = await requireUser(req, res);
   if (!user) return;
+  const active = assertPlanActive(user);
+  if (!active.ok) return res.status(402).json(active);
   const sb = getSupabase();
   if (!sb) return dbError(res);
   await sb.from('team_invites').update({ status: 'revoked' }).eq('id', req.params.id).eq('owner_user_id', user.profile.id);
@@ -3926,6 +3928,7 @@ app.post('/api/billing/checkout', async (req, res) => {
         custom_data: { user_id: user.profile.id, tier: plan.id, intent_id: intentId },
         checkout: {
           url_success: `${appUrl()}/app/settings?billing=paid&plan=${plan.id}`,
+          url_cancel: `${appUrl()}/app/settings`,
         },
       };
 

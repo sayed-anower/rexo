@@ -674,9 +674,9 @@ const handleApplyAiSteps = (newSteps: any[]) => {
           onPlanChosen={async (tier) => {
             try {
               const checkout = await createPlanCheckout(tier);
-              if (checkout.external && /^https?:/i.test(checkout.url)) window.location.href = checkout.url;
+              if (checkout.external && /^https?:/i.test(checkout.url)) window.open(checkout.url, '_blank');
               else navigate(checkout.url);
-              showToast('Complete checkout to activate your plan.');
+              showToast('Complete checkout in the new tab, then come back and refresh.');
             } catch (err: any) {
               showToast(err.message);
             }
@@ -868,7 +868,7 @@ const handleApplyAiSteps = (newSteps: any[]) => {
               }}
               onCheckoutPlan={async (tier) => {
                 const checkout = await createPlanCheckout(tier);
-                if (checkout.external && /^https?:/i.test(checkout.url)) window.location.href = checkout.url;
+                if (checkout.external && /^https?:/i.test(checkout.url)) window.open(checkout.url, '_blank');
                 else navigate(checkout.url);
               }}
               onRefreshStatus={async () => {
