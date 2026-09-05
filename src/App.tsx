@@ -50,7 +50,6 @@ import { AiSequenceModal } from './components/AiSequenceModal';
 import { HomePage } from './components/HomePage';
 import { AuthPage } from './components/AuthPage';
 import { InvitePage } from './components/InvitePage';
-import { PlanSelection } from './components/PlanSelection';
 import { PrivacyPolicyPage, TermsOfServicePage, AboutPage } from './components/LegalPages';
 import { PricingPage } from './components/PricingPage';
 import { DocumentationPage } from './components/DocumentationPage';
@@ -655,6 +654,7 @@ const handleApplyAiSteps = (newSteps: any[]) => {
   const isBillingTab = route.name === 'app' && route.tab === 'settings';
   const hasBillingReturn = typeof window !== 'undefined' && /[?&]billing=(paid|checkout)/.test(window.location.search);
   if (needsPlan && !isBillingTab && !hasBillingReturn) {
+    const activeTab = route.name === 'app' ? route.tab : 'dashboard';
     return (
       <div className="min-h-screen bg-main dark:bg-main text-ink dark:text-ink flex flex-col font-sans transition-colors">
         {toastMessage && <Toast message={toastMessage} />}
@@ -669,26 +669,61 @@ const handleApplyAiSteps = (newSteps: any[]) => {
           onNavigateHome={() => navigate('/app/overview')}
           onNavigate={navigate}
         />
-        <PlanSelection
-          user={user}
-          onPlanChosen={async (tier) => {
-            try {
-              const checkout = await createPlanCheckout(tier);
-              if (checkout.external && /^https?:/i.test(checkout.url)) window.open(checkout.url, '_blank');
-              else navigate(checkout.url);
-              showToast('Complete checkout in the new tab, then come back and refresh.');
-            } catch (err: any) {
-              showToast(err.message);
-            }
-          }}
-          onRefreshStatus={async () => {
-            const profile = await fetchUserProfile();
-            if (profile) {
-              setUser(profile);
-              setIsLoggedIn(true);
-            }
-          }}
-        />
+        <div className="flex-1 max-w-7xl mx-auto w-full flex flex-col lg:flex-row">
+          <Sidebar
+            activeTab={activeTab}
+            onTabChange={(tab) => {
+              if (tab === 'dashboard' || tab === 'activity') {
+                navigate(TAB_TO_PATH[tab]);
+              } else {
+                showToast('Choose a plan to access this feature');
+              }
+            }}
+            unpaidCount={0}
+            user={user}
+            onRefreshData={handleRefreshWorkspaceData}
+            onToast={showToast}
+          />
+
+          <main className="flex-1 p-4 sm:p-6 lg:p-8 min-w-0">
+            {dataLoading ? (
+              <div className="flex flex-col items-center justify-center py-24">
+                <div className="w-10 h-10 rounded-2xl bg-accent/20 dark:bg-accent/20 border border-accent/40 flex items-center justify-center">
+                  <RefreshCw className="w-5 h-5 text-accent animate-spin" />
+                </div>
+                <p className="mt-4 text-sm font-bold text-ink dark:text-white">Loading your workspace…</p>
+                <p className="mt-1 text-xs text-ink3">Fetching invoices, sequences, usage and integrations.</p>
+              </div>
+            ) : null}
+            {!dataLoading && activeTab === 'dashboard' && (
+              <DashboardOverview
+                invoices={invoices}
+                sequences={sequences}
+                logs={logs}
+                usage={usage}
+                user={user}
+                onNavigateTab={(tab) => navigate(TAB_TO_PATH[tab as NavigationTab])}
+                onSyncInvoices={() =>
+                  handleSyncInvoices().catch((err) => {
+                    if (!handleGateError(err)) showToast(err.message);
+                  })
+                }
+                onRunAutomation={handleRunAutomation}
+              />
+            )}
+
+            {!dataLoading && activeTab === 'activity' && (
+              <ReminderLogs logs={logs} />
+            )}
+
+            {!dataLoading && activeTab !== 'dashboard' && activeTab !== 'activity' && (
+              <div className="flex flex-col items-center justify-center min-h-[200px] px-8">
+                <p className="text-ink2 text-center">Choose a plan to access this feature</p>
+                <p className="mt-2 text-xs text-ink3 text-center">You can view the dashboard and activity log without a plan.</p>
+              </div>
+            )}
+          </main>
+        </div>
       </div>
     );
   }
