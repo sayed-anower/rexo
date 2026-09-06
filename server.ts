@@ -3853,6 +3853,26 @@ app.get('/api/billing/plans', (req, res) => {
   });
 });
 
+// Paddle overlay config — public token + environment for in-page checkout.
+// The client token (live_…) is public and required to initialize Paddle.js v2
+// in overlay mode. No secret is exposed. Theme handling is done client-side
+// (dark/light follows the app's ThemeToggle) and overlay is responsive.
+app.get('/api/billing/paddle-config', async (req, res) => {
+  const cfg = paddleConfig();
+  if (!cfg || !cfg.clientToken) {
+    return res.json({ configured: false, environment: 'production' });
+  }
+  const env = (cfg.baseUrl || '').toLowerCase().includes('sandbox') ? 'sandbox' : 'production';
+  // Optionally require a session so only logged-in users get the token, but the
+  // token is public by design (used in browser) — allow unauthenticated read.
+  res.json({
+    configured: true,
+    clientToken: cfg.clientToken,
+    environment: env,
+    vendorId: cfg.vendorId,
+  });
+});
+
 // Apply a plan change after payment has been confirmed by the provider
 // (webhook, status poll) or directly from the in-app confirm path.
 async function applyPaidTier(uid: string, tier: SubscriptionTier): Promise<{ name: string }> {
@@ -3913,7 +3933,10 @@ app.post('/api/billing/checkout', async (req, res) => {
   if (!plan) return res.status(400).json({ error: 'VALIDATION', message: 'Unknown plan.' });
 
   // Paddle Checkout: use Paddle as merchant of record for subscription billing
+  // For overlay, we create a Paddle transaction and return its id so the frontend
+  // can open Paddle.Checkout.open({ transactionId }) inline (no new tab, no refresh).
   if (paddleConfig()) {
+    const cfg = paddleConfig()!;
     const priceId = PADDLE_PRICE_IDS[tier];
     if (!priceId) {
       return res.status(400).json({ error: 'PADDLE_CONFIG', message: `No Paddle price ID configured for plan "${tier}". Set PADDLE_PRICE_${tier.toUpperCase()} in .env.` });
@@ -3922,14 +3945,21 @@ app.post('/api/billing/checkout', async (req, res) => {
       const sb = getSupabase()!;
       const intentId = `paddle_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       
-      // Paddle Billing format
+      // Paddle Billing transaction — overlay-ready. The transaction already carries
+      // custom_data so the webhook can map the payment back to the user/tier.
+      // We include both checkout urls (for hosted fallback) and rely on
+      // transactionId for the overlay. Paddle's overlay is responsive and
+      // theme-aware; branding (logo/colours) comes from Dashboard → Checkout → Branding.
       const payload = {
         items: [{ price_id: priceId, quantity: 1 }],
         custom_data: { user_id: user.profile.id, tier: plan.id, intent_id: intentId },
+        // Hosted fallback urls — not used for overlay but kept for direct url open fallback
         checkout: {
           url_success: `${appUrl()}/app/settings?billing=paid&plan=${plan.id}`,
           url_cancel: `${appUrl()}/app/settings`,
         },
+        // Ensure automatic collection and draft status so overlay can collect payment inline
+        collection_mode: 'automatic' as const,
       };
 
       const apiRes = await paddleApi('/transactions', 'POST', payload);
@@ -3938,12 +3968,10 @@ app.post('/api/billing/checkout', async (req, res) => {
         throw new Error(apiRes.json?.error?.detail || apiRes.json?.error?.message || `Paddle checkout could not be created (${apiRes.status}).`);
       }
 
-      // Hosted checkout URL returned in transaction data
-      const checkoutUrl = apiRes.json.data.checkout?.url;
-
-      if (!checkoutUrl) {
-        throw new Error('Paddle transaction succeeded, but no checkout URL was returned.');
-      }
+      const transactionId = apiRes.json.data.id as string;
+      // Hosted checkout URL for fallback (direct navigation) — overlay uses transactionId
+      const checkoutUrl = apiRes.json.data.checkout?.url || `${appUrl()}/app/settings?billing=checkout&plan=${plan.id}`;
+      const environment = (cfg.baseUrl || '').toLowerCase().includes('sandbox') ? 'sandbox' : 'production';
 
       await sb.from('payment_intents').upsert({
         id: intentId,
@@ -3960,7 +3988,23 @@ app.post('/api/billing/checkout', async (req, res) => {
       });
 
       await recordBillingEvent({ userId: user.profile.id, type: 'checkout_created', tier: plan.id, provider: 'paddle' });
-      return res.json({ success: true, url: checkoutUrl, external: true, provider: 'paddle', mode: 'hosted', plan: plan.id, amount: plan.price });
+      // Overlay response: frontend will NOT open a new tab. Instead it loads
+      // https://cdn.paddle.com/paddle/v2/paddle.js, initializes with clientToken,
+      // and calls Paddle.Checkout.open({ transactionId, settings:{ displayMode:'overlay', theme: dark|light }})
+      return res.json({ 
+        success: true, 
+        url: checkoutUrl, 
+        external: false, // no new tab — overlay handles it
+        provider: 'paddle', 
+        mode: 'overlay', 
+        plan: plan.id, 
+        amount: plan.price,
+        transactionId,
+        intentId,
+        clientToken: cfg.clientToken,
+        environment,
+        customerEmail: user.profile.email,
+      });
     } catch (err: any) {
       console.error('[Billing] Paddle checkout failed:', err.message);
       return res.status(502).json({ error: 'CHECKOUT_FAILED', message: err.message || 'Paddle checkout failed.' });

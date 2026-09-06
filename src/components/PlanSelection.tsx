@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Check, X, ShieldCheck, Sparkles, RefreshCw, ArrowRight, AlertCircle, Loader2, Mail } from 'lucide-react';
 import { PlanCard } from './PlanCard';
-import { fetchBillingPlanData, fetchProration, createPlanCheckout } from '../lib/storage';
+import { fetchBillingPlanData, fetchProration, createPlanCheckout, applyPlanTier } from '../lib/storage';
 import { UserProfile, SubscriptionTier } from '../types';
 
 /*
@@ -48,6 +48,31 @@ export function PlanSelection({ user, onPlanChosen, onRefreshStatus }: PlanSelec
     try {
       const p = await fetchProration(tier);
       setProration((prev) => ({ ...prev, [tier]: p }));
+      // Prefer Paddle overlay — no new tab, no refresh, themed & responsive
+      try {
+        const checkout = await createPlanCheckout(tier);
+        if (checkout.transactionId && checkout.clientToken) {
+          const { openPaddleOverlay } = await import('../lib/paddleOverlay');
+          const result = await openPaddleOverlay({
+            transactionId: checkout.transactionId,
+            clientToken: checkout.clientToken,
+            environment: checkout.environment,
+            customerEmail: (checkout as any).customerEmail || user.email,
+          });
+          if (result.completed) {
+            try { await applyPlanTier(tier); } catch {}
+            await onRefreshStatus();
+            let a = 0;
+            const poll = async () => { await onRefreshStatus().catch(()=>{}); a++; if (a < 5) setTimeout(poll, 2500); };
+            setTimeout(poll, 1500);
+          } else if (result.closed) {
+            setError('Checkout closed — you can reopen it anytime to complete payment.');
+          }
+          return;
+        }
+      } catch (overlayErr: any) {
+        console.warn('[Paddle Overlay] PlanSelection fallback:', overlayErr?.message);
+      }
       await onPlanChosen(tier);
     } catch (e: any) {
       setError(e.message);

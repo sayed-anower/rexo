@@ -499,8 +499,23 @@ export async function fetchBillingPlanData(): Promise<{
   return apiFetch('/api/billing/plans');
 }
 
-export async function createPlanCheckout(tier: SubscriptionTier): Promise<{ url: string; provider: string; external?: boolean; mode?: string; amount?: number }> {
+export async function createPlanCheckout(tier: SubscriptionTier): Promise<{ 
+  url: string; 
+  provider: string; 
+  external?: boolean; 
+  mode?: string; 
+  amount?: number;
+  transactionId?: string;
+  intentId?: string;
+  clientToken?: string;
+  environment?: string;
+  customerEmail?: string;
+}> {
   return apiFetch('/api/billing/checkout', { method: 'POST', body: JSON.stringify({ tier }) });
+}
+
+export async function fetchPaddleConfig(): Promise<{ configured: boolean; clientToken?: string; environment: string; vendorId?: string }> {
+  return apiFetch('/api/billing/paddle-config');
 }
 
 // Polled by Settings after returning from the hosted subscription payment.

@@ -40,6 +40,7 @@ import {
   uploadCompanyLogo,
   applyPlanTier,
   fetchUsage,
+  createPlanCheckout,
 } from '../lib/storage';
 import { BillingEvent, TeamInvite, TeamMember, PaymentInstrument } from '../types';
 import { fetchInstruments } from '../lib/storage';
@@ -249,6 +250,68 @@ export function SettingsBilling({
     try {
       const p = await fetchProration(tier);
       setProration((prev) => ({ ...prev, [tier]: p }));
+
+      // Preferred path: Paddle Billing overlay (no new tab, no refresh).
+      // We create the Paddle transaction server-side and then open it inline.
+      // The overlay inherits theme (dark/light) from the app and is fully
+      // responsive — Paddle's Dashboard branding (logo/colours) provides the
+      // extra customization (limited by Paddle, as noted).
+      try {
+        const checkout = await createPlanCheckout(tier);
+        // Overlay path — server returns transactionId + clientToken when Paddle is configured
+        if (checkout.transactionId && checkout.clientToken) {
+          const { openPaddleOverlay } = await import('../lib/paddleOverlay');
+          onToast('Opening secure Paddle checkout — complete payment in the overlay. No new tab.');
+          // Clear spinner while overlay is visible (user may take time to pay)
+          setUpgradingTier(null);
+          const result = await openPaddleOverlay({
+            transactionId: checkout.transactionId,
+            clientToken: checkout.clientToken,
+            environment: checkout.environment,
+            customerEmail: checkout.customerEmail || user.email,
+          });
+          if (result.completed) {
+            onToast('Payment confirmed by Paddle — activating your plan…');
+            try {
+              await applyPlanTier(tier);
+              onToast(`Plan activated — ${tier.toUpperCase()} limits are now applied.`);
+            } catch (e: any) {
+              // Fallback: webhook will activate shortly — poll status
+              onToast(e.message || 'Plan activation delayed — webhook will apply shortly. Refreshing…');
+            }
+            await onRefreshStatus();
+            let attempts = 0;
+            const poll = async () => {
+              await onRefreshStatus().catch(() => {});
+              attempts++;
+              if (attempts < 6) setTimeout(poll, 2500);
+            };
+            setTimeout(poll, 1500);
+          } else if (result.closed) {
+            onToast('Checkout closed — you can reopen it anytime to complete payment.');
+            await onRefreshStatus().catch(() => {});
+          }
+          return;
+        }
+        // No overlay data — fallback to legacy in-app confirmation or hosted url
+        if (checkout.url && checkout.provider !== 'paddle') {
+          // Internal checkout path (Paddle not configured) — show confirmation card
+          setCheckoutTier(tier);
+          onToast('Checkout ready — confirm below to activate your plan.');
+          return;
+        }
+        if (checkout.transactionId && !checkout.clientToken) {
+          // Edge: transaction created but token missing — show confirmation
+          setCheckoutTier(tier);
+          return;
+        }
+      } catch (overlayErr: any) {
+        // Overlay failed (e.g. Paddle script blocked, network). Fall back to legacy handler
+        console.warn('[Paddle Overlay] opening failed, falling back:', overlayErr?.message);
+        // Continue to legacy onCheckoutPlan below
+      }
+
+      // Legacy fallback: use the prop (may open hosted url or set confirmation)
       await onCheckoutPlan(tier);
       onToast('Opening secure checkout — new plan limits apply the moment payment is confirmed.');
     } catch (e: any) {

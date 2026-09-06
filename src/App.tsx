@@ -834,8 +834,45 @@ const handleApplyAiSteps = (newSteps: any[]) => {
               }}
               onCheckoutPlan={async (tier) => {
                 const checkout = await createPlanCheckout(tier);
-                if (checkout.external && /^https?:/i.test(checkout.url)) window.open(checkout.url, '_blank');
-                else navigate(checkout.url);
+                // Inline Paddle overlay — no new tab, no page refresh (per prompt).
+                // The overlay is responsive and theme-aware (dark/light follows app theme).
+                if (checkout.transactionId && checkout.clientToken) {
+                  const { openPaddleOverlay } = await import('./lib/paddleOverlay');
+                  const result = await openPaddleOverlay({
+                    transactionId: checkout.transactionId,
+                    clientToken: checkout.clientToken,
+                    environment: checkout.environment,
+                    customerEmail: (checkout as any).customerEmail || user?.email,
+                  });
+                  if (result.completed) {
+                    showToast('Payment confirmed by Paddle — activating your plan…');
+                    try { const { applyPlanTier } = await import('./lib/storage'); await applyPlanTier(tier); } catch {}
+                    const profile = await fetchUserProfile();
+                    if (profile) { setUser(profile); setIsLoggedIn(true); }
+                    // Poll for webhook-driven activation as well
+                    let a = 0;
+                    const poll = async () => {
+                      const p = await fetchUserProfile();
+                      if (p) { setUser(p); setIsLoggedIn(true); }
+                      a++; if (a < 5) setTimeout(poll, 2500);
+                    };
+                    setTimeout(poll, 1500);
+                  } else if (result.closed) {
+                    showToast('Checkout closed — you can reopen it anytime to complete payment.');
+                  }
+                  return;
+                }
+                // Fallback: in-app checkout confirmation (no new tab). The billing tab
+                // will show the "Confirm your plan" card where the user can activate.
+                if (checkout.url) {
+                  // Internal URL like /app/settings?billing=checkout&plan=...
+                  if (checkout.url.startsWith('/')) navigate(checkout.url);
+                  else {
+                    // External hosted fallback — keep in same tab (no _blank) only if overlay unavailable
+                    // But per prompt we avoid new tabs; keep user on page and surface the confirmation
+                    navigate(`/app/settings?billing=checkout&plan=${tier}`);
+                  }
+                }
               }}
               onRefreshStatus={async () => {
                 const profile = await fetchUserProfile();
