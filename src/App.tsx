@@ -288,7 +288,7 @@ export default function App() {
     setAuthChecked(true);
     setInvoices([]);
     navigate('/app/overview');
-    showToast(`Welcome to Eronflow, ${u.company_name}!`);
+    showToast(`Welcome to EronFlow, ${u.company_name}!`);
   };
 
   const handleSaveInvoice = async (invData: Partial<Invoice>) => {

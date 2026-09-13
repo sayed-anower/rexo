@@ -20,15 +20,15 @@ const sections = [
     items: [
       {
         title: 'Quick Start Guide',
-        body: `1. Sign up for an account at eronflow.top/signup\n2. Connect your QuickBooks or Xero account in the Connectors tab\n3. Your unpaid invoices will sync automatically\n4. Create message templates or use the built-in ones\n5. Set up your first automation on the Automation page\n6. Eronflow will send reminders on schedule until you get paid`,
+        body: `1. Sign up for an account at eronflow.top/signup\n2. Connect your QuickBooks or Xero account in the Connectors tab\n3. Your unpaid invoices will sync automatically\n4. Create message templates or use the built-in ones\n5. Set up your first automation on the Automation page\n6. EronFlow will send reminders on schedule until you get paid`,
       },
       {
         title: 'Connecting QuickBooks',
-        body: `1. Navigate to Connectors in the sidebar\n2. Click "Connect" next to QuickBooks\n3. Authorize Eronflow in the QuickBooks OAuth screen\n4. Your invoices will start syncing within minutes\n5. You can manually sync at any time from the Connectors page`,
+        body: `1. Navigate to Connectors in the sidebar\n2. Click "Connect" next to QuickBooks\n3. Authorize EronFlow in the QuickBooks OAuth screen\n4. Your invoices will start syncing within minutes\n5. You can manually sync at any time from the Connectors page`,
       },
       {
         title: 'Connecting Xero',
-        body: `1. Navigate to Connectors in the sidebar\n2. Click "Connect" next to Xero\n3. Authorize Eronflow in the Xero OAuth screen\n4. Your invoices will start syncing within minutes\n5. You can manually sync at any time from the Connectors page`,
+        body: `1. Navigate to Connectors in the sidebar\n2. Click "Connect" next to Xero\n3. Authorize EronFlow in the Xero OAuth screen\n4. Your invoices will start syncing within minutes\n5. You can manually sync at any time from the Connectors page`,
       },
     ],
   },
@@ -92,19 +92,19 @@ const sections = [
     items: [
       {
         title: 'Public Payment Portal (BYOK)',
-        body: `Every invoice gets a unique payment link (your-domain.com/pay/invoice-id). Clients can pay by card, bank transfer, PayPal, or wallet. Invoice payments settle 100% directly to your own Stripe/PayPal account via your BYOK keys (Settings → Payment Setup). Eronflow never touches invoice money. SaaS billing (your plan) is via Paddle as merchant of record.`,
+        body: `Every invoice gets a unique payment link (your-domain.com/pay/invoice-id). Clients can pay by card, bank transfer, PayPal, or wallet. Invoice payments settle 100% directly to your own Stripe/PayPal account via your BYOK keys (Settings → Payment Setup). EronFlow never touches invoice money. SaaS billing (your plan) is via Paddle as merchant of record.`,
       },
       {
         title: 'BYOK Setup — Stripe',
-        body: `1. Log into Stripe Dashboard → Developers → API Keys → Restricted keys → Create restricted key (name: Eronflow)\n2. Permissions: PaymentIntents Write, Customers Write, Checkout Sessions Write, Charges Read\n3. Copy the key (rk_live_... for live, rk_test_... for sandbox) and paste it in Settings → Billing → Payment Setup (BYOK)\n4. Optional: also paste your publishable key (pk_live_/pk_test_) for the best portal UX\n5. Click Save & Verify — Eronflow validates the key instantly against Stripe Balance API\n6. Test from Bangladesh: toggle Test Mode in Stripe Dashboard and use rk_test_/pk_test_ — no US verification needed.\nDocs: https://dashboard.stripe.com/apikeys`,
+        body: `1. Log into Stripe Dashboard → Developers → API Keys → Restricted keys → Create restricted key (name: EronFlow)\n2. Permissions: PaymentIntents Write, Customers Write, Checkout Sessions Write, Charges Read\n3. Copy the key (rk_live_... for live, rk_test_... for sandbox) and paste it in Settings → Billing → Payment Setup (BYOK)\n4. Optional: also paste your publishable key (pk_live_/pk_test_) for the best portal UX\n5. Click Save & Verify — EronFlow validates the key instantly against Stripe Balance API\n6. Test from Bangladesh: toggle Test Mode in Stripe Dashboard and use rk_test_/pk_test_ — no US verification needed.\nDocs: https://dashboard.stripe.com/apikeys`,
       },
       {
         title: 'BYOK Setup — PayPal',
-        body: `1. Log into PayPal Developer Dashboard → Toggle to Live (or Sandbox for testing) → Apps & Credentials → Create App (type: Merchant)\n2. Name: Eronflow Payment Gateway\n3. Copy Client ID and Client Secret and paste in Settings → Billing → Payment Setup (BYOK)\n4. Select Live or Sandbox mode to match the keys\n5. Click Save & Verify — Eronflow tests the keys via PayPal OAuth token endpoint\n6. Sandbox from Bangladesh: use the Default Application under Sandbox → no verification needed.\nDocs: https://developer.paypal.com/dashboard/applications`,
+        body: `1. Log into PayPal Developer Dashboard → Toggle to Live (or Sandbox for testing) → Apps & Credentials → Create App (type: Merchant)\n2. Name: EronFlow Payment Gateway\n3. Copy Client ID and Client Secret and paste in Settings → Billing → Payment Setup (BYOK)\n4. Select Live or Sandbox mode to match the keys\n5. Click Save & Verify — EronFlow tests the keys via PayPal OAuth token endpoint\n6. Sandbox from Bangladesh: use the Default Application under Sandbox → no verification needed.\nDocs: https://developer.paypal.com/dashboard/applications`,
       },
       {
         title: 'Paddle — SaaS Billing Only',
-        body: `Your Eronflow plan (Starter/Pro/Agency) is billed via Paddle as merchant of record (handles VAT/tax). This is separate from invoice payments. 100% of client invoice money goes to your Stripe/PayPal via BYOK — Paddle never touches invoice payments.`,
+        body: `Your EronFlow plan (Starter/Pro/Agency) is billed via Paddle as merchant of record (handles VAT/tax). This is separate from invoice payments. 100% of client invoice money goes to your Stripe/PayPal via BYOK — Paddle never touches invoice payments.`,
       },
     ],
   },
@@ -151,7 +151,7 @@ export function DocumentationPage() {
           <h2 className="text-xl font-bold text-ink dark:text-white">Documentation</h2>
         </div>
         <p className="text-xs text-ink2 dark:text-ink2">
-          Everything you need to know about using Eronflow to recover unpaid invoices.
+          Everything you need to know about using EronFlow to recover unpaid invoices.
         </p>
       </div>
 

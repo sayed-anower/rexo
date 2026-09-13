@@ -1,6 +1,6 @@
-# Eronflow — Automated Payment Recovery & Invoice Reminders SaaS
+# EronFlow — Automated Payment Recovery & Invoice Reminders SaaS
 
-Eronflow is a professional, production-ready Automated Payment Recovery & Invoice Reminders SaaS designed for B2B digital agencies. It streamlines debt collection by syncing open invoices from QuickBooks and Xero, executing multi-step escalation sequences via Email (Resend), WhatsApp (Meta WhatsApp Cloud API), and SMS (EasySendSMS).
+EronFlow is a professional, production-ready Automated Payment Recovery & Invoice Reminders SaaS designed for B2B digital agencies. It streamlines debt collection by syncing open invoices from QuickBooks and Xero, executing multi-step escalation sequences via Email (Resend), WhatsApp (Meta WhatsApp Cloud API), and SMS (EasySendSMS).
 
 Every transaction, reminder, and account flow is handled through real-world providers and a persistent PostgreSQL database. **SaaS billing via Paddle (merchant of record); invoice payments via Bring Your Own Keys (BYOK) — 100% of client money settles directly to your Stripe/PayPal account.**
 
@@ -82,7 +82,7 @@ npm run dev          # Starts Express + Vite on http://localhost:3000
 
 ### 3. Secure Payments (BYOK)
 - Branded Public Payment Portal (`/pay/<invoice-id>`).
-- **BYOK invoice payments:** Client payment links use **your own Stripe (restricted key rk_live_/rk_test_) and PayPal (Client ID/Secret)** — funds settle **100% directly** to your Stripe/PayPal balance. Eronflow never touches invoice money. See `PAY.md` and Settings → Payment Setup.
+- **BYOK invoice payments:** Client payment links use **your own Stripe (restricted key rk_live_/rk_test_) and PayPal (Client ID/Secret)** — funds settle **100% directly** to your Stripe/PayPal balance. EronFlow never touches invoice money. See `PAY.md` and Settings → Payment Setup.
 - SaaS subscriptions billed via **Paddle** (merchant of record, handles VAT/tax).
 - The `[payment_link]` template variable always expands to the full public URL (`APP_URL` + portal path), never a bare `/pay/...` path.
 - Support for Card, Bank Transfer, PayPal, Apple Pay, and Google Pay via your connected Stripe/PayPal account.
@@ -99,7 +99,7 @@ npm run dev          # Starts Express + Vite on http://localhost:3000
 ---
 
 ## 👥 Development Team
-Developed and maintained by the **Eronflow Engineering Team**.
+Developed and maintained by the **EronFlow Engineering Team**.
 
 ## 📄 License
 Commercial - All Rights Reserved.

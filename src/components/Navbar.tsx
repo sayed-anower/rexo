@@ -52,7 +52,7 @@ export function Navbar({
         >
           <img
             src="/logo.svg"
-            alt="Eronflow"
+            alt="EronFlow"
             className="h-9 sm:h-10"
           />
           <div>

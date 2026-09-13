@@ -603,7 +603,7 @@ export function SettingsBilling({
               );
             })}
 
-            {/* Custom Plan card — arranged directly with the Eronflow team */}
+            {/* Custom Plan card — arranged directly with the EronFlow team */}
             <div className="relative flex flex-col p-6 rounded-3xl bg-main dark:bg-surface2/60 border border-dashed border-line dark:border-line shadow-sm">
               <div className="flex-1">
                 <h4 className="text-lg font-bold text-ink dark:text-white">{CUSTOM_PLAN.name}</h4>
@@ -666,7 +666,7 @@ export function SettingsBilling({
 
             <a
               href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(`Plan Cancellation — ${currentPlan?.name || 'Current Plan'}`)}&body=${encodeURIComponent(
-                `Hi Eronflow Support,\n\nI'd like to cancel my ${currentPlan?.name || 'current'} plan.\n\nAccount email: ${user.email}\nCompany: ${user.company_name}\n\nEstimated refund if I cancel today: $${refundPreview && !refundPreview.inactive ? Number(refundPreview.refund ?? 0).toFixed(2) : '—'}\nUsage this period: ${refundPreview ? `${refundPreview.usage?.emails_sent ?? 0} emails, ${refundPreview.usage?.whatsapp_sent ?? 0} WA, ${refundPreview.usage?.SMS_sent ?? 0} SMS, ${refundPreview.usage?.ai_generations ?? 0} AI` : ''}\n\nPlease confirm the cancellation and refund.\n\nThank you.`
+                `Hi EronFlow Support,\n\nI'd like to cancel my ${currentPlan?.name || 'current'} plan.\n\nAccount email: ${user.email}\nCompany: ${user.company_name}\n\nEstimated refund if I cancel today: $${refundPreview && !refundPreview.inactive ? Number(refundPreview.refund ?? 0).toFixed(2) : '—'}\nUsage this period: ${refundPreview ? `${refundPreview.usage?.emails_sent ?? 0} emails, ${refundPreview.usage?.whatsapp_sent ?? 0} WA, ${refundPreview.usage?.SMS_sent ?? 0} SMS, ${refundPreview.usage?.ai_generations ?? 0} AI` : ''}\n\nPlease confirm the cancellation and refund.\n\nThank you.`
               )}`}
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-red-50 dark:bg-red-950/60 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 font-bold text-xs transition-colors hover:bg-red-100 dark:hover:bg-red-950"
             >

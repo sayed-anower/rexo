@@ -220,7 +220,7 @@ export function Connectors({ onConnect, onDisconnect, onSync }: ConnectorsProps)
 
       {/* Description */}
       <p className="mt-1 text-sm text-[var(--text-secondary)] max-w-2xl leading-relaxed">
-        Connect Stripe or PayPal to let clients pay you directly — 100% goes to your account. Paddle handles Eronflow subscriptions (no extra fee). QuickBooks/Xero pull invoices, messaging sends branded reminders.
+        Connect Stripe or PayPal to let clients pay you directly — 100% goes to your account. Paddle handles EronFlow subscriptions (no extra fee). QuickBooks/Xero pull invoices, messaging sends branded reminders.
       </p>
     </div>
   </div>
@@ -236,7 +236,7 @@ export function Connectors({ onConnect, onDisconnect, onSync }: ConnectorsProps)
         <div className="p-4 rounded-2xl bg-main dark:bg-surface2/60 border border-line dark:border-line text-xs text-ink2 dark:text-ink2 flex items-start gap-2">
           <ShieldCheck className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
           <p>
-            QuickBooks and Xero stay in sync through <strong>webhooks</strong> — they notify Eronflow only when
+            QuickBooks and Xero stay in sync through <strong>webhooks</strong> — they notify EronFlow only when
             an invoice changes, so no polling is used. WhatsApp Business, SMS and Email are configured
             with your business credentials and send reminders branded as your company.
           </p>

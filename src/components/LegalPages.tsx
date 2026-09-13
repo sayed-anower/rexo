@@ -42,11 +42,11 @@ export function PrivacyPolicyPage({ onBackHome }: LegalPageProps) {
     <LegalShell
       icon={<ShieldCheck className="w-7 h-7" />}
       title="Privacy Policy"
-      subtitle="How Eronflow collects, uses and protects your data."
+      subtitle="How EronFlow collects, uses and protects your data."
       updated="August 26, 2026"
     >
       <p>
-        Eronflow provides automated invoice recovery for B2B digital agencies. This policy
+        EronFlow provides automated invoice recovery for B2B digital agencies. This policy
         explains what personal data we collect, why we collect it, and the rights you have over it.
       </p>
 
@@ -63,7 +63,7 @@ export function PrivacyPolicyPage({ onBackHome }: LegalPageProps) {
       <ul>
         <li>To operate the service: sending reminders through email, WhatsApp and SMS.</li>
         <li>To schedule automations exactly when you configure them (Upstash QStash).</li>
-        <li>To process subscription payments via Paddle (merchant of record) and invoice payments via your own Stripe/PayPal keys (BYOK — Eronflow never touches invoice funds).</li>
+        <li>To process subscription payments via Paddle (merchant of record) and invoice payments via your own Stripe/PayPal keys (BYOK — EronFlow never touches invoice funds).</li>
         <li>To generate draft templates when you explicitly request AI assistance (Google Gemini).</li>
         <li>To provide support and prevent abuse of the platform.</li>
       </ul>
@@ -115,17 +115,17 @@ export function TermsOfServicePage({ onBackHome }: LegalPageProps) {
     <LegalShell
       icon={<FileText className="w-7 h-7" />}
       title="Terms of Service"
-      subtitle="The agreement between you and Eronflow."
+      subtitle="The agreement between you and EronFlow."
       updated="August 26, 2026"
     >
       <p>
-        By creating an Eronflow account you agree to these terms. If you are accepting on behalf of a company, you confirm
+        By creating an EronFlow account you agree to these terms. If you are accepting on behalf of a company, you confirm
         you have authority to bind that company.
       </p>
 
       <h2>1. The service</h2>
       <p>
-        Eronflow tracks unpaid invoices and sends reminder messages (email, WhatsApp, SMS) on schedules you configure,
+        EronFlow tracks unpaid invoices and sends reminder messages (email, WhatsApp, SMS) on schedules you configure,
         including payment links so your clients can pay. A paid subscription is required — there is no free tier.
       </p>
 
@@ -133,13 +133,13 @@ export function TermsOfServicePage({ onBackHome }: LegalPageProps) {
       <ul>
         <li>You must provide a valid email address, country and phone number at signup and verify ownership via a one-time code.</li>
         <li>You are responsible for keeping your credentials secure and for all activity under your account.</li>
-        <li>BYOK payment keys (Stripe restricted key and/or PayPal Client ID + Secret) are added in Settings → Payment Setup; invoice payments then settle directly to your Stripe/PayPal account (Eronflow never holds funds).</li>
+        <li>BYOK payment keys (Stripe restricted key and/or PayPal Client ID + Secret) are added in Settings → Payment Setup; invoice payments then settle directly to your Stripe/PayPal account (EronFlow never holds funds).</li>
       </ul>
 
       <h2>3. Acceptable use</h2>
       <ul>
         <li>Only send reminders to clients who owe you money and with whom you have a legitimate business relationship.</li>
-        <li>Do not use Eronflow for spam, harassment, unlawful content, or messaging recipients who have opted out.</li>
+        <li>Do not use EronFlow for spam, harassment, unlawful content, or messaging recipients who have opted out.</li>
         <li>Respect each communication channel's policies (Meta WhatsApp Business Policy, carrier SMS rules, anti-spam laws such as CAN-SPAM/GDPR).</li>
       </ul>
 
@@ -158,13 +158,13 @@ export function TermsOfServicePage({ onBackHome }: LegalPageProps) {
 
       <h2>6. Intellectual property</h2>
       <p>
-        You own your invoice data and message content. We own the Eronflow platform, brand and software. You grant us the
+        You own your invoice data and message content. We own the EronFlow platform, brand and software. You grant us the
         limited right to process your content solely to operate the service.
       </p>
 
       <h2>7. Liability</h2>
       <p>
-        The service is provided "as is". To the maximum extent permitted by law, Eronflow's aggregate liability is limited
+        The service is provided "as is". To the maximum extent permitted by law, EronFlow's aggregate liability is limited
         to the fees you paid in the three months preceding the claim. We are not liable for indirect or consequential
         damages, including lost profits arising from undelivered messages.
       </p>
@@ -185,21 +185,21 @@ export function AboutPage({ onBackHome }: LegalPageProps) {
   return (
     <LegalShell
       icon={<Info className="w-7 h-7" />}
-      title="About Eronflow"
+      title="About EronFlow"
       subtitle="Automated invoice recovery built for digital agencies."
       updated="August 26, 2026"
     >
       <p>
-        Eronflow exists for one reason: agencies do great work and then wait — weeks, sometimes months — to get paid.
-        Chasing invoices is awkward, easy to forget, and expensive. Eronflow turns that chase into a polite, persistent,
+        EronFlow exists for one reason: agencies do great work and then wait — weeks, sometimes months — to get paid.
+        Chasing invoices is awkward, easy to forget, and expensive. EronFlow turns that chase into a polite, persistent,
         fully automated process.
       </p>
 
-      <h2>What Eronflow does</h2>
+      <h2>What EronFlow does</h2>
       <ul>
         <li><strong>Tracks invoices</strong> — add them manually or sync automatically from QuickBooks and Xero.</li>
         <li><strong>Sends smart reminders</strong> — friendly before the due date, firm after it, across email, WhatsApp and SMS.</li>
-        <li><strong>Collects payments</strong> — every reminder carries a branded payment link; via BYOK, clients pay by card, bank transfer, PayPal or wallet and 100% settles directly to your Stripe/PayPal account (Eronflow never touches invoice funds). Paddle handles only your SaaS subscription.</li>
+        <li><strong>Collects payments</strong> — every reminder carries a branded payment link; via BYOK, clients pay by card, bank transfer, PayPal or wallet and 100% settles directly to your Stripe/PayPal account (EronFlow never touches invoice funds). Paddle handles only your SaaS subscription.</li>
         <li><strong>Automates everything</strong> — timezone-exact schedules fire at the minute you choose; paid invoices stop receiving reminders automatically.</li>
         <li><strong>Drafts copy with AI</strong> — generate recovery sequences and templates tuned to your tone.</li>
       </ul>

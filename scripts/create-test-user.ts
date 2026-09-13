@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 /**
- * Interactive test-user generator for Eronflow.
+ * Interactive test-user generator for EronFlow.
  *
  * Usage:  npm run create-test-user
  *
@@ -39,7 +39,7 @@ const rl = readline.createInterface({ input: process.stdin, output: process.stdo
 const ask = (q: string) => new Promise<string>((res) => rl.question(q, res));
 
 async function main() {
-  console.log('\n🔧 Eronflow — Create Test User\n');
+  console.log('\n🔧 EronFlow — Create Test User\n');
 
   const name = (await ask('Company name: ')).trim() || 'Test Agency';
   const email = (await ask('Email address: ')).trim();

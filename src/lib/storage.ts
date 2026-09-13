@@ -365,7 +365,7 @@ export async function verifyPayee(): Promise<{ ok: boolean; verified: boolean; m
 
 // 4c. PAYMENT INSTRUMENTS (multiple cards / bank accounts / PayPal)
 // One instrument can be selected as the payout destination (receives
-// collected client payments) and another pays the Eronflow subscription.
+// collected client payments) and another pays the EronFlow subscription.
 export interface InstrumentSelection {
   instruments: PaymentInstrument[];
   payoutInstrumentId: string | null;
@@ -775,7 +775,7 @@ export const APP_CONNECTORS = [
     provider: 'quickbooks',
     name: 'QuickBooks',
     category: 'accounting',
-    description: 'Sync invoices from QuickBooks Online and let Eronflow chase them automatically.',
+    description: 'Sync invoices from QuickBooks Online and let EronFlow chase them automatically.',
   },
   {
     id: 'conn_xero',

@@ -9,7 +9,7 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* ============================================================
-   Eronflow Brand Palette (Professional Blue Theme)
+   EronFlow Brand Palette (Professional Blue Theme)
    These raw tokens drive the entire UI. Tailwind theme colors
    (defined below in @theme) resolve through var() to these, so
    light/dark mode flipping happens in one place.

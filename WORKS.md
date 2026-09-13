@@ -1,4 +1,4 @@
-# Eronflow
+# EronFlow
 
 Everything that was done, every API the platform uses, exactly which env var each one
 needs, all callback/redirect/webhook URLs, what is still missing, and how to take the
@@ -166,7 +166,7 @@ Currently `http://localhost:3000`. QStash, OAuth callbacks and webhooks need a p
 
 ### 4.3 EasySendSMS (already working)
 Key is live (proven above). For production polish:
-* Alphanumeric sender `EASYSENDSMS_SENDER=Eronflow` may be replaced by a generic ID in some
+* Alphanumeric sender `EASYSENDSMS_SENDER=EronFlow` may be replaced by a generic ID in some
   countries (e.g. Bangladesh often delivers from a random shortcode unless a Sender ID is
   approved). Register a Sender ID in the EasySendSMS dashboard per country and set it here.
 * Watch balance: `POST /v1/rest/sms/balance` with the `apikey` header.

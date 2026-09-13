@@ -17,7 +17,7 @@ export interface UserProfile {
   email_signature?: string;
   payee?: PayeeInfo;
   default_payout_instrument_id?: string | null; // receives collected client payments
-  default_billing_instrument_id?: string | null; // charged for the Eronflow subscription
+  default_billing_instrument_id?: string | null; // charged for the EronFlow subscription
   created_at: string;
 }
 

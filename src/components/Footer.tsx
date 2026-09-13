@@ -18,7 +18,7 @@ export function Footer({ onNavigateHome, onOpenAuth }: FooterProps) {
         <div className="flex items-center gap-3">
           <img
             src="/logo.svg"
-            alt="Eronflow"
+            alt="EronFlow"
             className="h-10"
           />
             <span className="font-extrabold text-lg tracking-tight text-[#0284C7] dark:text-[#38BDF8]">ERONFLOW</span>
@@ -118,7 +118,7 @@ export function Footer({ onNavigateHome, onOpenAuth }: FooterProps) {
     </div>
 
     <div className="mt-12 pt-8 border-t border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500 dark:text-slate-400">
-      <p>© {new Date().getFullYear()} Eronflow. All rights reserved.</p>
+      <p>© {new Date().getFullYear()} EronFlow. All rights reserved.</p>
       <div className="flex items-center gap-4">
         <button
           onClick={() => navigate('/privacy')}
