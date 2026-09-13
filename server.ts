@@ -2989,21 +2989,30 @@ function buildOAuthUrl(provider: string, state: string, verifier: string | undef
       break;
     case 'xero':
       if (effectiveKey('XERO_CLIENT_ID')) {
-        const challenge = crypto.createHash('sha256').update(verifier || '').digest('base64url');
-        const params = new URLSearchParams({
-          client_id: effectiveKey('XERO_CLIENT_ID')!,
-          redirect_uri: redirectUri,
-          response_type: 'code',
-          scope: 'openid profile email accounting.transactions accounting.contacts offline_access',
-          state: state,
-          code_challenge: challenge,
-          code_challenge_method: 'S256',
-        });
-        return {
-          url: `https://login.xero.com/identity/connect/authorize?${params.toString()}`,
-          configured: true,
-        };
-      }
+  // PKCE verifier must be hashed, then base64url encoded
+  const challenge = crypto
+    .createHash('sha256')
+    .update(verifier || '')
+    .digest('base64url');
+
+  const params = new URLSearchParams({
+    client_id: effectiveKey('XERO_CLIENT_ID')!,
+    redirect_uri: redirectUri,
+    response_type: 'code',
+    scope: 'openid profile email accounting.transactions accounting.contacts offline_access',
+    state: state,
+    code_challenge: challenge,
+    code_challenge_method: 'S256',
+  });
+
+  // URLSearchParams formats spaces as '+', but Xero requires '%20' for OAuth 2.0 scopes
+  const queryString = params.toString().replace(/\+/g, '%20');
+
+  return {
+    url: `https://login.xero.com/identity/connect/authorize?${queryString}`,
+    configured: true,
+  };
+}
       break;
     case 'stripe':
       if (effectiveKey('STRIPE_CLIENT_ID')) {
