@@ -133,7 +133,7 @@ export function AuthPage({ initialMode = 'signin', onSuccess }: AuthPageProps) {
         {/* Header */}
         <div className="mb-6 text-center">
           <h1 className="text-2xl font-bold tracking-tight text-ink dark:text-white">
-            {mode === 'signup' ? 'Create Agency Workspace' : mode === 'forgot' ? 'Recover Your Account' : 'Sign In to EronFlow'}
+            {mode === 'signup' ? 'Create Agency Workspace' : mode === 'forgot' ? 'Recover Your Account' : 'Sign In to Eronflow'}
           </h1>
           <p className="mt-1.5 text-xs text-ink3">
             {mode === 'signup'

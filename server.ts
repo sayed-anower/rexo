@@ -36,6 +36,7 @@ import {
 
 
 const app = express();
+app.set('trust proxy', 1);
 const PORT = Number(process.env.PORT) || 3000;
 
 // ==========================================
@@ -188,17 +189,17 @@ async function sendOtpEmail(email: string, purpose: OtpPurpose, code: string): P
   const key = effectiveKey('RESEND_API_KEY');
   if (!key) throw new ProviderError('RESEND', 'Resend is not configured (RESEND_API_KEY).');
   const subjectByPurpose: Record<OtpPurpose, string> = {
-    signup: 'EronFlow — Verify your email address',
-    reset: 'EronFlow — Password reset verification code',
-    change: 'EronFlow — Verify password change',
+    signup: 'Eronflow — Verify your email address',
+    reset: 'Eronflow — Password reset verification code',
+    change: 'Eronflow — Verify password change',
   };
   const messageByPurpose: Record<OtpPurpose, string> = {
-    signup: 'You are one step away from creating your EronFlow workspace.',
-    reset: 'Use the code below to reset your EronFlow password.',
-    change: 'Use the code below to confirm your EronFlow password change.',
+    signup: 'You are one step away from creating your Eronflow workspace.',
+    reset: 'Use the code below to reset your Eronflow password.',
+    change: 'Use the code below to confirm your Eronflow password change.',
   };
   await sendEmailViaResend({
-    from: resendFrom('EronFlow', 'noreply'),
+    from: resendFrom('Eronflow', 'noreply'),
     to: email,
     subject: subjectByPurpose[purpose],
     html: `<p>Hi,</p><p>${messageByPurpose[purpose]}</p><p style="font-size:28px;font-weight:800;letter-spacing:6px;color:#E58233">${code}</p><p>This code expires in 10 minutes and can only be used once. If you didn't request it, you can safely ignore this email.</p>`,
@@ -470,7 +471,7 @@ function assertPlanActive(user: { profile: UserProfile }): { ok: boolean; code?:
     return {
       ok: false,
       code: 'PLAN_REQUIRED',
-      message: 'You must choose a paid plan before using EronFlow. No free tier is available.',
+      message: 'You must choose a paid plan before using Eronflow. No free tier is available.',
     };
   }
   return { ok: true };
@@ -764,7 +765,7 @@ async function sendWhatsAppViaMetaCloud(opts: { to: string; message: string }) {
 async function sendSMSViaEasySendSMS(opts: { to: string; body: string }): Promise<{ provider: string; id: string }> {
   const apiKey = effectiveKey('EASYSENDSMS_API_KEY');
   if (!apiKey) throw new ProviderError('SMS', 'SMS is not configured (EASYSENDSMS_API_KEY).');
-  const from = process.env.EASYSENDSMS_SENDER || 'EronFlow';
+  const from = process.env.EASYSENDSMS_SENDER || 'Eronflow';
   const to = normalizeWhatsAppNumber(opts.to);
   if (!to) throw new Error('EasySendSMS send failed: recipient number is empty.');
   const type = /[^\x00-\x7F]/.test(opts.body) ? '1' : '0';
@@ -975,7 +976,7 @@ app.use(
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
-    service: 'EronFlow Engine',
+    service: 'Eronflow Engine',
     version: '2.0.0',
     timestamp: new Date().toISOString(),
     db: Boolean(getSupabase()),
@@ -1193,7 +1194,7 @@ app.post('/api/auth/signup', async (req, res) => {
 
   setSessionCookie(res, profile.id);
   res.status(201).json({
-    message: 'Account created. Choose a plan to start using EronFlow (no free tier).',
+    message: 'Account created. Choose a plan to start using Eronflow (no free tier).',
     user: profile,
   });
 });
@@ -2940,11 +2941,28 @@ function pkcePair(): { verifier: string; challenge: string } {
 // it from the actual request host the user is browsing on (so http://localhost, a
 // local tunnel, or the real domain all just work) and fall back to APP_URL only
 // when no request is available (e.g. scheduled/programmatic calls).
+// Xero is strict: scheme + host + path must be byte-identical to the registered URI.
+// Behind a proxy (Render/Cloudflare/Nginx) the incoming Node request is often http
+// even though the outer URL is https, so we must read x-forwarded-proto correctly
+// and force https when APP_URL is https. trust proxy is enabled above so
+// req.secure / req.protocol are also reliable.
 function OAUTH_REDIRECT(req?: express.Request): string {
   if (req) {
-    const proto = (req.headers['x-forwarded-proto'] as string) || (req.secure ? 'https' : req.protocol) || 'https';
-    const host = req.get('host');
-    if (host) return `${proto}://${host}/api/oauth/callback`;
+    let proto = (req.headers['x-forwarded-proto'] as string) || '';
+    // x-forwarded-proto can be "https, http" behind some CDNs — take the first.
+    if (proto.includes(',')) proto = proto.split(',')[0].trim();
+    if (!proto) proto = (req.secure ? 'https' : (req.protocol as string)) || 'https';
+    proto = proto.split(':')[0].trim().toLowerCase();
+    if (!proto) proto = 'https';
+    const host = (req.get('host') || '').trim();
+    if (host) {
+      const isLocal = host.includes('localhost') || host.includes('127.0.0.1');
+      const appIsHttps = appUrl().startsWith('https://');
+      // If the app is configured for https://eronflow.top, never emit http://eronflow.top
+      if (appIsHttps && !isLocal && proto !== 'https') proto = 'https';
+      const uri = `${proto}://${host}/api/oauth/callback`;
+      return uri;
+    }
   }
   return `${appUrl()}/api/oauth/callback`;
 }
@@ -3181,12 +3199,12 @@ app.get('/api/oauth/callback', async (req, res) => {
     res.send(
       `<!doctype html><html><body style="font-family:system-ui;background:#170F08;color:#FDF1E6;display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
     <div style="text-align:center"><h2>${provider} authorization code received</h2>
-    <p>EronFlow needs the provider token exchange to be wired with your credentials before this account becomes active.</p>
-    <a href="/" style="color:#F97316">Back to EronFlow</a></div></body></html>`
+    <p>Eronflow needs the provider token exchange to be wired with your credentials before this account becomes active.</p>
+    <a href="/" style="color:#F97316">Back to Eronflow</a></div></body></html>`
     );
   } catch (err: any) {
     console.error(`[${provider} OAuth]`, err.message);
-    res.status(502).send(`${provider} connect failed: ${err.message}. <a href="/app/connectors" style="color:#F97316">Back to EronFlow</a>`);
+    res.status(502).send(`${provider} connect failed: ${err.message}. <a href="/app/connectors" style="color:#F97316">Back to Eronflow</a>`);
   }
 });
 
@@ -3590,7 +3608,7 @@ app.post('/api/invoices/:id/send', async (req, res) => {
     company_phone: (user.row as any).company_phone || '',
     email_signature: user.profile.email_signature,
   });
-  const fromName = tmpl?.sender_name || user.profile.company_name || 'EronFlow';
+  const fromName = tmpl?.sender_name || user.profile.company_name || 'Eronflow';
   const from = resendFrom(fromName);
 
   const results: any[] = [];
@@ -4295,7 +4313,7 @@ app.post('/api/webhooks/stripe', (_req, res) => {
 // 9b. PAYMENT INSTRUMENTS (multiple cards / bank accounts / PayPal)
 // The user can register unlimited instruments across all categories, then
 // pick which one receives collected client money (payout) and which one is
-// charged for the EronFlow subscription (billing). Card numbers are never
+// charged for the Eronflow subscription (billing). Card numbers are never
 // stored — only brand + last 4 + expiry.
 // ==========================================
 const INSTRUMENT_KINDS = ['card', 'bank', 'paypal'] as const;
@@ -4520,10 +4538,10 @@ app.post('/api/instruments/send-verification', async (req, res) => {
   const sent = await sendEmailViaResend({
     to: email,
     from: otpFromAddress(),
-    subject: 'EronFlow — Verify Your Payment Method',
+    subject: 'Eronflow — Verify Your Payment Method',
     html: `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px">
       <h2 style="font-size:18px;margin-bottom:8px">Payment method verification</h2>
-      <p style="font-size:14px;color:#555;margin-bottom:16px">Use the code below to confirm you're adding a payment method to your EronFlow account. This code expires in 10 minutes.</p>
+      <p style="font-size:14px;color:#555;margin-bottom:16px">Use the code below to confirm you're adding a payment method to your Eronflow account. This code expires in 10 minutes.</p>
       <div style="font-size:32px;font-weight:bold;letter-spacing:6px;text-align:center;padding:16px;background:#f4f4f5;border-radius:12px;color:#111">${code}</div>
       <p style="font-size:12px;color:#999;margin-top:20px">If you didn't request this, ignore this email.</p>
     </div>`,
@@ -4572,7 +4590,7 @@ function verifyInstrumentToken(uid: string, token: string): boolean {
 // 9c. BYOK PAYMENT CREDENTIALS — Stripe & PayPal
 // Each agency pastes their OWN keys so 100% of invoice funds settle
 // directly into their Stripe / PayPal account. Paddle is ONLY for
-// EronFlow subscription billing; EronFlow never touches invoice money.
+// Eronflow subscription billing; Eronflow never touches invoice money.
 // Keys are masked on read; only the last 4 chars are ever shown.
 // Docs are rendered in Settings → Payment setup + /docs.
 // ==========================================
@@ -4764,7 +4782,7 @@ async function paypalCreateOrderWithByok(clientId: string, secret: string, mode:
   const body = {
     intent: 'CAPTURE',
     purchase_units: [{ amount: { currency_code: currency, value }, description: `Invoice ${invoice.external_invoice_id}`, custom_id: String(invoice.id) }],
-    application_context: { return_url: returnUrl, cancel_url: cancelUrl, brand_name: 'EronFlow Invoice', user_action: 'PAY_NOW' },
+    application_context: { return_url: returnUrl, cancel_url: cancelUrl, brand_name: 'Eronflow Invoice', user_action: 'PAY_NOW' },
   };
   const res = await fetch(`${base}/v2/checkout/orders`, {
     method: 'POST',
@@ -5140,7 +5158,7 @@ app.post('/api/payments/create-payment-intent', async (req, res) => {
   }
 
   // BYOK: invoice payments use the agency's OWN Stripe / PayPal keys (Bring Your Own Keys).
-  // Paddle is ONLY for EronFlow SaaS subscription billing; funds settle 100% to the agency.
+  // Paddle is ONLY for Eronflow SaaS subscription billing; funds settle 100% to the agency.
   const byok = await getByokCredentials(invoice.user_id);
   // Fallback: legacy OAuth integrations (stripe/paypal connect) if BYOK not yet migrated
   const { data: integrations } = await sb.from('integrations').select('provider,is_active').eq('user_id', invoice.user_id).eq('is_active', true);
@@ -5604,12 +5622,12 @@ async function dispatchInvoiceReminders(opts: {
   const diffDays = Math.floor((now.getTime() - dueDate.getTime()) / 86400000);
   const payLink = await ensurePortalPaymentLink(inv).catch(() => inv.payment_link || `/pay/${inv.id}`);
   const renderProfile = {
-    company_name: profile?.company_name || 'EronFlow',
+    company_name: profile?.company_name || 'Eronflow',
     company_email: profile?.company_email || '',
     company_phone: profile?.company_phone || '',
   };
   const signature = companySignature(profile);
-  const fromName = template?.sender_name || profile?.company_name || 'EronFlow';
+  const fromName = template?.sender_name || profile?.company_name || 'Eronflow';
   const from = resendFrom(fromName);
 
   for (const channel of channels) {
@@ -5770,7 +5788,7 @@ app.post('/api/cron/process-reminders', async (req, res) => {
 
     // Shared rendering profile (company info + email signature) for template sends.
     const dispatchProfile = {
-      company_name: u.company_name || 'EronFlow',
+      company_name: u.company_name || 'Eronflow',
       company_email: u.email || '',
       company_phone: u.company_phone || '',
       email_signature: u.email_signature || '',
@@ -5925,7 +5943,7 @@ async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[EronFlow Engine] Server listening at http://localhost:${PORT}`);
+    console.log(`[Eronflow Engine] Server listening at http://localhost:${PORT}`);
     // Boot-time self-heal: make sure the reminder worker is armed even if no
     // send ever happened before (the previous failure mode of automations
     // never firing at all).

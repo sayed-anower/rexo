@@ -226,7 +226,7 @@ export function InvoicesTable({
   const handleExecuteSend = async () => {
     if (!sendModalInvoice) return;
 
-    // Custom variables (e.g. [my_var]) that EronFlow can't auto-fill: ask for a
+    // Custom variables (e.g. [my_var]) that Eronflow can't auto-fill: ask for a
     // value before anything goes out. "Not A Variable" tokens stay as-is.
     const selectedTmpl = templateSelected ? usableTemplates.find((t) => t.id === selectedTemplateId) : null;
     const unknown = findUnknownVars(
@@ -652,7 +652,7 @@ export function InvoicesTable({
                             Default Reminder
                           </span>
                           <span className="text-[11px] text-ink2 dark:text-ink2 block mt-0.5">
-                            EronFlow&apos;s built-in reminder text — invoice details + secure payment link{sendChannels.some((c) => c !== 'email') ? ', or type your own message below' : ''}
+                            Eronflow&apos;s built-in reminder text — invoice details + secure payment link{sendChannels.some((c) => c !== 'email') ? ', or type your own message below' : ''}
                           </span>
                         </div>
                       </label>

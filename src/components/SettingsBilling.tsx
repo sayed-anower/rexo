@@ -551,18 +551,8 @@ export function SettingsBilling({
                     <h4 className="text-lg font-bold text-ink dark:text-white">{plan.name}</h4>
                     {plan.tagline && <p className="text-[11px] text-ink2 mt-0.5">{plan.tagline}</p>}
                     <div className="my-3 flex items-baseline gap-1.5 flex-wrap">
-                      {plan.sell && plan.list_price != null && (
-                        <span className="text-base font-bold text-ink3 line-through decoration-rose-500/70 decoration-2">
-                          ${plan.list_price}
-                        </span>
-                      )}
                       <span className="text-3xl font-black text-ink dark:text-white">${plan.price}</span>
                       <span className="text-xs text-ink3 font-medium">/ month</span>
-                      {plan.sell && (
-                        <span className="text-[9px] font-extrabold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
-                          Save ${((plan.list_price ?? plan.price) - plan.price).toFixed(0)}
-                        </span>
-                      )}
                     </div>
                     <p className="text-xs font-semibold text-primary dark:text-secondary mb-4">{plan.invoice_limit}</p>
 
@@ -613,7 +603,7 @@ export function SettingsBilling({
               );
             })}
 
-            {/* Custom Plan card — arranged directly with the EronFlow team */}
+            {/* Custom Plan card — arranged directly with the Eronflow team */}
             <div className="relative flex flex-col p-6 rounded-3xl bg-main dark:bg-surface2/60 border border-dashed border-line dark:border-line shadow-sm">
               <div className="flex-1">
                 <h4 className="text-lg font-bold text-ink dark:text-white">{CUSTOM_PLAN.name}</h4>
@@ -676,7 +666,7 @@ export function SettingsBilling({
 
             <a
               href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(`Plan Cancellation — ${currentPlan?.name || 'Current Plan'}`)}&body=${encodeURIComponent(
-                `Hi EronFlow Support,\n\nI'd like to cancel my ${currentPlan?.name || 'current'} plan.\n\nAccount email: ${user.email}\nCompany: ${user.company_name}\n\nEstimated refund if I cancel today: $${refundPreview && !refundPreview.inactive ? Number(refundPreview.refund ?? 0).toFixed(2) : '—'}\nUsage this period: ${refundPreview ? `${refundPreview.usage?.emails_sent ?? 0} emails, ${refundPreview.usage?.whatsapp_sent ?? 0} WA, ${refundPreview.usage?.SMS_sent ?? 0} SMS, ${refundPreview.usage?.ai_generations ?? 0} AI` : ''}\n\nPlease confirm the cancellation and refund.\n\nThank you.`
+                `Hi Eronflow Support,\n\nI'd like to cancel my ${currentPlan?.name || 'current'} plan.\n\nAccount email: ${user.email}\nCompany: ${user.company_name}\n\nEstimated refund if I cancel today: $${refundPreview && !refundPreview.inactive ? Number(refundPreview.refund ?? 0).toFixed(2) : '—'}\nUsage this period: ${refundPreview ? `${refundPreview.usage?.emails_sent ?? 0} emails, ${refundPreview.usage?.whatsapp_sent ?? 0} WA, ${refundPreview.usage?.SMS_sent ?? 0} SMS, ${refundPreview.usage?.ai_generations ?? 0} AI` : ''}\n\nPlease confirm the cancellation and refund.\n\nThank you.`
               )}`}
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-red-50 dark:bg-red-950/60 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 font-bold text-xs transition-colors hover:bg-red-100 dark:hover:bg-red-950"
             >

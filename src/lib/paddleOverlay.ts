@@ -11,7 +11,7 @@
  *   configured in the Paddle Dashboard (Billing → Checkout → Branding). We pass
  *   `theme` + `locale` and set `displayMode: 'overlay'` so the checkout inherits
  *   our brand's light/dark mode. Paddle Dashboard branding (logo, primary colour)
- *   should be set to match EronFlow's palette (#2563EB / #0284C7) for a cohesive feel.
+ *   should be set to match Eronflow's palette (#2563EB / #0284C7) for a cohesive feel.
  * - Resolves only when Paddle reports `checkout.completed`; rejects/closes
  *   otherwise so callers can distinguish paid vs. cancelled.
  */

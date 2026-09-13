@@ -18,12 +18,12 @@ interface HelpPageProps {
 
 export function HelpPage({ user }: HelpPageProps) {
   const [expanded, setExpanded] = useState<number | null>(0);
-  const companyName = user?.company_name || 'EronFlow';
+  const companyName = user?.company_name || 'Eronflow';
 
   const guides = [
     {
-      title: 'How do I set up EronFlow for my agency?',
-      body: '1. Sign in with your business/user email.\n2. Open Connectors and connect QuickBooks or Xero so unpaid invoices are pulled in automatically.\n3. Create message templates on the Templates page (or start from the built-in ones).\n4. Open Automation and create your first automation or recovery schedule.\n5. Sit back — EronFlow sends reminders on schedule until you get paid.',
+      title: 'How do I set up Eronflow for my agency?',
+      body: '1. Sign in with your business/user email.\n2. Open Connectors and connect QuickBooks or Xero so unpaid invoices are pulled in automatically.\n3. Create message templates on the Templates page (or start from the built-in ones).\n4. Open Automation and create your first automation or recovery schedule.\n5. Sit back — Eronflow sends reminders on schedule until you get paid.',
     },
     {
       title: 'How do Automations and Recovery Schedules differ?',
@@ -35,7 +35,7 @@ export function HelpPage({ user }: HelpPageProps) {
     },
     {
       title: 'Why do clients see a payment page?',
-      body: 'Every reminder includes a secure payment link to your branded public portal (your-domain.com/pay/invoice-id). Clients open it, see your branding, and pay by card, bank transfer, PayPal or wallet in a few clicks. Invoice payments are processed via your own Stripe/PayPal keys (BYOK — 100% settles to your Stripe/PayPal account; EronFlow never touches invoice money) and the [payment_link] variable always expands to the full clickable URL automatically. SaaS billing is via Paddle.',
+      body: 'Every reminder includes a secure payment link to your branded public portal (your-domain.com/pay/invoice-id). Clients open it, see your branding, and pay by card, bank transfer, PayPal or wallet in a few clicks. Invoice payments are processed via your own Stripe/PayPal keys (BYOK — 100% settles to your Stripe/PayPal account; Eronflow never touches invoice money) and the [payment_link] variable always expands to the full clickable URL automatically. SaaS billing is via Paddle.',
     },
     {
       title: 'What counts against my plan limits?',

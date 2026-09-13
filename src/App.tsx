@@ -53,7 +53,7 @@ import { InvitePage } from './components/InvitePage';
 import { PrivacyPolicyPage, TermsOfServicePage, AboutPage } from './components/LegalPages';
 import { PricingPage } from './components/PricingPage';
 import { DocumentationPage } from './components/DocumentationPage';
-import { CheckCircle2, RefreshCw } from 'lucide-react';
+import { CheckCircle2, RefreshCw, AlertTriangle, CreditCard, X, Crown } from 'lucide-react';
 
 const TAB_TO_PATH: Record<NavigationTab, string> = {
   dashboard: '/app/overview',
@@ -146,6 +146,8 @@ export default function App() {
   const [aiDraft, setAiDraft] = useState<{ name: string; steps: SequenceStep[] } | null>(null);
   const [portalLoading, setPortalLoading] = useState(true);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [planGateOpen, setPlanGateOpen] = useState(false);
+  const [planGateMessage, setPlanGateMessage] = useState<string>('');
 
   const showToast = useCallback((msg: string) => {
     setToastMessage(msg);
@@ -155,8 +157,13 @@ export default function App() {
   const handleGateError = useCallback(
     (err: any) => {
       if (err instanceof PlanGateError) {
+        if (err.code === 'PLAN_REQUIRED' || err.code === 'PLAN_LIMIT') {
+          setPlanGateMessage(err.message || 'You need an active plan to perform this action.');
+          setPlanGateOpen(true);
+          return true;
+        }
+        // Payout/billing instrument errors still show toast + navigate
         showToast(err.message);
-        if (err.code === 'PLAN_REQUIRED') navigate('/app/settings');
         if (err.code === 'PAYOUT_INSTRUMENT_REQUIRED' || err.code === 'BILLING_INSTRUMENT_REQUIRED') navigate('/app/settings');
         return true;
       }
@@ -164,6 +171,18 @@ export default function App() {
     },
     [showToast]
   );
+
+  // Global plan-gate listener: any 402 PLAN_REQUIRED/LIMIT thrown via apiFetch will surface the buy-a-plan popup,
+  // even when an inner component (AutomationPage, CustomEmailTemplates) swallowed the error with a toast.
+  useEffect(() => {
+    const onPlanRequired = (e: Event) => {
+      const detail = (e as CustomEvent).detail || {};
+      setPlanGateMessage(detail.message || 'You need an active plan to perform this action.');
+      setPlanGateOpen(true);
+    };
+    window.addEventListener('rf:plan-required', onPlanRequired as EventListener);
+    return () => window.removeEventListener('rf:plan-required', onPlanRequired as EventListener);
+  }, []);
 
   // Synchronize route from popstate / programmatic navigation
   useEffect(() => {
@@ -219,38 +238,40 @@ export default function App() {
       setUser(profile);
       setIsLoggedIn(true);
       setAuthChecked(true);
-      if (profile.subscription_status === 'active' && profile.subscription_tier) {
-        try {
-          const [invs, seqs, lgs, ints, tmpls, usg, sch, conns] = await Promise.all([
-            fetchInvoices(),
-            fetchSequences(),
-            fetchReminderLogs(),
-            fetchIntegrations(),
-            fetchCustomEmailTemplates(),
-            fetchUsage(),
-            fetchSchedulingPrefs(),
-            fetchAppConnectors(),
-          ]);
-          if (cancelled) return;
-          setInvoices(invs);
-          setSequences(seqs);
-          setLogs(lgs);
-          setIntegrations(ints);
-          setCustomTemplates(tmpls);
-          setUsage(usg);
-          setScheduling(sch);
-          setConnectors(conns);
-        } catch (err) {
-          if (!cancelled && err instanceof PlanGateError) showToast(err.message);
-          else console.error('Data loading error:', err);
-        }
+      // Allow every logged-in user to view overview, invoices, etc even without a plan.
+      // Only creation / sending actions are gated (handled via planGate popup).
+      try {
+        const [invs, seqs, lgs, ints, tmpls, usg, sch, conns] = await Promise.all([
+          fetchInvoices(),
+          fetchSequences(),
+          fetchReminderLogs(),
+          fetchIntegrations(),
+          fetchCustomEmailTemplates(),
+          fetchUsage(),
+          fetchSchedulingPrefs(),
+          fetchAppConnectors(),
+        ]);
+        if (cancelled) return;
+        setInvoices(invs);
+        setSequences(seqs);
+        setLogs(lgs);
+        setIntegrations(ints);
+        setCustomTemplates(tmpls);
+        setUsage(usg);
+        setScheduling(sch);
+        setConnectors(conns);
+      } catch (err) {
+        if (!cancelled && err instanceof PlanGateError) {
+          // Read-only data should not gate, but if any endpoint still returns 402, surface popup once
+          handleGateError(err);
+        } else console.error('Data loading error:', err);
       }
       if (!cancelled) setDataLoading(false);
     })();
     return () => {
       cancelled = true;
     };
-  }, [route.name, isLoggedIn, showToast]);
+  }, [route.name, isLoggedIn, showToast, handleGateError]);
 
   const handleLogout = async () => {
     await logoutUser();
@@ -267,7 +288,7 @@ export default function App() {
     setAuthChecked(true);
     setInvoices([]);
     navigate('/app/overview');
-    showToast(`Welcome to EronFlow, ${u.company_name}!`);
+    showToast(`Welcome to Eronflow, ${u.company_name}!`);
   };
 
   const handleSaveInvoice = async (invData: Partial<Invoice>) => {
@@ -324,7 +345,6 @@ export default function App() {
 
   // Reload all workspace data (used after switching accounts).
   const handleRefreshWorkspaceData = useCallback(async () => {
-    if (!user?.subscription_tier || user.subscription_status !== 'active') return;
     try {
       const [invs, seqs, lgs, ints, tmpls, usg, sch, conns] = await Promise.all([
         fetchInvoices(),
@@ -347,7 +367,7 @@ export default function App() {
     } catch (e: any) {
       if (!handleGateError(e)) console.error('Workspace refresh error:', e);
     }
-  }, [user?.subscription_tier, user?.subscription_status, handleGateError]);
+  }, [handleGateError]);
 
   const handlePaymentComplete = async (invoiceId: string) => {
     const paid = await payInvoice(invoiceId);
@@ -645,19 +665,10 @@ const handleApplyAiSteps = (newSteps: any[]) => {
     );
   }
 
-  // --- Logged in: plan gate (no free tier — an action requires a plan) ---
+  // --- Logged in: read-only access is allowed without a plan ---
+  // Users may view overview, invoices, etc. Creation / send actions trigger the plan gate popup instead of redirecting.
+  // Keeping needsPlan for other helpers (e.g. gating create handlers that bypass server).
   const needsPlan = !user?.subscription_tier || user.subscription_status !== 'active';
-  // Settings & Billing stays reachable so a pending account can complete
-  // checkout and activate a plan; every other tab requires an active plan.
-  // Also allow access when returning from Paddle hosted checkout (billing=paid/checkout
-  // in the URL) so the success handler can refresh the plan status.
-  const isBillingTab = route.name === 'app' && route.tab === 'settings';
-  const hasBillingReturn = typeof window !== 'undefined' && /[?&]billing=(paid|checkout)/.test(window.location.search);
-  const isPayRoute = (route.name as string) === "pay";
-  if (needsPlan && !isBillingTab && !hasBillingReturn && !isPayRoute) {
-    navigate("/app/settings");
-    return null;
-  }
 
   const unpaidCount = invoices.filter((i) => i.status === 'unpaid' || i.status === 'overdue').length;
   const activeTab = route.name === 'app' ? route.tab : 'dashboard';
@@ -895,6 +906,34 @@ const handleApplyAiSteps = (newSteps: any[]) => {
         onApplySteps={handleApplyAiSteps}
         agencyName={user?.company_name || 'My Agency'}
       />
+      {planGateOpen && (
+        <div className="fixed inset-0 z-[120] bg-primary-strong/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="relative w-full max-w-md rounded-3xl bg-white dark:bg-surface border border-line dark:border-line p-6 sm:p-8 shadow-2xl text-center">
+            <button onClick={() => setPlanGateOpen(false)} className="absolute top-4 right-4 p-2 rounded-full text-ink3 hover:bg-surface2">
+              <X className="w-4 h-4" />
+            </button>
+            <div className="w-12 h-12 rounded-2xl bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center mx-auto mb-4">
+              <Crown className="w-6 h-6" />
+            </div>
+            <h3 className="text-lg font-black text-ink dark:text-white">Plan required</h3>
+            <p className="text-xs text-ink2 dark:text-ink2 mt-2 leading-relaxed">
+              {planGateMessage || 'You need an active paid plan to create invoices, sequences, templates or send reminders. Choose Starter, Pro or Agency to continue.'}
+            </p>
+            <div className="mt-6 flex flex-col sm:flex-row gap-3 justify-center">
+              <button
+                onClick={() => { setPlanGateOpen(false); navigate('/app/settings'); }}
+                className="px-5 py-2.5 rounded-xl bg-accent hover:bg-accent-hover text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md"
+              >
+                <CreditCard className="w-4 h-4" /> View Plans — Buy a Plan
+              </button>
+              <button onClick={() => setPlanGateOpen(false)} className="px-5 py-2.5 rounded-xl bg-surface2 dark:bg-surface2 text-ink2 font-bold text-xs">
+                Maybe later
+              </button>
+            </div>
+            <p className="text-[10px] text-ink3 mt-3">You can browse overview, invoices and other pages read-only until you buy a plan.</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

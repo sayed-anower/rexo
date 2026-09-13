@@ -34,8 +34,8 @@ export function HomePage({ onOpenAuth, onGoogleSignIn }: HomePageProps) {
 
   const faqs = [
     {
-      q: 'How does EronFlow recover unpaid invoices automatically?',
-      a: 'EronFlow syncs your unpaid invoices from QuickBooks, Xero or your own uploads. It then runs your custom recovery flow — friendly reminders before the due date, firm emails after, and optional WhatsApp follow-ups — each with a direct, secure payment link. The moment a client pays, all further reminders stop automatically.'
+      q: 'How does Eronflow recover unpaid invoices automatically?',
+      a: 'Eronflow syncs your unpaid invoices from QuickBooks, Xero or your own uploads. It then runs your custom recovery flow — friendly reminders before the due date, firm emails after, and optional WhatsApp follow-ups — each with a direct, secure payment link. The moment a client pays, all further reminders stop automatically.'
     },
     {
       q: 'Is there a free tier?',
@@ -43,7 +43,7 @@ export function HomePage({ onOpenAuth, onGoogleSignIn }: HomePageProps) {
     },
     {
       q: 'Can clients pay on my own branded page?',
-      a: 'Yes. Pro and Agency plans give you a white-label payment page on your own domain (e.g. billing.youragency.com). Clients see your logo and colors, and can pay by card, PayPal, bank transfer, Apple Pay or Google Pay — 100% of the money goes directly to your own Stripe or PayPal account via Bring Your Own Keys (BYOK). Paddle is only used for your EronFlow subscription billing.'
+      a: 'Yes. Pro and Agency plans give you a white-label payment page on your own domain (e.g. billing.youragency.com). Clients see your logo and colors, and can pay by card, PayPal, bank transfer, Apple Pay or Google Pay — 100% of the money goes directly to your own Stripe or PayPal account via Bring Your Own Keys (BYOK). Paddle is only used for your Eronflow subscription billing.'
     },
     {
       q: 'Is my pricing transparent? Are there hidden fees?',
@@ -51,7 +51,7 @@ export function HomePage({ onOpenAuth, onGoogleSignIn }: HomePageProps) {
     },
     {
       q: 'What happens when an invoice is paid?',
-      a: 'EronFlow is notified by the payment provider webhook instantly. Any scheduled follow-up reminders are cancelled, the invoice is marked paid in your connected accounting app, and the payment is recorded in your activity log.'
+      a: 'Eronflow is notified by the payment provider webhook instantly. Any scheduled follow-up reminders are cancelled, the invoice is marked paid in your connected accounting app, and the payment is recorded in your activity log.'
     }
   ];
 
@@ -76,7 +76,7 @@ export function HomePage({ onOpenAuth, onGoogleSignIn }: HomePageProps) {
 
           {/* Subtitle */}
           <p className="text-sm sm:text-lg text-ink2 dark:text-ink2 leading-relaxed font-normal max-w-2xl mx-auto">
-            EronFlow connects to your accounting apps and automatically sends reminders, firm follow-ups, and payment links — until you get paid.
+            Eronflow connects to your accounting apps and automatically sends reminders, firm follow-ups, and payment links — until you get paid.
           </p>
 
           {/* CTA Group */}
@@ -125,7 +125,7 @@ export function HomePage({ onOpenAuth, onGoogleSignIn }: HomePageProps) {
             </div>
             <div>
               <p className="text-2xl font-black text-primary dark:text-secondary">100% Hands-off</p>
-              <p className="text-xs text-ink2">Set it once — EronFlow chases until you&apos;re paid</p>
+              <p className="text-xs text-ink2">Set it once — Eronflow chases until you&apos;re paid</p>
             </div>
           </div>
         </div>

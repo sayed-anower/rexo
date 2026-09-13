@@ -1,6 +1,6 @@
-# EronFlow Production Setup Guide
+# Eronflow Production Setup Guide
 
-This guide covers everything needed to take EronFlow from development to production — environment variables, OAuth redirects, webhooks, payment gateway setup, and deployment checklist.
+This guide covers everything needed to take Eronflow from development to production — environment variables, OAuth redirects, webhooks, payment gateway setup, and deployment checklist.
 
 ---
 
@@ -38,7 +38,7 @@ Copy `.env.example` to `.env` and fill in every value. All variables are require
 **Invoice Payments — BYOK (Bring Your Own Keys) — per agency, NOT env vars**
 | Method | Where agency configures it | What it does |
 |--------|----------------------------|--------------|
-| **Stripe BYOK** | Settings → Billing → Payment Setup → Stripe (paste `rk_live_...` / `rk_test_...`) | 100% of client invoice money settles directly to agency's Stripe balance. EronFlow never touches it. See `PAY.md` + in-app instructions with dashboard links: https://dashboard.stripe.com/apikeys |
+| **Stripe BYOK** | Settings → Billing → Payment Setup → Stripe (paste `rk_live_...` / `rk_test_...`) | 100% of client invoice money settles directly to agency's Stripe balance. Eronflow never touches it. See `PAY.md` + in-app instructions with dashboard links: https://dashboard.stripe.com/apikeys |
 | **PayPal BYOK** | Settings → Billing → Payment Setup → PayPal (paste Client ID + Secret, Live/Sandbox) | 100% settles to agency's PayPal. See `PAY.md` + dashboard: https://developer.paypal.com/dashboard/applications |
 
 > **No platform Stripe/PayPal env vars needed for invoice money.** `STRIPE_CLIENT_ID` etc are legacy Connect OAuth fallback — new installs leave them empty and use BYOK. Paddle is ONLY for SaaS billing.
@@ -116,7 +116,7 @@ Register these URLs where providers push events to your server:
 | Xero | developer.xero.com → Webhooks | `https://YOUR-DOMAIN/api/webhooks/xero` | `x-xero-signature` |
 | QStash | N/A (QStash calls your URL) | `https://YOUR-DOMAIN/api/cron/process-reminders` | `upstash-signature` (JWT) |
 
-> **Stripe & PayPal BYOK need NO webhook registration on the platform** — the agency’s Stripe/PayPal account receives money directly. EronFlow verifies payment by polling the agency’s BYOK API with the stored restricted key / PayPal credentials (Checkout Session / PaymentIntent / Order status). Optional: the agency can still add a Stripe webhook in their own dashboard if they want server-to-server confirmation, but it is not required.
+> **Stripe & PayPal BYOK need NO webhook registration on the platform** — the agency’s Stripe/PayPal account receives money directly. Eronflow verifies payment by polling the agency’s BYOK API with the stored restricted key / PayPal credentials (Checkout Session / PaymentIntent / Order status). Optional: the agency can still add a Stripe webhook in their own dashboard if they want server-to-server confirmation, but it is not required.
 
 ---
 
@@ -124,7 +124,7 @@ Register these URLs where providers push events to your server:
 
 ### Paddle — SaaS Subscription Billing ONLY (Merchant of Record — handles VAT/tax)
 
-> **Paddle is ONLY for EronFlow plan charges.** Invoice payments are BYOK Stripe/PayPal — 100% direct to the agency.
+> **Paddle is ONLY for Eronflow plan charges.** Invoice payments are BYOK Stripe/PayPal — 100% direct to the agency.
 
 1. Create a Paddle account at [paddle.com](https://paddle.com)
 2. Complete seller onboarding (business details, bank account)
@@ -144,9 +144,9 @@ Register these URLs where providers push events to your server:
 
 ### Stripe BYOK — Invoice Payments (agency’s own Stripe, 100% direct)
 
-> **Each agency pastes their own Stripe restricted key — EronFlow never touches invoice money.** Test from Bangladesh with sandbox keys — no US SSN needed.
+> **Each agency pastes their own Stripe restricted key — Eronflow never touches invoice money.** Test from Bangladesh with sandbox keys — no US SSN needed.
 
-1. Agency logs into **Stripe Dashboard** → **Developers → API Keys** → **Restricted keys → Create restricted key** (name: EronFlow Invoice Recovery). See `PAY.md` for full steps + dashboard links.
+1. Agency logs into **Stripe Dashboard** → **Developers → API Keys** → **Restricted keys → Create restricted key** (name: Eronflow Invoice Recovery). See `PAY.md` for full steps + dashboard links.
 2. Permissions: `PaymentIntents: Write`, `Customers: Write`, `Checkout Sessions: Write` (for hosted page), `Charges: Read`.
 3. Copy key (`rk_live_...` for live, `rk_test_...` for sandbox/test) → agency pastes it in **Settings → Billing → Payment Setup (BYOK)** → Save & Verify (live validation vs Stripe Balance API).
 4. Optional: also paste Publishable key (`pk_live_...` / `pk_test_...`) for best portal UX.
@@ -157,7 +157,7 @@ Register these URLs where providers push events to your server:
 
 > Same model — agency’s PayPal, not platform’s.
 
-1. Agency logs into **PayPal Developer Dashboard** → toggle **Live** (or **Sandbox** for testing) → **Apps & Credentials → Create App** (type: Merchant, name: EronFlow Payment Gateway). See `PAY.md`.
+1. Agency logs into **PayPal Developer Dashboard** → toggle **Live** (or **Sandbox** for testing) → **Apps & Credentials → Create App** (type: Merchant, name: Eronflow Payment Gateway). See `PAY.md`.
 2. Copy **Client ID** + click **Show** for **Client Secret** → paste both in **Settings → Billing → Payment Setup (BYOK)** → select Live/Sandbox → Save & Verify (validated via PayPal token endpoint).
 3. **Test from Bangladesh:** Under **Sandbox → Apps & Credentials** → copy Default Application Client ID/Secret → use **Sandbox** mode — no Business verification needed. See `PAY.md`.
 4. **Dashboard links:** Live apps https://developer.paypal.com/dashboard/applications/live — Sandbox https://developer.paypal.com/dashboard/applications/sandbox — Accounts https://developer.paypal.com/dashboard/sandbox/accounts
@@ -262,7 +262,7 @@ npx localtunnel --port 3000
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    EronFlow SaaS                         │
+│                    Eronflow SaaS                         │
 ├─────────────────────────────────────────────────────────┤
 │  Frontend (React + Vite)    │  Backend (Express)       │
 │  ├─ Dashboard               │  ├─ Auth (Supabase)        │

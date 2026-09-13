@@ -54,6 +54,7 @@ export function CustomEmailTemplates({
   // Modals state
   const [isEditorOpen, setIsEditorOpen] = useState<boolean>(false);
   const [editingTemplate, setEditingTemplate] = useState<Partial<CustomEmailTemplate> | null>(null);
+  const [saving, setSaving] = useState<boolean>(false);
 
   // AI Modal state
   const [isAiModalOpen, setIsAiModalOpen] = useState<boolean>(false);

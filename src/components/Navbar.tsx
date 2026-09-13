@@ -52,11 +52,11 @@ export function Navbar({
         >
           <img
             src="/logo.svg"
-            alt="EronFlow"
+            alt="Eronflow"
             className="h-9 sm:h-10"
           />
           <div>
-            <span className="font-extrabold text-xl tracking-tight text-[#0284C7] dark:text-[#38BDF8]">EronFlow</span>
+            <span className="font-bold text-lg tracking-tight text-[#0284C7] dark:text-[#38BDF8]">ERONFLOW</span>
             <p className="text-[10px] text-ink2 dark:text-ink2 hidden md:block">
               Get paid faster. Stop chasing invoices.
             </p>

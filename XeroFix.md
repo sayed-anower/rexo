@@ -78,7 +78,7 @@ XERO_WEBHOOK_KEY="your-base64-webhook-signing-key-from-xero-webhooks-page"
 
 1. Go to **https://developer.xero.com/app/manage** → sign in with the Xero org that owns the invoices.
 2. Create a new app if you have none: **New App → Web App** (needs client id + secret, not Mobile/SPA).
-3. Give it a name (e.g. “EronFlow Invoice Recovery”).
+3. Give it a name (e.g. “Eronflow Invoice Recovery”).
 
 ### Step 2 — Register the **exact** redirect URI
 

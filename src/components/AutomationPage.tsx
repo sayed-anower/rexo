@@ -400,7 +400,7 @@ export function AutomationPage({
           <h2 className="text-xl font-bold text-ink dark:text-white">Automation</h2>
         </div>
         <p className="text-xs text-ink2 dark:text-ink2 max-w-3xl">
-          Let EronFlow chase payments for you. An <span className="font-bold text-ink dark:text-white">Automation</span> sends one
+          Let Eronflow chase payments for you. An <span className="font-bold text-ink dark:text-white">Automation</span> sends one
           message template on a schedule you pick — once, every few minutes or hours, daily, weekly, monthly or yearly — at a
           local time in any region. A <span className="font-bold text-ink dark:text-white">Recovery Schedule</span> needs no
           timing: it follows a recovery flow and reminds clients exactly 3 days before the due date, on the due date, or when

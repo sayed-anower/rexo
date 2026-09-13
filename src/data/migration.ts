@@ -10,7 +10,7 @@
  */
 export const MIGRATION_SQL = `
 -- ============================================================
--- EronFlow self-migration helper (run this file ONCE)
+-- Eronflow self-migration helper (run this file ONCE)
 -- Creates the exec_sql() function so the server can auto-apply
 -- schema changes on every boot. Security definer: the function
 -- executes with the service-role owner privileges. Revoke or
@@ -242,7 +242,7 @@ alter table if exists public.payment_intents add column if not exists tier text;
 -- Multiple payment instruments per account (cards / bank accounts / PayPal).
 -- Card numbers are never stored — only brand + last 4 + expiry.
 -- default_payout_instrument_id  → where collected client money is sent
--- default_billing_instrument_id → what is charged for the EronFlow subscription
+-- default_billing_instrument_id → what is charged for the Eronflow subscription
 create table if not exists public.payment_instruments (
   id text primary key,
   user_id uuid not null references public.users(id) on delete cascade,
@@ -270,7 +270,7 @@ alter table if exists public.users add column if not exists terms_accepted_at ti
 -- BYOK payment credentials — each agency stores their own Stripe restricted key
 -- and PayPal REST API credentials so 100% of client invoice payments route
 -- directly to the agency's own Stripe / PayPal account. Paddle is used only
--- for SaaS subscription billing; EronFlow never touches invoice funds.
+-- for SaaS subscription billing; Eronflow never touches invoice funds.
 create table if not exists public.payment_credentials (
   user_id uuid primary key references public.users(id) on delete cascade,
   stripe_restricted_key text,

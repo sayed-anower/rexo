@@ -127,7 +127,7 @@ export function ByokPaymentSetup({ onToast }: { onToast: (msg: string) => void }
               )}
             </h3>
             <p className="text-[11px] text-ink2 dark:text-ink2 max-w-2xl leading-relaxed mt-1">
-              <span className="font-bold text-ink dark:text-white">EronFlow never touches invoice money.</span> 100% of client payments settle directly into <span className="font-bold">your own</span> Stripe or PayPal account via your keys.
+              <span className="font-bold text-ink dark:text-white">Eronflow never touches invoice money.</span> 100% of client payments settle directly into <span className="font-bold">your own</span> Stripe or PayPal account via your keys.
               Your keys are stored encrypted, masked on display, and never shown again.
             </p>
           </div>
@@ -138,7 +138,7 @@ export function ByokPaymentSetup({ onToast }: { onToast: (msg: string) => void }
           className="px-3 py-1.5 rounded-xl border border-line dark:border-line bg-white dark:bg-surface text-xs font-bold text-ink2 hover:text-ink flex items-center gap-1.5 disabled:opacity-50 shrink-0"
         >
           {testing ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />}
-          Test keys
+          Test My keys
         </button>
       </div>
 
@@ -230,17 +230,17 @@ export function ByokPaymentSetup({ onToast }: { onToast: (msg: string) => void }
 
           <div className="space-y-3">
             <div>
-              <label className="block text-[10px] font-bold text-ink3 uppercase tracking-wider mb-1">Stripe Restricted Key (rk_live_... or rk_test_...) *</label>
+              <label className="block text-[10px] font-bold text-ink3 uppercase tracking-wider mb-1">Stripe Restricted Key (rk_live_...) *</label>
               <input
                 value={stripeKey}
                 onChange={(e) => setStripeKey(e.target.value)}
-                placeholder={creds?.stripe_configured ? `Saved: ${creds.stripe_masked} — paste new key to replace` : 'rk_live_51H... or rk_test_51H...'}
+                placeholder={creds?.stripe_configured ? `Saved: ${creds.stripe_masked} — paste new key to replace` : 'rk_live_51H...'}
                 type="password"
                 className="w-full px-3 py-2.5 rounded-xl border border-line dark:border-line bg-main dark:bg-surface2 text-xs font-mono text-ink dark:text-white outline-none focus:ring-2 focus:ring-accent"
               />
             </div>
             <div>
-              <label className="block text-[10px] font-bold text-ink3 uppercase tracking-wider mb-1">Stripe Publishable Key (pk_live_... / pk_test_...) — optional, improves portal UX</label>
+              <label className="block text-[10px] font-bold text-ink3 uppercase tracking-wider mb-1">Stripe Publishable Key (pk_live_...) — optional, improves portal UX</label>
               <input
                 value={stripePub}
                 onChange={(e) => setStripePub(e.target.value)}
@@ -269,7 +269,7 @@ export function ByokPaymentSetup({ onToast }: { onToast: (msg: string) => void }
               <Wallet className="w-4 h-4" />
             </div>
             <div>
-              <h4 className="text-sm font-bold text-ink dark:text-white">PayPal — REST API Credentials (BYOK)</h4>
+              <h4 className="text-sm font-bold text-ink dark:text-white">PayPal</h4>
               <p className="text-[11px] text-ink2">Accept PayPal, cards & local methods directly to your PayPal account.</p>
             </div>
           </div>
@@ -333,7 +333,7 @@ export function ByokPaymentSetup({ onToast }: { onToast: (msg: string) => void }
         <div className="space-y-1">
           <p className="text-[11px] font-bold text-ink dark:text-white">Public payment portal uses your keys.</p>
           <p className="text-[11px] text-ink2 leading-relaxed">
-            When a client opens <span className="font-mono bg-white dark:bg-surface px-1 py-0.5 rounded border text-[10px]">/pay/&lt;invoice-id&gt;</span> and clicks Pay, EronFlow creates a Stripe Checkout Session or PayPal Order <span className="font-bold">directly with your stored keys</span> — the payer’s card/ PayPal completes on Stripe/PayPal’s hosted page and funds settle instantly to your Stripe/PayPal balance.</p>
+            When a client opens <span className="font-mono bg-white dark:bg-surface px-1 py-0.5 rounded border text-[10px]">/pay/&lt;invoice-id&gt;</span> and clicks Pay, Eronflow creates a Stripe Checkout Session or PayPal Order <span className="font-bold">directly with your stored keys</span> — the payer’s card/ PayPal completes on Stripe/PayPal’s hosted page and funds settle instantly to your Stripe/PayPal balance.</p>
           <p className="text-[10px] text-ink3">
             Need help? See <a href="/docs" className="underline font-bold">/docs → Payments</a> or <a href="https://dashboard.stripe.com/apikeys" target="_blank" rel="noreferrer" className="underline">Stripe Dashboard</a> / <a href="https://developer.paypal.com/dashboard" target="_blank" rel="noreferrer" className="underline">PayPal Developer Dashboard</a>.
           </p>

@@ -59,7 +59,7 @@ export function VariableValuesModal({
           <div>
             <h3 className="text-base font-extrabold text-ink dark:text-white">Custom Variables Detected</h3>
             <p className="text-xs text-ink2 dark:text-ink2">
-              This message uses variables EronFlow can&apos;t fill automatically. Add a value for each one to include it in
+              This message uses variables Eronflow can&apos;t fill automatically. Add a value for each one to include it in
               the send.
             </p>
           </div>

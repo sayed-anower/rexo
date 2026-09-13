@@ -53,6 +53,9 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
       // non-JSON error body
     }
     if (res.status === 402 && data?.code) {
+      if ((data.code === 'PLAN_REQUIRED' || data.code === 'PLAN_LIMIT') && typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('rf:plan-required', { detail: { message: data.message, code: data.code, used: data.used, limit: data.limit } }));
+      }
       throw new PlanGateError(data.code, data.message || 'Plan restriction.', data.used, data.limit);
     }
     if (res.status === 401) {
@@ -362,7 +365,7 @@ export async function verifyPayee(): Promise<{ ok: boolean; verified: boolean; m
 
 // 4c. PAYMENT INSTRUMENTS (multiple cards / bank accounts / PayPal)
 // One instrument can be selected as the payout destination (receives
-// collected client payments) and another pays the EronFlow subscription.
+// collected client payments) and another pays the Eronflow subscription.
 export interface InstrumentSelection {
   instruments: PaymentInstrument[];
   payoutInstrumentId: string | null;
@@ -772,7 +775,7 @@ export const APP_CONNECTORS = [
     provider: 'quickbooks',
     name: 'QuickBooks',
     category: 'accounting',
-    description: 'Sync invoices from QuickBooks Online and let EronFlow chase them automatically.',
+    description: 'Sync invoices from QuickBooks Online and let Eronflow chase them automatically.',
   },
   {
     id: 'conn_xero',

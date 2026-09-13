@@ -64,7 +64,7 @@ export function InvitePage({ token, user, isLoggedIn, onOpenAuth, onAccepted, on
             {!isLoggedIn || !user ? (
               <div className="space-y-3">
                 <p className="text-[11px] text-ink3">
-                  To accept, sign in to your EronFlow dashboard (or create your account) with a one-time email code. If you
+                  To accept, sign in to your Eronflow dashboard (or create your account) with a one-time email code. If you
                   don't have an account yet, sign up — you'll verify your email with a code and can join instantly.
                 </p>
                 <button
