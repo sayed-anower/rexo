@@ -204,7 +204,7 @@ function feeRateLabel(def: PaymentMethodFee): string {
               onClick={onBackToApp}
               className="text-xs font-bold text-primary dark:text-secondary hover:underline flex items-center gap-1"
             >
-              Open Dashboard
+              Dashboard
             </button>
             <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-primary-soft text-primary dark:bg-surface2 dark:text-secondary">
               Client Portal
@@ -353,7 +353,7 @@ function feeRateLabel(def: PaymentMethodFee): string {
               <div className="p-3 rounded-xl bg-surface2 dark:bg-surface2/50 border border-line dark:border-line flex items-start gap-2">
                 <Info className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
                 <p className="text-[11px] text-ink2 dark:text-ink2 leading-relaxed">
-                  <span className="font-bold text-ink dark:text-white">BYOK — funds go directly to your agency.</span> EronFlow never touches invoice money. Stripe/PayPal handle the charge on your own account; you pay exactly <span className="font-bold text-ink dark:text-white">${invoice.amount_due.toFixed(2)} {invoice.currency}</span> — no extra platform fee. Stripe/PayPal’s own processing fees (if any) are settled by your Stripe/PayPal account directly.
+                  <span className="font-bold text-ink dark:text-white">Funds Go Directly to Agency.</span> EronFlow never touches invoice money. Stripe/PayPal handle the charge on your own account; you pay exactly <span className="font-bold text-ink dark:text-white">${invoice.amount_due.toFixed(2)} {invoice.currency}</span> — no extra platform fee. Stripe/PayPal’s own processing fees (if any) are settled by your Stripe/PayPal account directly.
                 </p>
               </div>
 
@@ -377,7 +377,7 @@ function feeRateLabel(def: PaymentMethodFee): string {
         </div>
 
         <div className="text-center text-xs text-ink3">
-          Powered by <span className="font-bold text-ink dark:text-ink2">EronFlow SaaS</span>
+          Powered by <span className="font-bold text-ink dark:text-ink2">EronFlow</span>
         </div>
       </div>
       {isPaid && <ConfettiFn trigger={handleConfetti} />}

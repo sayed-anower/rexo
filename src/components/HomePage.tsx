@@ -39,7 +39,7 @@ export function HomePage({ onOpenAuth, onGoogleSignIn }: HomePageProps) {
     },
     {
       q: 'Is there a free tier?',
-      a: 'No. You can create an account for free with your bank or card details, but the moment you want to run any action — tracking invoices, sending reminders, AI drafts — you must choose a plan. If you switch plans mid-month you are charged only the prorated difference, and if you cancel mid-month you receive a money-back refund for unused days minus usage costs.'
+      a: 'No. You can create an account for free, but the moment you want to run any action — tracking invoices, sending reminders, AI drafts — you must choose a plan. If you switch plans mid-month you are charged only the prorated difference, and if you cancel mid-month you receive a money-back refund for unused days minus usage costs.'
     },
     {
       q: 'Can clients pay on my own branded page?',
@@ -76,8 +76,7 @@ export function HomePage({ onOpenAuth, onGoogleSignIn }: HomePageProps) {
 
           {/* Subtitle */}
           <p className="text-sm sm:text-lg text-ink2 dark:text-ink2 leading-relaxed font-normal max-w-2xl mx-auto">
-            EronFlow connects to your accounting apps and automatically sends
-            friendly reminders, firm follow-ups, and payment links — until you get paid.
+            EronFlow connects to your accounting apps and automatically sends reminders, firm follow-ups, and payment links — until you get paid.
           </p>
 
           {/* CTA Group */}
@@ -137,9 +136,9 @@ export function HomePage({ onOpenAuth, onGoogleSignIn }: HomePageProps) {
         <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-6 text-center">
           <span className="text-xs font-bold text-ink3 uppercase tracking-wider">Connects with</span>
           <div className="flex flex-wrap items-center justify-center gap-3 text-xs font-bold text-ink2 dark:text-ink2">
-            <span className="px-3 py-1.5 rounded-xl bg-main dark:bg-surface2 border border-line dark:border-line">Stripe (BYOK)</span>
-            <span className="px-3 py-1.5 rounded-xl bg-main dark:bg-surface2 border border-line dark:border-line">PayPal (BYOK)</span>
-            <span className="px-3 py-1.5 rounded-xl bg-main dark:bg-surface2 border border-line dark:border-line">Paddle (SaaS billing)</span>
+            <span className="px-3 py-1.5 rounded-xl bg-main dark:bg-surface2 border border-line dark:border-line">Stripe</span>
+            <span className="px-3 py-1.5 rounded-xl bg-main dark:bg-surface2 border border-line dark:border-line">PayPal</span>
+            <span className="px-3 py-1.5 rounded-xl bg-main dark:bg-surface2 border border-line dark:border-line">Paddle</span>
             <span className="px-3 py-1.5 rounded-xl bg-main dark:bg-surface2 border border-line dark:border-line">QuickBooks</span>
             <span className="px-3 py-1.5 rounded-xl bg-main dark:bg-surface2 border border-line dark:border-line">Xero</span>
             <span className="px-3 py-1.5 rounded-xl bg-main dark:bg-surface2 border border-line dark:border-line">WhatsApp</span>

@@ -784,16 +784,16 @@ export const APP_CONNECTORS = [
   {
     id: 'conn_stripe',
     provider: 'stripe',
-    name: 'Stripe (BYOK)',
+    name: 'Stripe',
     category: 'payments',
     description: 'Bring Your Own Keys — paste your Stripe restricted key (rk_live_ / rk_test_) so 100% of invoice payments settle directly to your Stripe balance. Paddle is ONLY for SaaS billing.',
   },
   {
     id: 'conn_paypal',
     provider: 'paypal',
-    name: 'PayPal (BYOK)',
+    name: 'PayPal',
     category: 'payments',
-    description: 'Bring Your Own Keys — paste your PayPal Client ID + Secret (Live or Sandbox) so payments land directly in your PayPal account. No platform fees.',
+    description: 'Bring Your Own Keys — paste your PayPal Client ID + Secret so payments land directly in your PayPal account. No platform fees.',
   },
   /* {
     id: 'conn_whatsapp',
