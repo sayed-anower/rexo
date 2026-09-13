@@ -82,7 +82,7 @@ const sections = [
       },
       {
         title: 'SMS',
-        body: `SMS messages are sent via EasySendSMS. Phone numbers should be in international format with country code (e.g., 14155551234 for US).`,
+        body: `SMS messages are sent via SMS Service Provider. Phone numbers should be in international format with country code (e.g., 14155551234 for US).`,
       },
     ],
   },

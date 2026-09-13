@@ -134,7 +134,7 @@ export function PublicPaymentPortal({
           <p className="text-sm font-bold">Invoice not found, is paid, or the payment link is invalid.</p>
           {onBackToApp && (
             <button onClick={onBackToApp} className="text-xs font-bold text-primary hover:underline">
-              ← Return to EronFlow
+              Return to EronFlow
             </button>
           )}
         </div>
@@ -204,7 +204,7 @@ function feeRateLabel(def: PaymentMethodFee): string {
               onClick={onBackToApp}
               className="text-xs font-bold text-primary dark:text-secondary hover:underline flex items-center gap-1"
             >
-              Dashboard
+              EronFlow
             </button>
             <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-primary-soft text-primary dark:bg-surface2 dark:text-secondary">
               Client Portal

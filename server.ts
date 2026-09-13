@@ -2972,8 +2972,17 @@ function buildOAuthUrl(provider: string, state: string, verifier: string | undef
     case 'xero':
       if (effectiveKey('XERO_CLIENT_ID')) {
         const challenge = crypto.createHash('sha256').update(verifier || '').digest('base64url');
+        const params = new URLSearchParams({
+          client_id: effectiveKey('XERO_CLIENT_ID')!,
+          redirect_uri: redirectUri,
+          response_type: 'code',
+          scope: 'openid profile email accounting.transactions accounting.contacts offline_access',
+          state: state,
+          code_challenge: challenge,
+          code_challenge_method: 'S256',
+        });
         return {
-          url: `https://login.xero.com/identity/connect/authorize?client_id=${effectiveKey('XERO_CLIENT_ID')}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent('accounting.transactions accounting.contacts offline_access')}&state=${state}&code_challenge=${challenge}&code_challenge_method=S256`,
+          url: `https://login.xero.com/identity/connect/authorize?${params.toString()}`,
           configured: true,
         };
       }

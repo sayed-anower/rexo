@@ -156,11 +156,11 @@ export function PricingPage({ onOpenAuth }: PricingPageProps) {
           },
           {
             q: 'What payment methods do you accept?',
-            a: 'SaaS subscriptions: Paddle (card, PayPal, Apple Pay & Google Pay as merchant of record). Invoice payments: 100% BYOK — your own Stripe (restricted key) and PayPal (Client ID/Secret) so funds settle directly to your Stripe/PayPal account. No platform markup on invoice amounts.',
+            a: 'SaaS subscriptions via Card, PayPal, Apple Pay & Google Pay. Invoice payments: BYOK — your own Stripe (restricted key) and PayPal (Client ID/Secret) so funds settle directly to your Stripe/PayPal account. No platform markup on invoice amounts.',
           },
           {
             q: 'Is there a free trial?',
-            a: 'No. All plans are paid from day one. Every send goes through real providers (Resend, Meta WhatsApp Cloud API, EasySendSMS) — there are no mock modes.',
+            a: 'No. All plans are paid. Every send goes through real providers.'
           },
           {
             q: 'How do I cancel?',

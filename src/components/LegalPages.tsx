@@ -46,7 +46,7 @@ export function PrivacyPolicyPage({ onBackHome }: LegalPageProps) {
       updated="August 26, 2026"
     >
       <p>
-        EronFlow ("we", "our", "the service") provides automated invoice recovery for B2B digital agencies. This policy
+        EronFlow provides automated invoice recovery for B2B digital agencies. This policy
         explains what personal data we collect, why we collect it, and the rights you have over it.
       </p>
 
@@ -61,7 +61,7 @@ export function PrivacyPolicyPage({ onBackHome }: LegalPageProps) {
 
       <h2>2. How we use your data</h2>
       <ul>
-        <li>To operate the service: sending reminders through email (Resend), WhatsApp (Meta Cloud API) and SMS (EasySendSMS).</li>
+        <li>To operate the service: sending reminders through email, WhatsApp and SMS.</li>
         <li>To schedule automations exactly when you configure them (Upstash QStash).</li>
         <li>To process subscription payments via Paddle (merchant of record) and invoice payments via your own Stripe/PayPal keys (BYOK — EronFlow never touches invoice funds).</li>
         <li>To generate draft templates when you explicitly request AI assistance (Google Gemini).</li>
@@ -70,10 +70,7 @@ export function PrivacyPolicyPage({ onBackHome }: LegalPageProps) {
 
       <h2>3. Third-party processors</h2>
       <p>
-        We share data only with the processors required to deliver the service: Supabase (database hosting),
-        Upstash QStash (job scheduling), Resend (email delivery), Google (OAuth sign-in, Gemini AI),
-        Meta (WhatsApp Cloud API), EasySendSMS (SMS delivery), Paddle (SaaS subscription billing), Stripe & PayPal via your own BYOK keys (invoice payments settle directly to your Stripe/PayPal account — EronFlow never touches invoice funds), and QuickBooks/Xero (invoice sync
-        when you connect them). Each processor receives only what is needed for its task.
+        We share data only with the processors required to deliver the service. Each processor receives only what is needed for its task.
       </p>
 
       <h2>4. Client communications</h2>
@@ -209,7 +206,7 @@ export function AboutPage({ onBackHome }: LegalPageProps) {
 
       <h2>Principles</h2>
       <ul>
-        <li>No mock modes — every send goes through real providers (Resend, Meta WhatsApp Cloud API, EasySendSMS).</li>
+        <li>No mock modes — every send goes through real providers.</li>
         <li>Your brand, not ours — messages carry your company name, signature and colors.</li>
         <li>Transparent billing — proration and refunds are calculated openly, shown before you confirm.</li>
       </ul>
