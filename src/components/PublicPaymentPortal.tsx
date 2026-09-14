@@ -30,6 +30,7 @@ interface PublicPaymentPortalProps {
   agencyProfile: PortalAgency;
   invoiceId: string;
   loading?: boolean;
+  availableProviders?: string[];
   onBackToApp?: () => void;
 }
 
@@ -38,9 +39,21 @@ export function PublicPaymentPortal({
   agencyProfile,
   invoiceId,
   loading = false,
+  availableProviders,
   onBackToApp
 }: PublicPaymentPortalProps) {
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('card');
+  const hasStripe = !availableProviders || availableProviders.length === 0 || availableProviders.includes('stripe');
+  const hasPaypal = !availableProviders || availableProviders.length === 0 || availableProviders.includes('paypal');
+  // Default to first available provider: if only paypal, default to paypal, else card (stripe)
+  const defaultMethod: PaymentMethod = hasPaypal && !hasStripe ? 'paypal' : 'card';
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(defaultMethod);
+
+  // Keep selected method in sync when availableProviders loads (e.g. portal initially null → then stripe-only)
+  useEffect(() => {
+    if (!availableProviders) return;
+    if (!hasStripe && hasPaypal && paymentMethod !== 'paypal') setPaymentMethod('paypal');
+    else if (hasStripe && !hasPaypal && paymentMethod === 'paypal') setPaymentMethod('card');
+  }, [availableProviders, hasStripe, hasPaypal, paymentMethod]);
   const [processing, setProcessing] = useState(false);
   const [paid, setPaid] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
@@ -181,11 +194,11 @@ export function PublicPaymentPortal({
     });
   };
 
-const methods: { id: PaymentMethod; label: string; hint: string; icon: React.ElementType }[] = [
-  { id: 'card', label: 'Credit / Debit Card', hint: 'Via your agency Stripe (Visa, Mastercard, Amex) — funds go directly to agency', icon: CreditCard },
-  { id: 'paypal', label: 'PayPal', hint: 'Via your agency PayPal (balance or linked card) — direct to agency PayPal', icon: Wallet },
-  { id: 'bank', label: 'Bank Transfer / ACH', hint: 'Via Stripe (SEPA, iDEAL, ACH) — settles to agency Stripe', icon: Landmark },
-  { id: 'wallet', label: 'Wallets & Local', hint: 'Apple Pay, Google Pay, Klarna via Stripe — direct to agency', icon: Banknote },
+const methods: { id: PaymentMethod; label: string; hint: string; icon: React.ElementType; provider: 'stripe' | 'paypal' }[] = [
+  { id: 'card', label: 'Credit / Debit Card', hint: 'Via your agency Stripe (Visa, Mastercard, Amex) — funds go directly to agency', icon: CreditCard, provider: 'stripe' },
+  { id: 'paypal', label: 'PayPal', hint: 'Via your agency PayPal (balance or linked card) — direct to agency PayPal', icon: Wallet, provider: 'paypal' },
+  { id: 'bank', label: 'Bank Transfer / ACH', hint: 'Via Stripe (SEPA, iDEAL, ACH) — settles to agency Stripe', icon: Landmark, provider: 'stripe' },
+  { id: 'wallet', label: 'Wallets & Local', hint: 'Apple Pay, Google Pay, Klarna via Stripe — direct to agency', icon: Banknote, provider: 'stripe' },
 ];
 
 function feeRateLabel(def: PaymentMethodFee): string {
@@ -315,27 +328,35 @@ function feeRateLabel(def: PaymentMethodFee): string {
                 </span>
               </div>
 
+              {availableProviders && availableProviders.length === 0 && (
+                <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-xs text-amber-800 dark:text-amber-200 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>This agency hasn't connected a payment method yet. Please contact {agencyProfile.company_name} to enable Stripe or PayPal for this invoice.</span>
+                </div>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {methods.map((m) => {
                   const Icon = m.icon;
                   const selected = paymentMethod === m.id;
+                  const isAvailable = m.provider === 'stripe' ? hasStripe : hasPaypal;
                   return (
                     <button
                       key={m.id}
                       type="button"
-                      onClick={() => setPaymentMethod(m.id)}
-                      className={`p-3 rounded-xl border text-left transition-all ${
-                        selected
+                      disabled={!isAvailable}
+                      onClick={() => isAvailable && setPaymentMethod(m.id)}
+                      className={`p-3 rounded-xl border text-left transition-all ${!isAvailable ? 'opacity-50 cursor-not-allowed bg-surface2/50' : ''} ${
+                        selected && isAvailable
                           ? 'border-accent bg-primary-soft dark:bg-surface2 ring-2 ring-accent/20'
                           : 'border-line dark:border-line bg-main dark:bg-surface2 hover:border-primary'
                       }`}
                     >
                       <div className="flex items-center gap-2.5">
-                        <Icon className={`w-4 h-4 shrink-0 ${selected ? 'text-accent' : 'text-ink3'}`} />
-                        <span className="text-xs font-bold text-ink dark:text-white">{m.label}</span>
+                        <Icon className={`w-4 h-4 shrink-0 ${selected && isAvailable ? 'text-accent' : 'text-ink3'}`} />
+                        <span className="text-xs font-bold text-ink dark:text-white">{m.label} {!isAvailable && '(Not connected)'}</span>
                       </div>
-                      <p className="text-[10px] text-ink2 mt-1 leading-relaxed">{m.hint}</p>
-                      <p className={`text-[10px] mt-1 font-semibold ${selected ? 'text-accent' : 'text-ink3'}`}>
+                      <p className="text-[10px] text-ink2 mt-1 leading-relaxed">{isAvailable ? m.hint : `Agency hasn't connected ${m.provider === 'stripe' ? 'Stripe' : 'PayPal'} — choose another method.`}</p>
+                      <p className={`text-[10px] mt-1 font-semibold ${selected && isAvailable ? 'text-accent' : 'text-ink3'}`}>
                         No platform markup — payer pays exactly invoice amount. Stripe/PayPal fees (if any) go directly to agency.
                       </p>
                     </button>

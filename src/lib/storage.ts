@@ -283,6 +283,8 @@ export async function payInvoice(invoiceId: string): Promise<Invoice> {
 export async function fetchPortalInvoice(invoiceId: string): Promise<{
   invoice: Invoice;
   agency: { company_name: string; logo_url?: string; brand_color?: string };
+  availableProviders?: string[];
+  byokModel?: boolean;
 }> {
   return apiFetch(`/api/portal/invoice/${invoiceId}`);
 }

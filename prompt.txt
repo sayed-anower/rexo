@@ -1,1 +1,4 @@
-opencode -s ses_f64ebb4b7ffeYYcI251zk1NQ2B
+I can't send email or do another thing after adding stripe.
+There should be like if I add stripe or paypal, I can do everything. Both is not required.
+Make sure after payment via payment portal, it successfully shows paid status, because it didn't when I paid via stripe test api keys.
+Make sure the automation is working, it didn't, maybe because payment method wasn't set.

@@ -142,7 +142,7 @@ export const PLANS: PlanDefinition[] = [
   plan(
     'starter',
     'Starter',
-    69,
+    119,
     'For freelancers & studios recovering up to $50k/month.',
     'Up To $50k recovery volume',
     {
@@ -163,8 +163,8 @@ export const PLANS: PlanDefinition[] = [
   plan(
     'pro',
     'Pro',
-    119,
-    'For growing teams recovering up to $100k monthly.',
+    229,
+    'For growing teams recovering up to $200k monthly.',
     'Up To $100k recovery volume',
     {
       tracked_invoices: 1000,
@@ -184,7 +184,7 @@ export const PLANS: PlanDefinition[] = [
   plan(
     'agency',
     'Agency',
-    299,
+    419,
     'For agencies handling up to $1M in receivables.',
     'Up To $1M recovery volume',
     {

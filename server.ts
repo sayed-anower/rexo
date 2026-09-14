@@ -3380,11 +3380,12 @@ app.post('/api/custom-emails/send', async (req, res) => {
   const limit = await assertLimit(user.profile.id, user.profile.subscription_tier!, 'emails');
   if (!limit.ok) return res.status(402).json(limit);
   // Money needs a destination: reminders only go out once the account has a
-  // selected payout method (Settings → Payment methods).
-  if (!hasPayoutDestination(user.profile)) {
+  // payment method configured — Stripe OR PayPal BYOK is now sufficient (not both).
+  // Legacy payout instruments also satisfy the check.
+  if (!(await hasPaymentSetup(user.profile.id, user.profile))) {
     return res.status(402).json({
       code: 'PAYOUT_INSTRUMENT_REQUIRED',
-      message: 'Add where we should send collected payments first — Settings → Payment methods → add your card, bank account or PayPal.',
+      message: 'Connect a payment method first — Settings → Payment Setup → add your Stripe or PayPal (either one is enough), or add a payout instrument in Settings → Payment methods.',
     });
   }
 
@@ -3574,10 +3575,10 @@ app.post('/api/invoices/:id/send', async (req, res) => {
   if (!user) return;
   const active = assertPlanActive(user);
   if (!active.ok) return res.status(402).json(active);
-  if (!hasPayoutDestination(user.profile)) {
+  if (!(await hasPaymentSetup(user.profile.id, user.profile))) {
     return res.status(402).json({
       code: 'PAYOUT_INSTRUMENT_REQUIRED',
-      message: 'Add where we should send collected payments first — Settings → Payment methods → add your card, bank account or PayPal.',
+      message: 'Connect a payment method first — Settings → Payment Setup → add your Stripe or PayPal (either one is enough), or add a payout instrument in Settings → Payment methods.',
     });
   }
 
@@ -4670,9 +4671,26 @@ async function testStripeKeyDirect(key: string): Promise<{ ok: boolean; message:
       headers: { Authorization: `Bearer ${k}` },
     });
     const json: any = await res.json().catch(() => ({}));
-    if (res.ok) return { ok: true, message: 'Stripe key validated — permissions OK.' };
-    const msg = json?.error?.message || `Stripe rejected the key (${res.status}). Check permissions: PaymentIntents Write, Customers Write, Charges Read, and for hosted checkout also Checkout Sessions Write.`;
-    return { ok: false, message: msg };
+    if (!res.ok) {
+      const msg = json?.error?.message || `Stripe rejected the key (${res.status}). Check permissions: PaymentIntents Write, Customers Write, Charges Read, and for hosted checkout also Checkout Sessions Write + Read.`;
+      return { ok: false, message: msg };
+    }
+    // If basic auth passed, also probe Checkout Sessions read (needed for polling paid detection).
+    // We do a cheap list? 0 limit — restricted keys with checkout_sessions:read will succeed, otherwise 403.
+    // We don't fail the whole validation if this probe fails, but warn so user knows polling will break.
+    try {
+      const probe = await fetch('https://api.stripe.com/v1/checkout/sessions?limit=1', {
+        headers: { Authorization: `Bearer ${k}` },
+      });
+      if (!probe.ok) {
+        const pj: any = await probe.json().catch(() => ({}));
+        const pmsg = String(pj?.error?.message || '');
+        if (probe.status === 403 || /restricted|permission/i.test(pmsg)) {
+          return { ok: true, message: 'Stripe key validated — but Checkout Sessions Read is missing. Add Checkout Sessions: Read + Write in Stripe Dashboard → API Keys → Restricted keys → Edit, or polling for paid status will fail (invoice will stay unpaid after client pays).' };
+        }
+      }
+    } catch {}
+    return { ok: true, message: 'Stripe key validated — permissions OK (including Checkout Sessions).' };
   } catch (e: any) {
     return { ok: false, message: e.message || 'Could not reach Stripe API.' };
   }
@@ -4975,8 +4993,25 @@ app.delete('/api/payment-credentials/:provider', async (req, res) => {
 
 // True when the account has somewhere to send collected client money. Manual
 // sends and automation are gated on this — money needs a destination.
+// FIX: Stripe OR PayPal BYOK is sufficient (user can add either, not both).
+// Legacy payout instruments also satisfy the check. This unblocks sending
+// and automation right after adding a single provider.
 function hasPayoutDestination(profile: UserProfile): boolean {
   return Boolean(profile.default_payout_instrument_id);
+}
+
+async function hasPaymentSetup(uid: string, profile?: UserProfile): Promise<boolean> {
+  if (profile?.default_payout_instrument_id) return true;
+  // Check raw user row if profile not provided or mismatched
+  if (!profile) {
+    const sb = getSupabase();
+    if (sb) {
+      const { data: u } = await sb.from('users').select('default_payout_instrument_id').eq('id', uid).maybeSingle();
+      if ((u as any)?.default_payout_instrument_id) return true;
+    }
+  }
+  const byok = await getByokCredentials(uid);
+  return Boolean(byok?.stripe_configured || byok?.paypal_configured);
 }
 
 // Queue + attempt the transfer of a just-collected client payment to the
@@ -5017,7 +5052,15 @@ async function queuePayoutForInvoice(uid: string, inv: any): Promise<void> {
       });
 
     if (!instrument) {
-      await insert('blocked', { error_message: 'No payout destination selected — add one in Settings → Payment methods.' });
+      // BYOK model: funds settle directly to agency Stripe/PayPal — instrument not required.
+      // If BYOK is configured, record as queued (audit trail) even without an instrument; only block if neither exists.
+      const byokForPayout = await getByokCredentials(uid);
+      const hasByokForPayout = Boolean(byokForPayout?.stripe_configured || byokForPayout?.paypal_configured);
+      if (hasByokForPayout) {
+        await insert('queued', { error_message: `Payment of ${amount} ${currency} received via BYOK client portal — funds settled directly to agency Stripe/PayPal (BYOK). No platform transfer needed.` });
+        return;
+      }
+      await insert('blocked', { error_message: 'No payout destination selected — add Stripe or PayPal in Settings → Payment Setup, or add a payout instrument in Settings → Payment methods.' });
       return;
     }
 
@@ -5380,23 +5423,67 @@ app.get('/api/payments/status/:invoiceId', async (req, res) => {
     try {
       if (intent.provider === 'stripe' && byok?.stripe_restricted_key) {
         const raw: any = intent.raw || {};
-        let remoteStatus: string | null = null;
-        let isPaid = false;
-        // Checkout Session path
-        if (String(intent.id).startsWith('cs_') || raw.object === 'checkout.session' || raw.payment_status) {
-          const cs = await stripeRetrieveCheckoutSessionWithByok(byok.stripe_restricted_key, intent.id);
-          remoteStatus = String(cs.payment_status || cs.status || '').toUpperCase();
-          isPaid = remoteStatus === 'PAID' || remoteStatus === 'COMPLETE' || cs.payment_status === 'paid';
-          await sb.from('payment_intents').update({ status: remoteStatus || 'unknown', raw: cs }).eq('id', intent.id);
-          if (isPaid) {
-            const paid = await markInvoicePaid(invoice.id, invoice.user_id, invoice, `Stripe Checkout ${remoteStatus} (BYOK poll ${intent.id}).`);
-            return res.json({ paid, status: remoteStatus, provider: 'stripe' });
+        const isCheckoutIntent = String(intent.id).startsWith('cs_') || raw.object === 'checkout.session' || raw.payment_status != null;
+        if (isCheckoutIntent) {
+          let cs: any = null;
+          let remoteStatus: string | null = null;
+          try {
+            cs = await stripeRetrieveCheckoutSessionWithByok(byok.stripe_restricted_key, intent.id);
+            // Stripe Checkout: paid when payment_status=paid OR status=complete (both mean funds captured)
+            const paymentPaid = String(cs.payment_status || '').toLowerCase() === 'paid';
+            const statusComplete = String(cs.status || '').toLowerCase() === 'complete';
+            remoteStatus = String(cs.payment_status || cs.status || '').toUpperCase() || 'UNKNOWN';
+            const isPaid = paymentPaid || statusComplete;
+            await sb.from('payment_intents').update({ status: remoteStatus || 'unknown', raw: cs }).eq('id', intent.id);
+            if (isPaid) {
+              const paid = await markInvoicePaid(invoice.id, invoice.user_id, invoice, `Stripe Checkout ${remoteStatus} (BYOK poll ${intent.id}).`);
+              return res.json({ paid, status: remoteStatus, provider: 'stripe' });
+            }
+            // Fallback: if session not yet marked paid but underlying PaymentIntent is succeeded, also count as paid (covers test mode edge)
+            if (cs.payment_intent) {
+              try {
+                const piId = typeof cs.payment_intent === 'string' ? cs.payment_intent : cs.payment_intent?.id;
+                if (piId && String(piId).startsWith('pi_')) {
+                  const pi = await stripeRetrievePaymentIntentWithByok(byok.stripe_restricted_key, String(piId));
+                  if (String(pi.status || '').toLowerCase() === 'succeeded') {
+                    await sb.from('payment_intents').update({ status: 'PAID', raw: { ...cs, payment_intent_obj: pi } }).eq('id', intent.id);
+                    const paid = await markInvoicePaid(invoice.id, invoice.user_id, invoice, `Stripe Checkout → PI ${piId} SUCCEEDED (BYOK poll ${intent.id}).`);
+                    return res.json({ paid, status: 'PAID', provider: 'stripe' });
+                  }
+                }
+              } catch {}
+            }
+            if (['CANCELED','CANCELLED','FAILED','EXPIRED','UNPAID'].includes(remoteStatus)) {
+              // UNPAID is not terminal — keep polling, but if expired/canceled return 402
+              if (['CANCELED','CANCELLED','FAILED','EXPIRED'].includes(remoteStatus)) {
+                return res.status(402).json({ paid: false, status: remoteStatus, provider: 'stripe', message: 'The payment was not completed. You can safely try again.' });
+              }
+            }
+            return res.json({ paid: false, status: remoteStatus || intent.status || 'pending', provider: 'stripe' });
+          } catch (e: any) {
+            // If Checkout retrieve fails (e.g. key lacks checkout_sessions:read), try PaymentIntent fallback from stored raw
+            const piIdFromRaw = raw.payment_intent || raw.payment_intent_id;
+            const tryPiId = piIdFromRaw && String(piIdFromRaw).startsWith('pi_') ? String(piIdFromRaw) : null;
+            if (tryPiId) {
+              try {
+                const pi = await stripeRetrievePaymentIntentWithByok(byok.stripe_restricted_key, tryPiId);
+                const rs = String(pi.status || '').toUpperCase();
+                await sb.from('payment_intents').update({ status: rs || 'unknown', raw: { ...raw, fallback_pi: pi } }).eq('id', intent.id);
+                if (rs === 'SUCCEEDED') {
+                  const paid = await markInvoicePaid(invoice.id, invoice.user_id, invoice, `Stripe PI ${rs} via Checkout fallback (BYOK poll ${intent.id} → ${tryPiId}).`);
+                  return res.json({ paid, status: rs, provider: 'stripe' });
+                }
+                return res.json({ paid: false, status: rs || intent.status || 'pending', provider: 'stripe' });
+              } catch {}
+            }
+            // Surface the original Retrieve error but keep pending (don't hide that key needs fixing)
+            throw e;
           }
         } else {
-          // PaymentIntent path
+          // PaymentIntent path (fallback when Checkout Sessions not used)
           const pi = await stripeRetrievePaymentIntentWithByok(byok.stripe_restricted_key, intent.id);
-          remoteStatus = String(pi.status || '').toUpperCase();
-          isPaid = remoteStatus === 'SUCCEEDED';
+          const remoteStatus = String(pi.status || '').toUpperCase();
+          const isPaid = remoteStatus === 'SUCCEEDED';
           await sb.from('payment_intents').update({ status: remoteStatus || 'unknown', raw: pi }).eq('id', intent.id);
           if (isPaid) {
             const paid = await markInvoicePaid(invoice.id, invoice.user_id, invoice, `Stripe ${remoteStatus} (BYOK poll ${intent.id}).`);
@@ -5405,8 +5492,8 @@ app.get('/api/payments/status/:invoiceId', async (req, res) => {
           if (['CANCELED','CANCELLED','FAILED'].includes(remoteStatus)) {
             return res.status(402).json({ paid: false, status: remoteStatus, provider: 'stripe', message: 'The payment was not completed. You can safely try again.' });
           }
+          return res.json({ paid: false, status: remoteStatus || intent.status || 'pending', provider: 'stripe' });
         }
-        return res.json({ paid: false, status: remoteStatus || intent.status || 'pending', provider: 'stripe' });
       }
       if (intent.provider === 'paypal' && byok?.paypal_client_id && byok?.paypal_client_secret) {
         const order = await paypalCaptureOrGetOrderWithByok(byok.paypal_client_id, byok.paypal_client_secret, byok.paypal_mode || 'live', intent.id);
@@ -5763,11 +5850,19 @@ app.post('/api/cron/process-reminders', async (req, res) => {
       const uid = u.id as string;
       const tier = u.subscription_tier as SubscriptionTier;
       if (!tier || !PLAN_BY_ID[tier]) continue;
-      // Automation needs a money destination — without a selected payout
-      // method there is nowhere to send collected payments, so nothing fires.
-      if (!u.default_payout_instrument_id) {
-        console.warn(`[Cron] user ${uid} has no payout destination — automation paused until one is added in Settings → Payment methods.`);
-        continue;
+      // Automation needs a money destination — without Stripe/PayPal BYOK or a
+      // legacy payout instrument there is nowhere to send collected payments.
+      // FIX: Stripe OR PayPal alone is sufficient (not both required).
+      {
+        const hasInstrument = Boolean(u.default_payout_instrument_id);
+        if (!hasInstrument) {
+          const byokCron = await getByokCredentials(uid);
+          const hasByokCron = Boolean(byokCron?.stripe_configured || byokCron?.paypal_configured);
+          if (!hasByokCron) {
+            console.warn(`[Cron] user ${uid} has no payout destination — automation paused until Stripe or PayPal is configured in Settings → Payment Setup (or a payout instrument is added).`);
+            continue;
+          }
+        }
       }
 
     // Active automation schedules for this workspace.

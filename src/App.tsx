@@ -128,6 +128,7 @@ export default function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [portalInvoice, setPortalInvoice] = useState<Invoice | null>(null);
   const [portalAgency, setPortalAgency] = useState<{ company_name: string; logo_url?: string; brand_color?: string } | null>(null);
+  const [portalProviders, setPortalProviders] = useState<string[] | null>(null);
 
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [sequences, setSequences] = useState<Sequence[]>([]);
@@ -201,6 +202,7 @@ export default function App() {
     let cancelled = false;
     setPortalInvoice(null);
     setPortalAgency(null);
+    setPortalProviders(null);
     setPortalLoading(true);
     (async () => {
       try {
@@ -208,6 +210,7 @@ export default function App() {
         if (cancelled) return;
         setPortalInvoice(data.invoice);
         setPortalAgency(data.agency);
+        setPortalProviders((data as any).availableProviders || null);
       } catch {
         if (!cancelled) showToast('Invoice not found.');
       } finally {
@@ -475,6 +478,7 @@ const handleApplyAiSteps = (newSteps: any[]) => {
             : { company_name: 'Client Billing' }
         }
         invoiceId={route.invoiceId}
+        availableProviders={portalProviders || undefined}
         onBackToApp={() => navigate('/')}
       />
     );
