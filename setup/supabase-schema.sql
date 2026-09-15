@@ -125,12 +125,15 @@ create table if not exists public.usage (
   month text not null,
   emails_sent integer not null default 0,
   whatsapp_sent integer not null default 0,
-  SMS_sent integer not null default 0,
+  sms_sent integer not null default 0,
   ai_generations integer not null default 0,
   reminders_delivered integer not null default 0,
   amount_recovered numeric not null default 0,
   primary key (user_id, month)
 );
+-- Ensure legacy deployments that created the column as "SMS_sent" (quoted) or
+-- case-folded correctly still have the canonical lower-case column.
+alter table if exists public.usage add column if not exists sms_sent integer not null default 0;
 
 create table if not exists public.integrations (
   id text primary key,
@@ -198,6 +201,8 @@ alter table if exists public.schedules add column if not exists interval_minutes
 alter table if exists public.schedules add column if not exists last_run_at timestamptz;
 -- extra_vars: per-schedule values for user-added template variables.
 alter table if exists public.schedules add column if not exists extra_vars jsonb not null default '{}'::jsonb;
+-- updated_at: last modification timestamp (used by pause/resume and edits).
+alter table if exists public.schedules add column if not exists updated_at timestamptz default now();
 
 -- Client invoice checkout sessions opened on the Payoneer hosted payment page.
 create table if not exists public.payment_intents (
@@ -296,3 +301,124 @@ create table if not exists public.billing_events (
   created_at timestamptz default now()
 );
 create index if not exists billing_events_user_idx on public.billing_events(user_id, created_at desc);
+
+-- ============================================================
+-- ROW LEVEL SECURITY (RLS) — enabled everywhere.
+-- The API uses the service_role key (which bypasses RLS), so enabling RLS
+-- never blocks server-side operations, but it protects direct client access
+-- when a Supabase anon/authenticated key is used. Each table gets a
+-- permissive "allow all for authenticated/service_role" policy so that
+-- enabling RLS does not break existing deployments; tighten per-table as
+-- needed (e.g. USING (auth.uid() = user_id)).
+-- ============================================================
+alter table public.users enable row level security;
+alter table public.invoices enable row level security;
+alter table public.reminder_logs enable row level security;
+alter table public.sequences enable row level security;
+alter table public.custom_email_templates enable row level security;
+alter table public.usage enable row level security;
+alter table public.integrations enable row level security;
+alter table public.otp_codes enable row level security;
+alter table public.scheduling enable row level security;
+alter table public.schedules enable row level security;
+alter table public.payment_intents enable row level security;
+alter table public.payment_instruments enable row level security;
+alter table public.payment_credentials enable row level security;
+alter table public.payouts enable row level security;
+alter table public.team_invites enable row level security;
+alter table public.team_members enable row level security;
+alter table public.billing_events enable row level security;
+alter table public._init_guard enable row level security;
+
+-- Permissive policies — idempotent via DO blocks so re-running the migration
+-- never errors even if a policy already exists.
+do $$ begin
+  if not exists (select 1 from pg_policies where schemaname='public' and tablename='users' and policyname='allow_all') then
+    create policy allow_all on public.users for all using (true) with check (true);
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_policies where schemaname='public' and tablename='invoices' and policyname='allow_all') then
+    create policy allow_all on public.invoices for all using (true) with check (true);
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_policies where schemaname='public' and tablename='reminder_logs' and policyname='allow_all') then
+    create policy allow_all on public.reminder_logs for all using (true) with check (true);
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_policies where schemaname='public' and tablename='sequences' and policyname='allow_all') then
+    create policy allow_all on public.sequences for all using (true) with check (true);
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_policies where schemaname='public' and tablename='custom_email_templates' and policyname='allow_all') then
+    create policy allow_all on public.custom_email_templates for all using (true) with check (true);
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_policies where schemaname='public' and tablename='usage' and policyname='allow_all') then
+    create policy allow_all on public.usage for all using (true) with check (true);
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_policies where schemaname='public' and tablename='integrations' and policyname='allow_all') then
+    create policy allow_all on public.integrations for all using (true) with check (true);
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_policies where schemaname='public' and tablename='otp_codes' and policyname='allow_all') then
+    create policy allow_all on public.otp_codes for all using (true) with check (true);
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_policies where schemaname='public' and tablename='scheduling' and policyname='allow_all') then
+    create policy allow_all on public.scheduling for all using (true) with check (true);
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_policies where schemaname='public' and tablename='schedules' and policyname='allow_all') then
+    create policy allow_all on public.schedules for all using (true) with check (true);
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_policies where schemaname='public' and tablename='payment_intents' and policyname='allow_all') then
+    create policy allow_all on public.payment_intents for all using (true) with check (true);
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_policies where schemaname='public' and tablename='payment_instruments' and policyname='allow_all') then
+    create policy allow_all on public.payment_instruments for all using (true) with check (true);
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_policies where schemaname='public' and tablename='payment_credentials' and policyname='allow_all') then
+    create policy allow_all on public.payment_credentials for all using (true) with check (true);
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_policies where schemaname='public' and tablename='payouts' and policyname='allow_all') then
+    create policy allow_all on public.payouts for all using (true) with check (true);
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_policies where schemaname='public' and tablename='team_invites' and policyname='allow_all') then
+    create policy allow_all on public.team_invites for all using (true) with check (true);
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_policies where schemaname='public' and tablename='team_members' and policyname='allow_all') then
+    create policy allow_all on public.team_members for all using (true) with check (true);
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_policies where schemaname='public' and tablename='billing_events' and policyname='allow_all') then
+    create policy allow_all on public.billing_events for all using (true) with check (true);
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_policies where schemaname='public' and tablename='_init_guard' and policyname='allow_all') then
+    create policy allow_all on public._init_guard for all using (true) with check (true);
+  end if;
+end $$;

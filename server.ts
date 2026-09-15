@@ -417,46 +417,67 @@ async function requireUser(
 interface UsageRow {
   emails_sent: number;
   whatsapp_sent: number;
-  SMS_sent: number;
+  sms_sent: number;
+  // Legacy alias — callers may still pass/read SMS_sent; we normalise to sms_sent everywhere.
+  SMS_sent?: number;
   ai_generations: number;
   reminders_delivered: number;
   amount_recovered: number;
 }
 
-async function getUsage(uid: string, month: string): Promise<UsageRow> {
-  const sb = getSupabase();
-  if (!sb) {
-    return { emails_sent: 0, whatsapp_sent: 0, SMS_sent: 0, ai_generations: 0, reminders_delivered: 0, amount_recovered: 0 };
-  }
-  const { data } = await sb.from('usage').select('*').eq('user_id', uid).eq('month', month).maybeSingle();
-  if (!data) return { emails_sent: 0, whatsapp_sent: 0, SMS_sent: 0, ai_generations: 0, reminders_delivered: 0, amount_recovered: 0 };
-  const u = data as unknown as UsageRow;
+function normalizeUsageRow(raw: any): UsageRow {
+  const sms = Number(raw?.sms_sent ?? raw?.SMS_sent) || 0;
   return {
-    emails_sent: Number(u.emails_sent) || 0,
-    whatsapp_sent: Number(u.whatsapp_sent) || 0,
-    SMS_sent: Number(u.SMS_sent) || 0,
-    ai_generations: Number(u.ai_generations) || 0,
-    reminders_delivered: Number(u.reminders_delivered) || 0,
-    amount_recovered: Number(u.amount_recovered) || 0,
+    emails_sent: Number(raw?.emails_sent) || 0,
+    whatsapp_sent: Number(raw?.whatsapp_sent) || 0,
+    sms_sent: sms,
+    SMS_sent: sms,
+    ai_generations: Number(raw?.ai_generations) || 0,
+    reminders_delivered: Number(raw?.reminders_delivered) || 0,
+    amount_recovered: Number(raw?.amount_recovered) || 0,
   };
 }
 
-async function addUsage(uid: string, partial: Partial<UsageRow>): Promise<UsageRow> {
+async function getUsage(uid: string, month: string): Promise<UsageRow> {
+  const sb = getSupabase();
+  if (!sb) {
+    return { emails_sent: 0, whatsapp_sent: 0, sms_sent: 0, SMS_sent: 0, ai_generations: 0, reminders_delivered: 0, amount_recovered: 0 };
+  }
+  const { data } = await sb.from('usage').select('*').eq('user_id', uid).eq('month', month).maybeSingle();
+  if (!data) return { emails_sent: 0, whatsapp_sent: 0, sms_sent: 0, SMS_sent: 0, ai_generations: 0, reminders_delivered: 0, amount_recovered: 0 };
+  return normalizeUsageRow(data);
+}
+
+async function addUsage(uid: string, partial: Record<string, number>): Promise<UsageRow> {
   const sb = getSupabase();
   const month = new Date().toISOString().slice(0, 7);
   const current = await getUsage(uid, month);
+  const smsIncr = Number((partial as any).sms_sent ?? (partial as any).SMS_sent) || 0;
   const next: UsageRow = {
-    emails_sent: current.emails_sent + (partial.emails_sent || 0),
-    whatsapp_sent: current.whatsapp_sent + (partial.whatsapp_sent || 0),
-    SMS_sent: current.SMS_sent + (partial.SMS_sent || 0),
-    ai_generations: current.ai_generations + (partial.ai_generations || 0),
-    reminders_delivered: current.reminders_delivered + (partial.reminders_delivered || 0),
-    amount_recovered: current.amount_recovered + (partial.amount_recovered || 0),
+    emails_sent: current.emails_sent + (Number(partial.emails_sent) || 0),
+    whatsapp_sent: current.whatsapp_sent + (Number(partial.whatsapp_sent) || 0),
+    sms_sent: current.sms_sent + smsIncr,
+    SMS_sent: (current.sms_sent || 0) + smsIncr,
+    ai_generations: current.ai_generations + (Number(partial.ai_generations) || 0),
+    reminders_delivered: current.reminders_delivered + (Number(partial.reminders_delivered) || 0),
+    amount_recovered: current.amount_recovered + (Number(partial.amount_recovered) || 0),
   };
   if (sb) {
-    await sb
-      .from('usage')
-      .upsert({ user_id: uid, month, ...next }, { onConflict: 'user_id,month' });
+    // Persist using canonical lower-case column names — Postgres folds unquoted identifiers to lower.
+    const { error } = await sb.from('usage').upsert(
+      {
+        user_id: uid,
+        month,
+        emails_sent: next.emails_sent,
+        whatsapp_sent: next.whatsapp_sent,
+        sms_sent: next.sms_sent,
+        ai_generations: next.ai_generations,
+        reminders_delivered: next.reminders_delivered,
+        amount_recovered: next.amount_recovered,
+      } as any,
+      { onConflict: 'user_id,month' }
+    );
+    if (error) console.error('[Usage] upsert failed:', error.message);
   }
   return next;
 }
@@ -503,7 +524,7 @@ async function assertLimit(
     used = usage.whatsapp_sent;
     limit = plan.limits.whatsapp_per_month;
   } else if (kind === 'SMS') {
-    used = usage.SMS_sent;
+    used = usage.sms_sent ?? usage.SMS_sent ?? 0;
     limit = plan.limits.SMS_per_month;
   } else {
     used = usage.ai_generations;
@@ -574,7 +595,7 @@ function billingMath(plan: PlanDefinition, startedAt: string, usage: UsageRow, i
   const usageCost = roundMoney(
     usage.emails_sent * UNIT_COSTS.email +
       usage.whatsapp_sent * UNIT_COSTS.whatsapp +
-      usage.SMS_sent * UNIT_COSTS.SMS +
+      (usage.sms_sent ?? (usage as any).SMS_sent ?? 0) * UNIT_COSTS.SMS +
       usage.ai_generations * UNIT_COSTS.ai_generation +
       invoiceCount * UNIT_COSTS.invoice_tracked
   );
@@ -1686,9 +1707,14 @@ app.post('/api/usage', async (req, res) => {
   const user = await requireUser(req, res);
   if (!user) return;
   const partial = req.body || {};
-  const applicable: Partial<UsageRow> = {};
-  for (const k of ['emails_sent', 'whatsapp_sent', 'SMS_sent', 'ai_generations', 'reminders_delivered', 'amount_recovered']) {
+  const applicable: Record<string, number> = {};
+  for (const k of ['emails_sent', 'whatsapp_sent', 'sms_sent', 'SMS_sent', 'ai_generations', 'reminders_delivered', 'amount_recovered']) {
     if (typeof partial[k] === 'number' && partial[k] !== 0) (applicable as any)[k] = partial[k];
+  }
+  // Normalise SMS key to lower-case for storage
+  if (applicable.SMS_sent != null && applicable.sms_sent == null) {
+    applicable.sms_sent = applicable.SMS_sent;
+    delete (applicable as any).SMS_sent;
   }
   const usage = await addUsage(user.profile.id, applicable);
   res.json({ usage: { month: new Date().toISOString().slice(0, 7), ...usage } });
@@ -1923,13 +1949,31 @@ app.put('/api/schedules/:id', async (req, res) => {
   const body = req.body || {};
   const isActiveToggle = body.active !== undefined && !body.template_id && !body.sequence_id && !body.frequency && !body.name && !body.channels;
   if (isActiveToggle) {
-    const { data, error } = await sb
+    // Try with updated_at; if the column does not exist yet (schema cache lag),
+    // retry without it so the toggle never fails with "Could not find the
+    // 'updated_at' column".
+    let data: any = null;
+    let error: any = null;
+    const attempt = await sb
       .from('schedules')
-      .update({ active: Boolean(body.active), updated_at: new Date().toISOString() })
+      .update({ active: Boolean(body.active), updated_at: new Date().toISOString() } as any)
       .eq('id', req.params.id)
       .eq('user_id', user.profile.id)
       .select('*')
       .single();
+    data = attempt.data;
+    error = attempt.error;
+    if (error && /updated_at/i.test(String(error.message || ''))) {
+      const retry = await sb
+        .from('schedules')
+        .update({ active: Boolean(body.active) } as any)
+        .eq('id', req.params.id)
+        .eq('user_id', user.profile.id)
+        .select('*')
+        .single();
+      data = retry.data;
+      error = retry.error;
+    }
     if (error) return res.status(500).json({ error: 'SCHEDULE_SAVE_FAILED', message: error.message });
     armCronHeartbeat();
     return res.json({ success: true, schedule: normalizeSchedule(data) });
@@ -2022,6 +2066,39 @@ function epochForLocal(y: number, mo: number, d: number, h: number, mi: number, 
     ts = candidate;
   }
   return ts;
+}
+
+// YYYY-MM-DD key for "today" in the given IANA timezone — used for
+// per-day dedup so a recovery that fires at 09:00 Dhaka does not send
+// twice if the worker also ticks in UTC.
+function localDayKey(now: Date, timeZone: string): string {
+  const p = zonedParts(now, timeZone);
+  if (!p) return now.toISOString().slice(0, 10);
+  const mm = String(p.mo).padStart(2, '0');
+  const dd = String(p.d).padStart(2, '0');
+  return `${p.y}-${mm}-${dd}`;
+}
+
+// Calendar-day difference (now's local date minus due_date's calendar date)
+// in the supplied timezone. Stable across DST because we compare UTC midnights
+// of the two local calendar dates.
+function calendarDiffDays(now: Date, dueDateStr: string, timeZone: string): number {
+  const raw = String(dueDateStr || '').slice(0, 10);
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+  if (!m) {
+    const due = new Date(raw + 'T00:00:00Z');
+    if (Number.isNaN(due.getTime())) return 0;
+    const nowLocal = zonedParts(now, timeZone);
+    if (!nowLocal) return Math.floor((now.getTime() - due.getTime()) / 86400000);
+    const nowUTC = Date.UTC(nowLocal.y, nowLocal.mo - 1, nowLocal.d);
+    return Math.round((nowUTC - due.getTime()) / 86400000);
+  }
+  const dueY = Number(m[1]);
+  const dueMo = Number(m[2]);
+  const dueD = Number(m[3]);
+  const local = zonedParts(now, timeZone);
+  if (!local) return 0;
+  return Math.round((Date.UTC(local.y, local.mo - 1, local.d) - Date.UTC(dueY, dueMo - 1, dueD)) / 86400000);
 }
 
 interface ScheduleTiming {
@@ -2203,6 +2280,157 @@ async function armCronHeartbeat(): Promise<void> {
   }
 }
 
+// Local fallback ticker — ensures exact-time delivery even when QStash is not
+// configured, APP_URL is localhost, or QStash delivery is delayed. Runs every
+// 30 seconds inside the server process and claims/dispatches due schedules
+// directly via the same CAS guard, so double-send is impossible even when both
+// QStash and the local ticker fire for the same minute.
+let localCronRunning = false;
+let localCronInterval: ReturnType<typeof setInterval> | null = null;
+async function runLocalCronOnce(): Promise<void> {
+  if (localCronRunning) return;
+  const sb = getSupabase();
+  if (!sb) return;
+  // Only tick when there is at least one active schedule — avoids pointless DB scans.
+  const { data: anyActive } = await sb.from('schedules').select('id', { count: 'exact', head: true }).eq('active', true).limit(1);
+  // Supabase head query returns count via `count` property — we check via separate query if needed.
+  // Simpler: just try to fetch schedules; if none, skip.
+  localCronRunning = true;
+  try {
+    const now = new Date();
+    const { data: users } = await sb.from('users').select('*').eq('subscription_status', 'active');
+    if (!Array.isArray(users) || !users.length) return;
+    for (const u of users as any[]) {
+      const uid = u.id as string;
+      const tier = u.subscription_tier as SubscriptionTier;
+      if (!tier || !PLAN_BY_ID[tier]) continue;
+      const hasInstrument = Boolean(u.default_payout_instrument_id);
+      if (!hasInstrument) {
+        const byok = await getByokCredentials(uid);
+        if (!(byok?.stripe_configured || byok?.paypal_configured)) continue;
+      }
+      const { data: scheduleRows } = await sb.from('schedules').select('*').eq('user_id', uid).eq('active', true);
+      const activeSchedules = (Array.isArray(scheduleRows) ? scheduleRows : []).map(normalizeSchedule);
+      if (!activeSchedules.length) continue;
+      const { data: invoices } = await sb.from('invoices').select('*').eq('user_id', uid);
+      const invoiceRows = Array.isArray(invoices) ? invoices : [];
+      let eligible = invoiceRows
+        .map((row: any) => normalizeInvoice(row))
+        .filter((inv: any) => inv.status !== 'paid' && inv.status !== 'cancelled' && !inv.sequence_paused)
+        .filter((inv: any) => (inv.client_email || inv.client_phone) != null);
+      if (!eligible.length) continue;
+      const dispatchProfile = {
+        company_name: u.company_name || 'EronFlow',
+        company_email: u.email || '',
+        company_phone: u.company_phone || '',
+        email_signature: u.email_signature || '',
+      };
+      for (const sched of activeSchedules) {
+        const state = scheduleDueState(sched, now);
+        if (!state.due) continue;
+        let targets = eligible;
+        if (sched.invoice_ids && sched.invoice_ids.length) {
+          const wanted = new Set(sched.invoice_ids as string[]);
+          targets = targets.filter((inv: any) => wanted.has(inv.id));
+        }
+        if (!targets.length) {
+          if ((sched.kind || 'automation') === 'automation') {
+            await claimScheduleOccurrence(sb, uid, sched.id, sched.last_run_at || null, state.claimIso);
+          }
+          continue;
+        }
+        const rescheduleSecs = Math.max(30, Math.min(state.nextDelaySec, 900));
+        if (sched.kind === 'recovery') {
+          const { data: seqRow } = await sb.from('sequences').select('*').eq('id', sched.sequence_id).eq('user_id', uid).maybeSingle();
+          if (!seqRow) continue;
+          const steps = typeof seqRow.steps === 'string' ? JSON.parse(seqRow.steps || '[]') : seqRow.steps || [];
+          if (!Array.isArray(steps) || !steps.length) continue;
+          const claimed = await claimScheduleOccurrence(sb, uid, sched.id, sched.last_run_at || null, state.claimIso);
+          if (!claimed) continue;
+          const tzForRecovery = sched.timezone || 'UTC';
+          const lp = zonedParts(now, tzForRecovery);
+          const localMidnightMs = lp ? epochForLocal(lp.y, lp.mo, lp.d, 0, 0, tzForRecovery) : new Date(localDayKey(now, tzForRecovery) + 'T00:00:00.000Z').getTime();
+          const localMidnightIso = new Date(localMidnightMs).toISOString();
+          for (const inv of targets as any[]) {
+            const { count: alreadyToday } = await sb
+              .from('reminder_logs')
+              .select('id', { count: 'exact', head: true })
+              .eq('user_id', uid)
+              .eq('invoice_id', inv.id)
+              .gte('sent_at', localMidnightIso);
+            if ((alreadyToday || 0) > 0) continue;
+            const diffDays = calendarDiffDays(now, String(inv.due_date || ''), tzForRecovery);
+            const matchedSteps = steps.filter((st: any) => Number(st.days_relative_to_due) === diffDays).slice(0, 1);
+            for (const st of matchedSteps) {
+              const stepTitle = `Recovery — ${seqRow.name} — ${st.title || `Day ${diffDays > 0 ? `+${diffDays}` : diffDays}`}`;
+              const stepChannels: ('email' | 'whatsapp' | 'SMS')[] =
+                st.channel && ['email', 'whatsapp', 'SMS'].includes(st.channel) ? [st.channel] : sched.channels;
+              await dispatchInvoiceReminders({
+                uid,
+                tier,
+                inv,
+                channels: stepChannels,
+                stepTitle,
+                rescheduleSecs,
+                now,
+                template: { title: st.title, subject: st.template_subject, body: st.template_body },
+                extraVars: sched.extra_vars,
+                profile: dispatchProfile,
+                scheduleTimezone: tzForRecovery,
+                precomputedDiffDays: diffDays,
+              });
+            }
+          }
+          continue;
+        }
+        const { data: schedTmpl } = sched.template_id
+          ? await sb.from('custom_email_templates').select('*').eq('id', sched.template_id).eq('user_id', uid).maybeSingle()
+          : { data: null };
+        if (!schedTmpl) continue;
+        const claimed = await claimScheduleOccurrence(sb, uid, sched.id, sched.last_run_at || null, state.claimIso);
+        if (!claimed) continue;
+        const stepTitle = `Automation — ${schedTmpl.title || sched.name}`;
+        for (const inv of targets as any[]) {
+          await dispatchInvoiceReminders({
+            uid,
+            tier,
+            inv,
+            channels: sched.channels,
+            stepTitle,
+            rescheduleSecs,
+            now,
+            template: schedTmpl,
+            extraVars: sched.extra_vars,
+            profile: dispatchProfile,
+            scheduleTimezone: sched.timezone || 'UTC',
+          });
+        }
+        if (sched.frequency === 'once') {
+          await sb.from('schedules').update({ active: false } as any).eq('id', sched.id).eq('user_id', uid);
+        }
+      }
+    }
+    // Keep QStash armed even when local ticker did the work
+    armCronHeartbeat().catch(() => {});
+  } catch (e: any) {
+    console.error('[LocalCron] tick failed:', e?.message || e);
+  } finally {
+    localCronRunning = false;
+  }
+}
+
+function startLocalCronTicker(): void {
+  if (localCronInterval) return;
+  // Fire every 30s for minute-exact delivery (a 07:10 slot is caught within 30s).
+  localCronInterval = setInterval(() => {
+    runLocalCronOnce().catch(() => {});
+  }, 30_000);
+  // Unref so the interval does not prevent clean shutdown in tests
+  (localCronInterval as any)?.unref?.();
+  // Also run once shortly after boot
+  setTimeout(() => runLocalCronOnce().catch(() => {}), 20_000);
+}
+
 app.delete('/api/schedules/:id', async (req, res) => {
   const user = await requireUser(req, res);
   if (!user) return;
@@ -2281,7 +2509,9 @@ app.delete('/api/team/invites/:id', async (req, res) => {
   if (!active.ok) return res.status(402).json(active);
   const sb = getSupabase();
   if (!sb) return dbError(res);
-  await sb.from('team_invites').update({ status: 'revoked' }).eq('id', req.params.id).eq('owner_user_id', user.profile.id);
+  // Hard delete — revoked/deleted links take no space in the DB (prompt #4).
+  const { error } = await sb.from('team_invites').delete().eq('id', req.params.id).eq('owner_user_id', user.profile.id);
+  if (error) return res.status(500).json({ error: 'DELETE_FAILED', message: error.message });
   res.json({ success: true });
 });
 
@@ -3696,7 +3926,7 @@ app.post('/api/invoices/:id/send', async (req, res) => {
       });
       await addUsage(user.profile.id, {
         reminders_delivered: 1,
-        ...(ch === 'whatsapp' ? { whatsapp_sent: 1 } : ch === 'SMS' ? { SMS_sent: 1 } : { emails_sent: 1 }),
+        ...(ch === 'whatsapp' ? { whatsapp_sent: 1 } : ch === 'SMS' ? { sms_sent: 1 } : { emails_sent: 1 }),
       });
       results.push({ channel: ch, logId, dispatch });
     } catch (err: any) {
@@ -4290,7 +4520,7 @@ app.get('/api/billing/refund-preview', async (req, res) => {
   const usage = await getUsage(user.profile.id, new Date().toISOString().slice(0, 7));
   const invoiceCount = (await sb.from('invoices').select('id', { count: 'exact', head: true }).eq('user_id', user.profile.id)).count || 0;
   const math = billingMath(plan, user.profile.plan_started_at || new Date().toISOString(), usage, invoiceCount);
-  res.json({ tier: plan.id, usage: { emails_sent: usage.emails_sent, whatsapp_sent: usage.whatsapp_sent, SMS_sent: usage.SMS_sent, ai_generations: usage.ai_generations, invoices_tracked: invoiceCount }, ...math });
+  res.json({ tier: plan.id, usage: { emails_sent: usage.emails_sent, whatsapp_sent: usage.whatsapp_sent, sms_sent: usage.sms_sent ?? (usage as any).SMS_sent, SMS_sent: usage.sms_sent ?? (usage as any).SMS_sent, ai_generations: usage.ai_generations, invoices_tracked: invoiceCount }, ...math });
 });
 
 app.get('/api/billing/events', async (req, res) => {
@@ -5711,13 +5941,27 @@ async function dispatchInvoiceReminders(opts: {
   template?: any;
   extraVars?: Record<string, string>;
   profile?: { company_name: string; company_email?: string; company_phone?: string; email_signature?: string };
+  scheduleTimezone?: string;
+  precomputedDiffDays?: number;
 }): Promise<any[]> {
   const sb = getSupabase();
   if (!sb) return [];
-  const { uid, tier, inv, channels, stepTitle, now, template, extraVars, profile } = opts;
+  const { uid, tier, inv, channels, stepTitle, now, template, extraVars, profile, scheduleTimezone, precomputedDiffDays } = opts;
   const results: any[] = [];
-  const dueDate = new Date(inv.due_date + 'T00:00:00');
-  const diffDays = Math.floor((now.getTime() - dueDate.getTime()) / 86400000);
+  // Calendar-day difference in the schedule's timezone (or UTC if none).
+  // This keeps recovery offsets stable across DST and server timezone.
+  let diffDays: number;
+  if (typeof precomputedDiffDays === 'number' && !Number.isNaN(precomputedDiffDays)) {
+    diffDays = precomputedDiffDays;
+  } else if (scheduleTimezone) {
+    diffDays = calendarDiffDays(now, String(inv.due_date || ''), scheduleTimezone);
+  } else {
+    const dueDate = new Date(String(inv.due_date || '').slice(0, 10) + 'T00:00:00Z');
+    const nowMidUTC = new Date(now.toISOString().slice(0, 10) + 'T00:00:00Z');
+    diffDays = Number.isNaN(dueDate.getTime()) || Number.isNaN(nowMidUTC.getTime())
+      ? Math.floor((now.getTime() - new Date(String(inv.due_date || '') + 'T00:00:00').getTime()) / 86400000)
+      : Math.round((nowMidUTC.getTime() - dueDate.getTime()) / 86400000);
+  }
   const payLink = await ensurePortalPaymentLink(inv).catch(() => inv.payment_link || `/pay/${inv.id}`);
   const renderProfile = {
     company_name: profile?.company_name || 'EronFlow',
@@ -5790,7 +6034,7 @@ async function dispatchInvoiceReminders(opts: {
         .eq('id', inv.id);
       await addUsage(uid, {
         reminders_delivered: 1,
-        ...(channel === 'whatsapp' ? { whatsapp_sent: 1 } : channel === 'SMS' ? { SMS_sent: 1 } : { emails_sent: 1 }),
+        ...(channel === 'whatsapp' ? { whatsapp_sent: 1 } : channel === 'SMS' ? { sms_sent: 1 } : { emails_sent: 1 }),
       });
       results.push(newLog);
     } catch (err: any) {
@@ -5935,27 +6179,45 @@ app.post('/api/cron/process-reminders', async (req, res) => {
         }
         const steps = typeof seqRow.steps === 'string' ? JSON.parse(seqRow.steps || '[]') : seqRow.steps || [];
         if (!Array.isArray(steps) || !steps.length) continue;
-        const dayKey = now.toISOString().slice(0, 10);
-        await claimScheduleOccurrence(sb, uid, sched.id, sched.last_run_at || null, manual ? new Date(now).toISOString() : state.claimIso);
+        // Claim atomically — if another worker already claimed this daily occurrence,
+        // skip entirely so the same day's recovery is never double-sent.
+        const recoveredClaimed = manual
+          ? true
+          : await claimScheduleOccurrence(sb, uid, sched.id, sched.last_run_at || null, state.claimIso);
+        if (!recoveredClaimed && !manual) continue;
+        if (manual) {
+          await sb.from('schedules').update({ last_run_at: new Date(now).toISOString() } as any).eq('id', sched.id).eq('user_id', uid);
+        }
+        // Local day key/start for per-day dedup (one hit per invoice per day).
+        const tzForRecovery = sched.timezone || 'UTC';
+        const localKey = localDayKey(now, tzForRecovery);
+        const lp = zonedParts(now, tzForRecovery);
+        const localMidnightMs = lp ? epochForLocal(lp.y, lp.mo, lp.d, 0, 0, tzForRecovery) : new Date(`${localKey}T00:00:00.000Z`).getTime();
+        const localMidnightIso = new Date(localMidnightMs).toISOString();
         for (const inv of targets as any[]) {
-          const dueDate = new Date(inv.due_date + 'T00:00:00');
-          const diffDays = Math.floor((now.getTime() - dueDate.getTime()) / 86400000);
+          // One hit per invoice per local day — if we already sent anything for
+          // this invoice today, skip entirely (prevents the "many times at the
+          // last days" burst where several steps share the same day or retries overlap).
+          {
+            const { count: alreadyToday } = await sb
+              .from('reminder_logs')
+              .select('id', { count: 'exact', head: true })
+              .eq('user_id', uid)
+              .eq('invoice_id', inv.id)
+              .gte('sent_at', localMidnightIso);
+            if ((alreadyToday || 0) > 0) continue;
+          }
+          const diffDays = calendarDiffDays(now, String(inv.due_date || ''), tzForRecovery);
           const matchedSteps = steps.filter((st: any) => Number(st.days_relative_to_due) === diffDays);
-          for (const st of matchedSteps) {
+          // Enforce one-hit-per-day even when multiple steps share the same diffDays
+          // (e.g. duplicate stages) — take the first match only.
+          const stepsToSend = matchedSteps.slice(0, 1);
+          for (const st of stepsToSend) {
             const stepTitle = `Recovery — ${seqRow.name} — ${st.title || `Day ${diffDays > 0 ? `+${diffDays}` : diffDays}`}`;
             // Each recovery step defines its own channel; fall back to the
             // schedule's channel list when a legacy step has none.
             const stepChannels: ('email' | 'whatsapp' | 'SMS')[] =
               st.channel && ['email', 'whatsapp', 'SMS'].includes(st.channel) ? [st.channel] : sched.channels;
-            // De-duplicate: never send the same recovery step twice in a day.
-            const { count: alreadySent } = await sb
-              .from('reminder_logs')
-              .select('id', { count: 'exact', head: true })
-              .eq('user_id', uid)
-              .eq('invoice_id', inv.id)
-              .eq('sequence_step_title', stepTitle)
-              .gte('sent_at', `${dayKey}T00:00:00.000Z`);
-            if ((alreadySent || 0) > 0) continue;
             results.push(
               ...(await dispatchInvoiceReminders({
                 uid,
@@ -5968,6 +6230,8 @@ app.post('/api/cron/process-reminders', async (req, res) => {
                 template: { title: st.title, subject: st.template_subject, body: st.template_body },
                 extraVars: sched.extra_vars,
                 profile: dispatchProfile,
+                scheduleTimezone: tzForRecovery,
+                precomputedDiffDays: diffDays,
               }))
             );
           }
@@ -6003,6 +6267,7 @@ app.post('/api/cron/process-reminders', async (req, res) => {
             template: schedTmpl,
             extraVars: sched.extra_vars,
             profile: dispatchProfile,
+            scheduleTimezone: sched.timezone || 'UTC',
           }))
         );
       }
@@ -6055,11 +6320,15 @@ async function startServer() {
     // never firing at all).
     setTimeout(() => {
       armCronHeartbeat();
+      startLocalCronTicker();
       setInterval(() => {
         // Safety net when QStash is unavailable: retry the arm every 5 min.
         if (!lastCronArmAt || Date.now() - lastCronArmAt > 5 * 60 * 1000) armCronHeartbeat();
       }, 60 * 1000).unref?.();
     }, 5000);
+    // Start local ticker immediately as well so exact-time schedules fire
+    // even before the 5s boot delay (covers the "set to 7:10, waited 5 min, didn't" case).
+    startLocalCronTicker();
   });
 }
 

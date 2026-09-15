@@ -110,6 +110,8 @@ export function SettingsBilling({
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviting, setInviting] = useState(false);
   const [copiedInvite, setCopiedInvite] = useState<string | null>(null);
+  const [confirmDeleteInvite, setConfirmDeleteInvite] = useState<TeamInvite | null>(null);
+  const [deletingInvite, setDeletingInvite] = useState(false);
 
   const limits = fetchPlanLimits(user.subscription_tier);
   const currentPlan = user.subscription_tier ? PLAN_BY_ID[user.subscription_tier] : null;
@@ -486,7 +488,7 @@ export function SettingsBilling({
                 {[
                   { label: 'Emails sent', used: liveUsage?.emails_sent ?? 0, limit: limits.emails_per_month, color: 'from-blue-500 to-blue-600', bgColor: 'bg-blue-50 dark:bg-blue-950/40', textColor: 'text-blue-600 dark:text-blue-400', icon: Mail },
                   { label: 'WhatsApp', used: liveUsage?.whatsapp_sent ?? 0, limit: limits.whatsapp_per_month, color: 'from-emerald-500 to-emerald-600', bgColor: 'bg-emerald-50 dark:bg-emerald-950/40', textColor: 'text-emerald-600 dark:text-emerald-400', icon: MessageSquare },
-                  { label: 'SMS', used: liveUsage?.SMS_sent ?? 0, limit: limits.SMS_per_month, color: 'from-violet-500 to-violet-600', bgColor: 'bg-violet-50 dark:bg-violet-950/40', textColor: 'text-violet-600 dark:text-violet-400', icon: Smartphone },
+                  { label: 'SMS', used: (liveUsage as any)?.sms_sent ?? liveUsage?.SMS_sent ?? 0, limit: limits.SMS_per_month, color: 'from-violet-500 to-violet-600', bgColor: 'bg-violet-50 dark:bg-violet-950/40', textColor: 'text-violet-600 dark:text-violet-400', icon: Smartphone },
                   { label: 'AI drafts', used: liveUsage?.ai_generations ?? 0, limit: limits.ai_generations, color: 'from-amber-500 to-amber-600', bgColor: 'bg-amber-50 dark:bg-amber-950/40', textColor: 'text-amber-600 dark:text-amber-400', icon: Sparkles },
                 ].map((m) => {
                   const pct = m.limit === -1 ? 0 : Math.min(100, Math.round((m.used / Math.max(1, m.limit)) * 100));
@@ -666,7 +668,7 @@ export function SettingsBilling({
 
             <a
               href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(`Plan Cancellation — ${currentPlan?.name || 'Current Plan'}`)}&body=${encodeURIComponent(
-                `Hi EronFlow Support,\n\nI'd like to cancel my ${currentPlan?.name || 'current'} plan.\n\nAccount email: ${user.email}\nCompany: ${user.company_name}\n\nEstimated refund if I cancel today: $${refundPreview && !refundPreview.inactive ? Number(refundPreview.refund ?? 0).toFixed(2) : '—'}\nUsage this period: ${refundPreview ? `${refundPreview.usage?.emails_sent ?? 0} emails, ${refundPreview.usage?.whatsapp_sent ?? 0} WA, ${refundPreview.usage?.SMS_sent ?? 0} SMS, ${refundPreview.usage?.ai_generations ?? 0} AI` : ''}\n\nPlease confirm the cancellation and refund.\n\nThank you.`
+                `Hi EronFlow Support,\n\nI'd like to cancel my ${currentPlan?.name || 'current'} plan.\n\nAccount email: ${user.email}\nCompany: ${user.company_name}\n\nEstimated refund if I cancel today: $${refundPreview && !refundPreview.inactive ? Number(refundPreview.refund ?? 0).toFixed(2) : '—'}\nUsage this period: ${refundPreview ? `${refundPreview.usage?.emails_sent ?? 0} emails, ${refundPreview.usage?.whatsapp_sent ?? 0} WA, ${(refundPreview.usage as any)?.sms_sent ?? refundPreview.usage?.SMS_sent ?? 0} SMS, ${refundPreview.usage?.ai_generations ?? 0} AI` : ''}\n\nPlease confirm the cancellation and refund.\n\nThank you.`
               )}`}
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-red-50 dark:bg-red-950/60 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 font-bold text-xs transition-colors hover:bg-red-100 dark:hover:bg-red-950"
             >
@@ -906,17 +908,10 @@ export function SettingsBilling({
                         {copiedInvite === inv.id ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
                       </button>
                       <button
-                        onClick={() =>
-                          revokeTeamInvite(inv.id)
-                            .then(() => {
-                              setInvites((prev) => prev.map((x) => (x.id === inv.id ? { ...x, status: 'revoked' as const } : x)));
-                              onToast('Invite revoked.');
-                            })
-                            .catch((e: any) => onToast(e.message || 'Could not revoke invite.'))
-                        }
+                        onClick={() => setConfirmDeleteInvite(inv)}
                         disabled={!hasActivePlan}
                         className="p-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/60 text-rose-600 dark:text-rose-400 transition-colors disabled:opacity-50"
-                        title={hasActivePlan ? 'Revoke invite' : 'Active plan required'}
+                        title={hasActivePlan ? 'Delete invite permanently' : 'Active plan required'}
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -931,6 +926,57 @@ export function SettingsBilling({
             Your {currentPlan?.name || 'current'} plan includes {limits?.team_seats ?? 1} team seat{limits?.team_seats === 1 ? '' : 's'} total
             (owner + invited members). Seat limits are defined per plan — upgrade to invite more.
           </p>
+        </div>
+      )}
+
+      {/* Delete invite confirm — hard delete, frees DB space (prompt #4) */}
+      {confirmDeleteInvite && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-primary-strong/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="relative w-full max-w-sm rounded-3xl bg-white dark:bg-surface border border-line dark:border-line p-6 sm:p-8 shadow-2xl">
+            <div className="flex items-start gap-3 mb-5">
+              <div className="w-10 h-10 rounded-2xl bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-extrabold text-ink dark:text-white">Delete invite link?</h3>
+                <p className="text-xs text-ink2 dark:text-ink2 mt-1">
+                  This permanently deletes the link <span className="font-mono font-bold text-ink dark:text-white break-all">{confirmDeleteInvite.email || confirmDeleteInvite.token.slice(0, 12) + '…'}</span>. It will be removed from the database and cannot be used again.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteInvite(null)}
+                disabled={deletingInvite}
+                className="px-4 py-2 rounded-xl text-ink2 dark:text-ink2 hover:bg-surface2 text-xs font-bold transition-all disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!confirmDeleteInvite) return;
+                  setDeletingInvite(true);
+                  try {
+                    await revokeTeamInvite(confirmDeleteInvite.id);
+                    setInvites((prev) => prev.filter((x) => x.id !== confirmDeleteInvite.id));
+                    onToast('Invite deleted — it no longer takes space in the database.');
+                    setConfirmDeleteInvite(null);
+                  } catch (e: any) {
+                    onToast(e.message || 'Could not delete invite.');
+                  } finally {
+                    setDeletingInvite(false);
+                  }
+                }}
+                disabled={deletingInvite}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all shadow-md disabled:opacity-60"
+              >
+                {deletingInvite ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                <span>{deletingInvite ? 'Deleting…' : 'Delete permanently'}</span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

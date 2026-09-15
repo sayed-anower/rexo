@@ -196,6 +196,7 @@ export interface UsageStats {
   emails_sent: number;
   whatsapp_sent: number;
   SMS_sent: number;
+  sms_sent?: number; // canonical lower-case alias (DB column is lower)
   ai_generations: number;
   reminders_delivered: number;
   amount_recovered: number; // USD recovered this month
