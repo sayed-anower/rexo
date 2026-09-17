@@ -1,5 +1,5 @@
 import React from 'react';
-import { Lock, Heart, Facebook, MessageSquare, Linkedin, Twitter, Mail } from 'lucide-react';
+import { Lock, Heart, Facebook, MessageSquare, Linkedin, X, Mail } from 'lucide-react';
 import { navigate } from '../App';
 import { SUPPORT_EMAIL } from '../data/plans.ts';
 
@@ -46,7 +46,7 @@ export function Footer({ onNavigateHome, onOpenAuth }: FooterProps) {
               {/* Social Media Links */}
               <div className="flex items-center gap-3">
                 <a
-                  href="https://facebook.com"
+                  href="https://www.facebook.com/profile.php?id=61594312652799"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="p-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-500 hover:text-[#0284C7] dark:text-slate-400 dark:hover:text-[#38BDF8] transition-colors"
@@ -55,7 +55,7 @@ export function Footer({ onNavigateHome, onOpenAuth }: FooterProps) {
                   <Facebook className="w-4 h-4" />
                 </a>
                 <a
-                  href="https://m.me"
+                  href="https://m.me/61594312652799"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="p-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-500 hover:text-[#0284C7] dark:text-slate-400 dark:hover:text-[#38BDF8] transition-colors"
@@ -64,7 +64,7 @@ export function Footer({ onNavigateHome, onOpenAuth }: FooterProps) {
                   <MessageSquare className="w-4 h-4" />
                 </a>
                 <a
-                  href="https://linkedin.com"
+                  href="https://www.linkedin.com/company/eronflow/"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="p-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-500 hover:text-[#0284C7] dark:text-slate-400 dark:hover:text-[#38BDF8] transition-colors"
@@ -73,13 +73,13 @@ export function Footer({ onNavigateHome, onOpenAuth }: FooterProps) {
                   <Linkedin className="w-4 h-4" />
                 </a>
                 <a
-                  href="https://x.com"
+                  href="https://x.com/EronFlow"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="p-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-500 hover:text-[#0284C7] dark:text-slate-400 dark:hover:text-[#38BDF8] transition-colors"
                   aria-label="X (Twitter)"
                 >
-                  <Twitter className="w-4 h-4" />
+                  <X className="w-4 h-4" />
                 </a>
               </div>
 
