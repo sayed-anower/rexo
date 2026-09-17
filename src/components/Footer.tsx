@@ -1,5 +1,5 @@
 import React from 'react';
-import { Lock, Heart, Facebook, MessageSquare, Linkedin, X, Mail } from 'lucide-react';
+import { Lock, Heart, Facebook, MessageSquare, Linkedin, Twitter, Mail } from 'lucide-react';
 import { navigate } from '../App';
 import { SUPPORT_EMAIL } from '../data/plans.ts';
 
@@ -79,7 +79,7 @@ export function Footer({ onNavigateHome, onOpenAuth }: FooterProps) {
                   className="p-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-500 hover:text-[#0284C7] dark:text-slate-400 dark:hover:text-[#38BDF8] transition-colors"
                   aria-label="X (Twitter)"
                 >
-                  <X className="w-4 h-4" />
+                  <Twitter className="w-4 h-4" />
                 </a>
               </div>
 

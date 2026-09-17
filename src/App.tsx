@@ -123,6 +123,144 @@ export function navigate(path: string): void {
   window.dispatchEvent(new Event('rf:route'));
 }
 
+const SITE_NAME = 'EronFlow';
+const PAGE_META: Record<string, { title: string; description: string }> = {
+  '/': {
+    title: `${SITE_NAME} — Automated Payment Recovery & Invoice Reminders`,
+    description: 'EronFlow automates payment recovery for B2B digital agencies. Smart invoice reminders, multi-channel outreach, and AI-powered recovery sequences to get you paid faster.',
+  },
+  '/signin': {
+    title: `Sign In — ${SITE_NAME}`,
+    description: 'Sign in to your EronFlow account to manage invoices, automate payment recovery, and track reminders.',
+  },
+  '/signup': {
+    title: `Sign Up — ${SITE_NAME}`,
+    description: 'Create your free EronFlow account and start automating invoice payment recovery for your agency today.',
+  },
+  '/help': {
+    title: `Help & Support — ${SITE_NAME}`,
+    description: 'Get help with EronFlow. Find answers to frequently asked questions, contact support, and learn how to automate your payment recovery.',
+  },
+  '/privacy': {
+    title: `Privacy Policy — ${SITE_NAME}`,
+    description: 'EronFlow privacy policy. Learn how we collect, use, and protect your personal and business data.',
+  },
+  '/terms': {
+    title: `Terms of Service — ${SITE_NAME}`,
+    description: 'EronFlow terms of service. Review the rules and guidelines governing your use of our platform.',
+  },
+  '/about': {
+    title: `About Us — ${SITE_NAME}`,
+    description: 'Learn about EronFlow — our mission to help B2B digital agencies recover overdue payments faster through smart automation.',
+  },
+  '/pricing': {
+    title: `Pricing — ${SITE_NAME}`,
+    description: 'View EronFlow pricing plans. Affordable payment recovery automation for agencies of all sizes with no hidden fees.',
+  },
+  '/docs': {
+    title: `Documentation — ${SITE_NAME}`,
+    description: 'EronFlow documentation. Guides, API references, and tutorials to help you get the most out of automated payment recovery.',
+  },
+  '/app/overview': {
+    title: `Dashboard — ${SITE_NAME}`,
+    description: 'Your EronFlow dashboard overview. View unpaid invoices, recovery stats, and automation activity at a glance.',
+  },
+  '/app/invoices': {
+    title: `Invoices — ${SITE_NAME}`,
+    description: 'Manage your invoices on EronFlow. Track payments, send reminders, and monitor recovery status for all outstanding invoices.',
+  },
+  '/app/automation': {
+    title: `Recovery Flows — ${SITE_NAME}`,
+    description: 'Build and manage automated payment recovery sequences. Set up multi-step reminder flows with AI assistance.',
+  },
+  '/app/templates': {
+    title: `Email Templates — ${SITE_NAME}`,
+    description: 'Create and manage custom email templates for payment reminders and invoice follow-ups.',
+  },
+  '/app/activity': {
+    title: `Reminder Activity — ${SITE_NAME}`,
+    description: 'View your complete reminder activity log. Track sent emails, SMS, and WhatsApp messages for all invoices.',
+  },
+  '/app/connectors': {
+    title: `Integrations — ${SITE_NAME}`,
+    description: 'Connect your accounting and payment tools to EronFlow. Sync invoices automatically from your existing stack.',
+  },
+  '/app/settings': {
+    title: `Settings & Billing — ${SITE_NAME}`,
+    description: 'Manage your EronFlow account settings, billing, team members, and subscription plan.',
+  },
+  '/app/help': {
+    title: `Help & Support — ${SITE_NAME}`,
+    description: 'Get help with EronFlow. Find answers to frequently asked questions and contact our support team.',
+  },
+  '/invite': {
+    title: `Team Invite — ${SITE_NAME}`,
+    description: 'Accept your team invitation to join an EronFlow workspace.',
+  },
+  '/pay': {
+    title: `Pay Invoice — ${SITE_NAME}`,
+    description: 'Pay your outstanding invoice securely through the EronFlow payment portal.',
+  },
+};
+
+function getRouteMeta(route: Route): { title: string; description: string } {
+  if (route.name === 'app') {
+    return PAGE_META[`/app/${route.tab}`] || PAGE_META['/app/overview'];
+  }
+  if (route.name === 'invite') {
+    return PAGE_META['/invite'];
+  }
+  if (route.name === 'pay') {
+    return PAGE_META['/pay'];
+  }
+  return PAGE_META[`/${route.name}`] || { title: SITE_NAME, description: 'Automated Payment Recovery & Invoice Reminders for B2B digital agencies.' };
+}
+
+function applyRouteMeta(route: Route): void {
+  const meta = getRouteMeta(route);
+  document.title = meta.title;
+
+  let descTag = document.querySelector('meta[name="description"]') as HTMLMetaElement | null;
+  if (!descTag) {
+    descTag = document.createElement('meta');
+    descTag.setAttribute('name', 'description');
+    document.head.appendChild(descTag);
+  }
+  descTag.setAttribute('content', meta.description);
+
+  let ogTitle = document.querySelector('meta[property="og:title"]') as HTMLMetaElement | null;
+  if (!ogTitle) {
+    ogTitle = document.createElement('meta');
+    ogTitle.setAttribute('property', 'og:title');
+    document.head.appendChild(ogTitle);
+  }
+  ogTitle.setAttribute('content', meta.title);
+
+  let ogDesc = document.querySelector('meta[property="og:description"]') as HTMLMetaElement | null;
+  if (!ogDesc) {
+    ogDesc = document.createElement('meta');
+    ogDesc.setAttribute('property', 'og:description');
+    document.head.appendChild(ogDesc);
+  }
+  ogDesc.setAttribute('content', meta.description);
+
+  let twTitle = document.querySelector('meta[name="twitter:title"]') as HTMLMetaElement | null;
+  if (!twTitle) {
+    twTitle = document.createElement('meta');
+    twTitle.setAttribute('name', 'twitter:title');
+    document.head.appendChild(twTitle);
+  }
+  twTitle.setAttribute('content', meta.title);
+
+  let twDesc = document.querySelector('meta[name="twitter:description"]') as HTMLMetaElement | null;
+  if (!twDesc) {
+    twDesc = document.createElement('meta');
+    twDesc.setAttribute('name', 'twitter:description');
+    document.head.appendChild(twDesc);
+  }
+  twDesc.setAttribute('content', meta.description);
+}
+
 export default function App() {
   const [route, setRoute] = useState<Route>(() => routeFromPath(window.location.pathname));
   const [user, setUser] = useState<UserProfile | null>(null);
@@ -195,6 +333,11 @@ export default function App() {
       window.removeEventListener('rf:route', sync);
     };
   }, []);
+
+  // Update document title and meta tags whenever the route changes
+  useEffect(() => {
+    applyRouteMeta(route);
+  }, [route]);
 
   // Public payment portal data (no session needed)
   useEffect(() => {

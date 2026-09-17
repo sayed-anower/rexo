@@ -1,5 +1,7 @@
 User-agent: *
-Disallow: /app/*
+Disallow: /app/
+Disallow: /invite/
+Disallow: /pay/
 Allow: /
 Allow: /help
 Allow: /privacy
@@ -9,7 +11,10 @@ Allow: /docs
 Allow: /pricing
 
 User-agent: GPTBot
-Disallow: /app/*
+Disallow: /app/
+Disallow: /invite/
+Disallow: /pay/
+Allow: /
 Allow: /help
 Allow: /privacy
 Allow: /terms
@@ -18,7 +23,10 @@ Allow: /docs
 Allow: /pricing
 
 User-agent: ChatGPT-User
-Disallow: /app/*
+Disallow: /app/
+Disallow: /invite/
+Disallow: /pay/
+Allow: /
 Allow: /help
 Allow: /privacy
 Allow: /terms
@@ -27,7 +35,10 @@ Allow: /docs
 Allow: /pricing
 
 User-agent: ClaudeBot
-Disallow: /app/*
+Disallow: /app/
+Disallow: /invite/
+Disallow: /pay/
+Allow: /
 Allow: /help
 Allow: /privacy
 Allow: /terms
