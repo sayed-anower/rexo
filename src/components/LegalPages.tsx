@@ -126,7 +126,7 @@ export function TermsOfServicePage({ onBackHome }: LegalPageProps) {
       <h2>1. The service</h2>
       <p>
         EronFlow tracks unpaid invoices and sends reminder messages (email, WhatsApp, SMS) on schedules you configure,
-        including payment links so your clients can pay. A paid subscription is required — there is no free tier.
+        including payment links so your clients can pay. A free forever plan is available for testing, with paid plans for full features.
       </p>
 
       <h2>2. Accounts</h2>

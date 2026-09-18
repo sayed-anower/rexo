@@ -46,6 +46,19 @@ export function PlanSelection({ user, onPlanChosen, onRefreshStatus }: PlanSelec
     setLoadingTier(tier);
     setError(null);
     try {
+      // Free plan: activate directly without payment
+      if (tier === 'free') {
+        const res = await fetch('/api/billing/checkout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tier: 'free' }),
+        });
+        const data = await res.json();
+        if (data.free) {
+          await onRefreshStatus();
+          return;
+        }
+      }
       const p = await fetchProration(tier);
       setProration((prev) => ({ ...prev, [tier]: p }));
       // Prefer Paddle overlay — no new tab, no refresh, themed & responsive
@@ -89,11 +102,10 @@ export function PlanSelection({ user, onPlanChosen, onRefreshStatus }: PlanSelec
             Welcome, {user.company_name}
           </div>
           <h1 className="text-2xl sm:text-4xl font-black text-ink dark:text-white tracking-tight">
-            No free tier available. Pick a plan to start.
+            Start free — upgrade when you're ready.
           </h1>
           <p className="text-sm text-ink2 leading-relaxed max-w-xl mx-auto">
-            Your account is created (no charge). The moment you choose a plan and complete a secure
-            checkout with your card, bank or PayPal, plan limits apply immediately.
+            Your account is created (no charge). Start with our free forever plan with limited recovery, or choose a paid plan for full features.
             Switching mid-month charges only the prorated difference, and canceling mid-month refunds
             your unused days minus usage costs — no tax or fees are charged on subscriptions.
           </p>

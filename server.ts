@@ -492,7 +492,7 @@ function assertPlanActive(user: { profile: UserProfile }): { ok: boolean; code?:
     return {
       ok: false,
       code: 'PLAN_REQUIRED',
-      message: 'You must choose a paid plan before using EronFlow. No free tier is available.',
+      message: 'You must choose a plan before using EronFlow. Start with our free tier or pick a paid plan.',
     };
   }
   return { ok: true };
@@ -3473,7 +3473,12 @@ app.post('/api/webhooks/quickbooks', async (req, res) => {
     return res.status(401).json({ error: 'INVALID_SIGNATURE' });
   }
 
-  const event = JSON.parse(raw.toString('utf8'));
+  let event: any;
+  try {
+    event = JSON.parse(raw.toString('utf8'));
+  } catch {
+    return res.status(400).json({ error: 'INVALID_JSON', message: 'Webhook body is not valid JSON.' });
+  }
   const sb = getSupabase();
   if (!sb) return dbError(res);
 
@@ -3513,7 +3518,12 @@ app.post('/api/webhooks/xero', async (req, res) => {
     return res.status(401).json({ error: 'INVALID_SIGNATURE' });
   }
 
-  const event = JSON.parse(raw.toString('utf8'));
+  let event: any;
+  try {
+    event = JSON.parse(raw.toString('utf8'));
+  } catch {
+    return res.status(400).json({ error: 'INVALID_JSON', message: 'Webhook body is not valid JSON.' });
+  }
   const sb = getSupabase();
   if (!sb) return dbError(res);
 
@@ -4198,6 +4208,20 @@ app.post('/api/billing/checkout', async (req, res) => {
       .status(400)
       .json({ error: 'CUSTOM_PLAN', message: `Custom plans are arranged directly — email ${SUPPORT_EMAIL} to get started.` });
   }
+
+  // Free plan: activate immediately without payment
+  if (tier === 'free') {
+    const sb = getSupabase();
+    if (!sb) return dbError(res);
+    await sb.from('users').update({
+      subscription_tier: 'free',
+      subscription_status: 'active',
+      plan_started_at: new Date().toISOString(),
+    }).eq('id', user.profile.id);
+    await recordBillingEvent({ userId: user.profile.id, type: 'plan_upgrade', tier: 'free', amount: 0 });
+    return res.json({ success: true, free: true, plan: 'free', message: 'Free plan activated immediately.' });
+  }
+
   const plan = PLAN_BY_ID[tier as SubscriptionTier];
   if (!plan) return res.status(400).json({ error: 'VALIDATION', message: 'Unknown plan.' });
 

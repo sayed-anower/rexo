@@ -50,7 +50,7 @@ export function HomePage({ onOpenAuth, onGoogleSignIn }: HomePageProps) {
     },
     {
       q: 'Is there a free tier?',
-      a: 'No. You can create an account for free, but the moment you want to run any action — tracking invoices, sending reminders, AI drafts — you must choose a plan. If you switch plans mid-month you are charged only the prorated difference, and if you cancel mid-month you receive a money-back refund for unused days minus usage costs.'
+      a: 'Yes! We have a free forever plan that lets you recover up to $500 with 2 invoices, 10 emails, and 2 AI drafts. No credit card required. Upgrade to a paid plan when you need more.'
     },
     {
       q: 'Can clients pay on my own branded page?',
@@ -403,7 +403,7 @@ export function HomePage({ onOpenAuth, onGoogleSignIn }: HomePageProps) {
               Plans That Grow With Your Agency
             </h2>
             <p className="text-xs sm:text-sm text-ink2 dark:text-ink2">
-              Flat monthly pricing. No free tier, no hidden fees. Upgrade, downgrade (prorated) or cancel anytime.
+              Flat monthly pricing. Start free, upgrade when ready. Upgrade, downgrade (prorated) or cancel anytime.
             </p>
           </div>
 

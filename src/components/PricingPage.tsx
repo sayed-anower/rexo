@@ -19,8 +19,7 @@ export function PricingPage({ onOpenAuth }: PricingPageProps) {
           Plans that scale with your agency
         </h1>
         <p className="text-sm text-ink2 dark:text-ink2 max-w-2xl mx-auto">
-          No hidden fees. No free tier. Pick the plan that matches your invoice volume
-          and upgrade or downgrade anytime — prorated instantly.
+          Start free with our forever tier — no credit card required. Upgrade or downgrade anytime — prorated instantly.
         </p>
       </section>
 
@@ -150,7 +149,7 @@ export function PricingPage({ onOpenAuth }: PricingPageProps) {
           },
           {
             q: 'Is there a free trial?',
-            a: 'No. All plans are paid. Every send goes through real providers.'
+            a: 'Yes! We have a free forever plan that lets you recover up to $500 with 2 invoices, 10 emails, and 2 AI drafts. No credit card required.'
           },
           {
             q: 'How do I cancel?',

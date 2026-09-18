@@ -143,7 +143,7 @@ export function SettingsBilling({
     const params = new URLSearchParams(window.location.search);
     if (params.get('billing') === 'checkout') {
       const tier = params.get('plan') as SubscriptionTier | null;
-      if (tier && (tier === 'starter' || tier === 'pro' || tier === 'agency')) {
+      if (tier && (tier === 'free' || tier === 'starter' || tier === 'pro' || tier === 'agency')) {
         setCheckoutTier(tier);
         setActiveTab('billing');
         if (params.get('plan')) {
@@ -250,6 +250,21 @@ export function SettingsBilling({
   const handleSwitchPlan = async (tier: SubscriptionTier) => {
     setUpgradingTier(tier);
     try {
+      // Free plan: activate directly without payment
+      if (tier === 'free') {
+        const res = await fetch('/api/billing/checkout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tier: 'free' }),
+        });
+        const data = await res.json();
+        if (data.free) {
+          onToast('Free plan activated — enjoy your forever tier!');
+          await onRefreshStatus();
+          return;
+        }
+      }
+
       const p = await fetchProration(tier);
       setProration((prev) => ({ ...prev, [tier]: p }));
 

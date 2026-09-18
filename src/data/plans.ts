@@ -140,6 +140,27 @@ function plan(
 
 export const PLANS: PlanDefinition[] = [
   plan(
+    'free',
+    'Free Forever',
+    0,
+    'Try EronFlow with zero risk. Perfect for testing and small projects.',
+    'Up To $500 recovery volume',
+    {
+      tracked_invoices: 2,
+      team_seats: 0,
+      emails_per_month: 10,
+      whatsapp_per_month: 0,
+      SMS_per_month: 0,
+      ai_generations: 2,
+      min_automation_interval_mins: 1440,
+      custom_domain: false,
+      white_label: false,
+      advanced_reports: false,
+      priority_automation: false,
+    },
+    false
+  ),
+  plan(
     'starter',
     'Starter',
     119,

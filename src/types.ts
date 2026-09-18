@@ -1,4 +1,4 @@
-export type SubscriptionTier = 'starter' | 'pro' | 'agency';
+export type SubscriptionTier = 'free' | 'starter' | 'pro' | 'agency';
 export type SubscriptionStatus = 'active' | 'past_due' | 'cancelled' | 'trialing' | 'pending';
 
 export interface UserProfile {
